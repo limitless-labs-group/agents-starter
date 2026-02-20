@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.log
+logs/
+learnings*.jsonl
+trade-events.jsonl
+iteration-log.jsonl
+experiments/
+.DS_Store

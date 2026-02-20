@@ -1,0 +1,30 @@
+{
+  "name": "agents-starter",
+  "version": "1.0.0",
+  "description": "Build autonomous trading agents for Limitless Exchange prediction markets on Base",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "npx tsx src/index.ts",
+    "signal-sniper": "npx tsx src/strategies/signal-sniper/run.ts",
+    "complement-arb": "npx tsx src/strategies/cross-market-arb/run.ts",
+    "iterate": "npx tsx src/strategies/iterate.ts",
+    "iterate:analyze": "npx tsx src/strategies/iterate.ts analyze",
+    "iterate:markets": "npx tsx src/strategies/iterate.ts markets",
+    "redeem": "npx tsx src/core/limitless/redeem.ts"
+  },
+  "keywords": ["prediction-markets", "trading-bot", "limitless", "base-chain", "defi"],
+  "author": "Limitless Labs",
+  "license": "MIT",
+  "dependencies": {
+    "@types/node": "^22.0.0",
+    "cross-fetch": "^4.1.0",
+    "dotenv": "^16.4.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "socket.io-client": "^4.8.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "viem": "^2.20.0"
+  }
+}
