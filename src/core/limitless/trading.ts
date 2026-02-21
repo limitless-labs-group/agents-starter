@@ -289,6 +289,26 @@ export class TradingClient {
 
         if (!res.ok) {
             const errText = await res.text();
+
+            // Detect approval-related errors and surface a helpful message.
+            // Common signatures from the CTF exchange / ERC-20 contracts:
+            //   "insufficient allowance", "ERC20: insufficient allowance",
+            //   "not approved", "approval", "allowance"
+            const lowerErr = errText.toLowerCase();
+            const isApprovalIssue =
+                lowerErr.includes('allowance') ||
+                lowerErr.includes('not approved') ||
+                lowerErr.includes('approval') ||
+                lowerErr.includes('insufficient') ||
+                res.status === 403;
+
+            if (isApprovalIssue) {
+                throw new Error(
+                    `Market not approved. Run: npm start approve ${marketSlug}\n` +
+                    `  (Original error: ${res.status} ${errText})`
+                );
+            }
+
             throw new Error(`Order submission failed [${orderType}]: ${res.status} ${errText}`);
         }
 

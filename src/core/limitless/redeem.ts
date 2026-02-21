@@ -376,18 +376,47 @@ async function main() {
         }
 
         case 'claim-all': {
-            const { readFileSync, existsSync } = await import('fs');
-            const learningsFile = './learnings.jsonl';
+            // Fetch portfolio positions via the API (no dependency on local files).
+            // Works for any public user — no learnings.jsonl required.
+            console.log('Fetching portfolio positions from API...');
 
-            if (!existsSync(learningsFile)) {
-                console.log('No learnings.jsonl found');
+            const headers = {
+                'Content-Type': 'application/json',
+                ...(process.env.LIMITLESS_API_KEY ? { 'X-API-Key': process.env.LIMITLESS_API_KEY } : {}),
+            };
+
+            const posRes = await fetch(`${API_BASE}/portfolio/positions`, { headers });
+            if (!posRes.ok) {
+                console.error(`Failed to fetch portfolio: ${posRes.status}`);
                 break;
             }
 
-            const lines = readFileSync(learningsFile, 'utf-8').trim().split('\n');
-            const slugs = [...new Set(lines.map(l => JSON.parse(l).market))];
+            const raw = await posRes.json();
 
-            console.log(`Found ${slugs.length} unique markets in learnings`);
+            // API may return { clob: [...], amm: [...], group: [...] } or a flat array.
+            const positions: any[] = Array.isArray(raw)
+                ? raw
+                : [
+                    ...(raw.clob ?? []),
+                    ...(raw.amm ?? []),
+                    ...(raw.group ?? []),
+                ];
+
+            if (positions.length === 0) {
+                console.log('No portfolio positions found.');
+                break;
+            }
+
+            // Extract unique market slugs from all positions.
+            const slugSet = new Set<string>();
+            for (const pos of positions) {
+                const slug = pos.market?.slug ?? pos.marketSlug;
+                if (slug) slugSet.add(slug);
+            }
+
+            const slugs = [...slugSet];
+            console.log(`Found ${slugs.length} unique markets in portfolio — checking for claimable winnings...`);
+
             const result = await client.claimAll(slugs);
             console.log('Claim result:', result);
             break;
@@ -399,7 +428,7 @@ Usage:
   npx tsx src/core/limitless/redeem.ts check <market-slug>         Check for claimable positions
   npx tsx src/core/limitless/redeem.ts claim <market-slug>         Claim a single market (full flow)
   npx tsx src/core/limitless/redeem.ts claim-many <slug1> ...      Claim multiple specific markets
-  npx tsx src/core/limitless/redeem.ts claim-all                   Claim all from learnings.jsonl
+  npx tsx src/core/limitless/redeem.ts claim-all                   Claim all winnings from portfolio positions
       `);
     }
 }

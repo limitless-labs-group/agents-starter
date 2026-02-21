@@ -90,6 +90,60 @@ npm run iterate:analyze   # Deep analysis + recommendations
 npm run iterate:markets   # Scan current opportunities
 ```
 
+## Demo Mode
+
+Not sure where to start? Run the interactive demo — it needs only your private key and API key, and never submits real orders:
+
+```bash
+npm run demo
+```
+
+The demo:
+1. Finds a live hourly prediction market
+2. Shows current YES/NO prices and market details
+3. Signs (but does **not** submit) a sample order
+4. Checks your portfolio for open positions
+5. Scans for any claimable winnings
+6. Prints a summary with next-step suggestions
+
+## Analytics Dashboard
+
+Visualise your agent's performance in a local web UI:
+
+```bash
+npm run dashboard
+# → open http://localhost:3456
+```
+
+Shows:
+- **Portfolio overview** — balance, total P&L, win rate
+- **Open positions** — market, side, size, unrealised P&L
+- **Open orders** — market, side, price, status
+- **Trade history** — recent fills with timestamps and amounts
+- **Claimable winnings** — resolved markets with one-click claim
+
+The dashboard auto-refreshes every 30 s. Port defaults to `3456`; override with `DASHBOARD_PORT=`.
+
+## Claiming Winnings
+
+When markets resolve, claim your winnings:
+
+```bash
+# Check a specific market
+npm run redeem check <market-slug>
+
+# Claim a specific market
+npm run redeem claim <market-slug>
+
+# Claim all resolved positions from your portfolio (no config files needed)
+npm run redeem claim-all
+
+# Claim specific markets in bulk
+npm run redeem claim-many slug-1 slug-2 slug-3
+```
+
+`claim-all` automatically fetches your portfolio from the API and claims every resolved position — no local files required.
+
 ## Building Your Own Strategy
 
 Extend `BaseStrategy`:

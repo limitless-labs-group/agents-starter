@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "npx tsx src/index.ts",
+    "demo": "npx tsx src/demo.ts",
+    "dashboard": "npx tsx src/dashboard.ts",
     "signal-sniper": "npx tsx src/strategies/signal-sniper/run.ts",
     "complement-arb": "npx tsx src/strategies/cross-market-arb/run.ts",
     "iterate": "npx tsx src/strategies/iterate.ts",

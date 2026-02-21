@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ Limitless Agent Dashboard</title>
+<style>
+  :root {
+    --bg: #08080d; --bg1: #0e0e16; --bg2: #14141e; --border: #1a1a26;
+    --text: #c8c8d0; --dim: #555; --dim2: #333;
+    --green: #00ff88; --green-bg: #002a1a; --red: #ff4466; --red-bg: #2a0010;
+    --amber: #ffaa00; --amber-bg: #2a2200; --blue: #4488ff; --purple: #aa66ff;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'SF Mono','Fira Code','JetBrains Mono',monospace;
+    background:var(--bg); color:var(--text);
+    padding:20px; max-width:1300px; margin:0 auto; font-size:14px;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────────── */
+  .header { display:flex; align-items:center; gap:10px; margin-bottom:4px; }
+  .header h1 { color:var(--green); font-size:1.15em; }
+  @keyframes pulse { 0%,100% { opacity:1; box-shadow:0 0 8px #00ff8866; } 50% { opacity:0.5; box-shadow:0 0 3px #00ff8833; } }
+  .live-dot { width:8px; height:8px; border-radius:50%; background:var(--green); display:inline-block; animation:pulse 2s ease-in-out infinite; }
+  .sub { color:var(--dim2); font-size:0.7em; margin-bottom:18px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  h2 { color:var(--dim); font-size:0.63em; text-transform:uppercase; letter-spacing:2px; margin-bottom:8px; }
+
+  /* ── Section ─────────────────────────────────────────────────────────────── */
+  .section { margin-bottom:24px; }
+  .section-header { display:flex; align-items:center; gap:10px; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  .section-title { font-size:1em; font-weight:700; }
+  .section-badge { font-size:0.6em; padding:3px 10px; border-radius:10px; font-weight:600; }
+  .sb-live { background:var(--green-bg); color:var(--green); border:1px solid #00ff8833; }
+  .section-meta { margin-left:auto; font-size:0.68em; color:var(--dim); }
+
+  /* ── Hero KPIs ──────────────────────────────────────────────────────────── */
+  .hero { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:18px; }
+  .hc { background:var(--bg1); border:1px solid var(--border); border-radius:8px; padding:14px; text-align:center; }
+  .hv { font-size:1.85em; font-weight:800; }
+  .hl { font-size:0.58em; color:#3a3a4a; text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
+
+  /* ── Panels ─────────────────────────────────────────────────────────────── */
+  .panels { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
+  .panel { background:var(--bg1); border:1px solid var(--border); border-radius:8px; padding:14px; overflow-x:auto; }
+  .panel-full { background:var(--bg1); border:1px solid var(--border); border-radius:8px; padding:14px; overflow-x:auto; margin-bottom:14px; }
+
+  /* ── Bar charts ──────────────────────────────────────────────────────────── */
+  .bar-row { display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:0.76em; }
+  .bar-label { width:80px; text-align:right; color:#777; flex-shrink:0; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar-track { flex:1; height:20px; background:#0a0a12; border-radius:3px; overflow:hidden; display:flex; }
+  .bar-fill { height:100%; display:flex; align-items:center; padding-left:6px; font-size:0.7em; font-weight:600; min-width:4px; }
+  .bf-w { background:linear-gradient(90deg,#003820,#007744aa); color:var(--green); }
+  .bf-l { background:linear-gradient(90deg,#380015,#773344aa); color:var(--red); }
+  .bar-stat { width:120px; text-align:right; flex-shrink:0; font-size:0.7em; }
+
+  /* ── Tables ──────────────────────────────────────────────────────────────── */
+  table { width:100%; border-collapse:collapse; font-size:0.74em; }
+  th { text-align:left; color:#3a3a4a; padding:5px 4px; border-bottom:2px solid var(--border); font-size:0.66em; text-transform:uppercase; letter-spacing:1px; }
+  td { padding:5px 4px; border-bottom:1px solid #121218; }
+  tr:hover td { background:var(--bg2); }
+  .badge { display:inline-block; padding:1px 6px; border-radius:3px; font-size:0.7em; font-weight:700; }
+  .b-w  { background:var(--green-bg); color:var(--green); }
+  .b-l  { background:var(--red-bg);   color:var(--red); }
+  .b-p  { background:var(--amber-bg); color:var(--amber); }
+  .b-blue   { background:rgba(68,136,255,0.15); color:var(--blue); }
+  .b-purple { background:rgba(170,102,255,0.18); color:var(--purple); }
+
+  /* ── Utility colours ─────────────────────────────────────────────────────── */
+  .g  { color:var(--green); }  .r  { color:var(--red); }   .a  { color:var(--amber); }
+  .bl { color:var(--blue); }   .p  { color:var(--purple); } .d  { color:var(--dim); }
+  a { color:var(--blue); text-decoration:none; }
+  a:hover { color:var(--green); }
+
+  .empty { text-align:center; padding:16px; color:var(--dim); font-size:.8em; }
+
+  /* ── P&L chart container ─────────────────────────────────────────────────── */
+  #pnl-chart { height:180px; position:relative; min-height:140px; }
+
+  /* ── Claim button ─────────────────────────────────────────────────────────── */
+  .btn-claim {
+    background:rgba(68,136,255,0.15); color:var(--blue);
+    border:1px solid rgba(68,136,255,0.35); border-radius:4px;
+    padding:3px 10px; font-size:0.72em; cursor:pointer;
+    transition:all .15s; font-family:inherit;
+  }
+  .btn-claim:hover  { background:rgba(68,136,255,0.3); }
+  .btn-claim:disabled { opacity:0.4; cursor:default; }
+
+  /* ── Responsive ──────────────────────────────────────────────────────────── */
+  @media (max-width:768px) {
+    .hero    { grid-template-columns:repeat(3,1fr); }
+    .panels  { grid-template-columns:1fr; }
+    .hv      { font-size:1.4em; }
+  }
+  @media (max-width:480px) {
+    .hero { grid-template-columns:repeat(2,1fr); }
+    .hv   { font-size:1.2em; }
+    table { font-size:0.65em; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Header ────────────────────────────────────────────────────────────── -->
+<div class="header">
+  <span class="live-dot" id="dot"></span>
+  <h1>⚡ Limitless Agent Dashboard</h1>
+</div>
+<div class="sub">
+  <span id="wallet" class="d"></span>
+  <span id="ts" class="d"></span>
+</div>
+
+<!-- ── Hero KPIs ─────────────────────────────────────────────────────────── -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-title g">📊 Portfolio</span>
+    <span class="section-badge sb-live">LIVE</span>
+    <span class="section-meta">
+      <a href="https://limitless.exchange" target="_blank" style="color:var(--green)">Limitless Exchange ↗</a>
+    </span>
+  </div>
+
+  <div class="hero">
+    <div class="hc">
+      <div class="hv a" id="h-balance">--</div>
+      <div class="hl">USDC Balance</div>
+    </div>
+    <div class="hc">
+      <div class="hv" id="h-pnl">--</div>
+      <div class="hl">Total P&amp;L</div>
+    </div>
+    <div class="hc">
+      <div class="hv g" id="h-wr">--</div>
+      <div class="hl">Win Rate</div>
+    </div>
+    <div class="hc">
+      <div class="hv a" id="h-pos">--</div>
+      <div class="hl">Open Positions</div>
+    </div>
+    <div class="hc">
+      <div class="hv p" id="h-claim">--</div>
+      <div class="hl">Claimable</div>
+    </div>
+  </div>
+
+  <!-- ── P&L Chart + Open Positions ───────────────────────────────────── -->
+  <div class="panels">
+    <div class="panel">
+      <h2>📈 Cumulative P&amp;L</h2>
+      <div id="pnl-chart"></div>
+    </div>
+    <div class="panel">
+      <h2>🔴 Open Positions <span class="a" id="pos-n"></span></h2>
+      <table>
+        <thead><tr>
+          <th>Market</th><th>Side</th><th>Size</th><th>Mark</th><th>uPnL</th>
+        </tr></thead>
+        <tbody id="tbl-positions"></tbody>
+      </table>
+      <div id="pos-empty" class="empty">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── Open Orders + Trade History ──────────────────────────────────── -->
+  <div class="panels">
+    <div class="panel">
+      <h2>📋 Open Orders <span class="bl" id="orders-n"></span></h2>
+      <table>
+        <thead><tr>
+          <th>Market</th><th>Side</th><th>Price</th><th>Size</th><th>Status</th>
+        </tr></thead>
+        <tbody id="tbl-orders"></tbody>
+      </table>
+      <div id="orders-empty" class="empty">Loading…</div>
+    </div>
+    <div class="panel">
+      <h2>📜 Recent Trades</h2>
+      <table>
+        <thead><tr>
+          <th>Time</th><th>Market</th><th>Side</th><th>Amount</th>
+        </tr></thead>
+        <tbody id="tbl-trades"></tbody>
+      </table>
+      <div id="trades-empty" class="empty">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── Claimable Winnings ────────────────────────────────────────────── -->
+  <div class="panel-full">
+    <h2>🏆 Claimable Winnings <span class="p" id="claim-n"></span></h2>
+    <table>
+      <thead><tr>
+        <th>Market</th><th>Side</th><th>Expected Payout</th><th>Action</th>
+      </tr></thead>
+      <tbody id="tbl-claimable"></tbody>
+    </table>
+    <div id="claimable-empty" class="empty">Loading…</div>
+  </div>
+</div>
+
+<script>
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
+const ps  = v => (v >= 0 ? '+' : '') + '$' + Math.abs(parseFloat(v) || 0).toFixed(2);
+const pc  = v => parseFloat(v) >= 0 ? 'g' : 'r';
+const trunc = (s, n) => (!s || typeof s !== 'string') ? '—' : s.length > n ? s.slice(0, n - 1) + '…' : s;
+
+/* ── P&L SVG chart (ported from private dashboard) ───────────────────────── */
+function drawPnl(el, data) {
+  if (!data || !data.length) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim)">No resolved trades yet</div>';
+    return;
+  }
+  const vals  = data.map(d => d.pnl);
+  const min   = Math.min(0, ...vals);
+  const max   = Math.max(0.1, ...vals);
+  const range = max - min || 1;
+  const pts   = data.map((d, i) => {
+    const x = (i / (data.length - 1 || 1)) * 100;
+    const y = 100 - ((d.pnl - min) / range) * 100;
+    return `${x},${y}`;
+  }).join(' ');
+  const last  = data[data.length - 1].pnl;
+  const zeroY = 100 - ((0 - min) / range) * 100;
+  const col   = last >= 0 ? 'var(--green)' : 'var(--red)';
+  const fill  = last >= 0 ? 'rgba(0,255,136,0.08)' : 'rgba(255,68,102,0.08)';
+  const dotX  = data.length > 1 ? 100 : 50;
+  const dotY  = 100 - ((last - min) / range) * 100;
+  el.innerHTML = `
+<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:100%">
+  <line x1="0" y1="${zeroY}" x2="100" y2="${zeroY}" stroke="var(--border)" stroke-width="0.3" stroke-dasharray="1,1"/>
+  <polygon points="0,${zeroY} ${pts} 100,${zeroY}" fill="${fill}"/>
+  <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
+  <circle cx="${dotX}" cy="${dotY}" r="1.5" fill="${col}"/>
+</svg>
+<div style="position:absolute;top:6px;left:10px;font-size:1.4em;font-weight:800;color:${col}">${(last >= 0 ? '+' : '') + '$' + last.toFixed(2)}</div>
+<div style="position:absolute;top:10px;right:10px;font-size:0.6em;color:var(--dim2)">${data.length} trades</div>`;
+}
+
+/* ── Bar chart (ported from private dashboard) ───────────────────────────── */
+function bar(w, l, tot) {
+  const wp = tot ? (w / tot * 100) : 0;
+  const lp = tot ? (l / tot * 100) : 0;
+  return `<div class="bar-track">
+    <div class="bar-fill bf-w" style="width:${wp}%">${w > 0 ? w + 'W' : ''}</div>
+    <div class="bar-fill bf-l" style="width:${lp}%">${l > 0 ? l + 'L' : ''}</div>
+  </div>`;
+}
+
+function renderBars(el, data) {
+  if (!data || !data.length) { el.innerHTML = '<div class="empty">No data</div>'; return; }
+  el.innerHTML = data.map(b => {
+    const w   = b.wins   || 0;
+    const l   = b.losses || 0;
+    const tot = w + l;
+    const wr  = tot ? Math.round(w / tot * 100) : 0;
+    const pending = b.pending ? ` <span class="a">${b.pending}⏳</span>` : '';
+    const pnl = b.pnl || 0;
+    return `<div class="bar-row">
+      <span class="bar-label" title="${b.label || b.name || ''}">${trunc(b.label || b.name || '?', 12)}</span>
+      ${bar(w, l, tot)}
+      <span class="bar-stat">${wr}%${pending} · <span class="${pc(pnl)}">${ps(pnl)}</span></span>
+    </div>`;
+  }).join('');
+}
+
+/* ── Claim action ─────────────────────────────────────────────────────────── */
+async function claimMarket(slug, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Claiming…';
+  try {
+    const r = await fetch(`/api/claim/${encodeURIComponent(slug)}`, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      btn.textContent = '✅ Claimed';
+      btn.style.background = 'var(--green-bg)';
+      btn.style.color = 'var(--green)';
+    } else {
+      btn.textContent = '❌ Failed';
+      btn.style.color = 'var(--red)';
+    }
+  } catch {
+    btn.textContent = '❌ Error';
+    btn.style.color = 'var(--red)';
+  }
+}
+
+/* ── Main data loader ─────────────────────────────────────────────────────── */
+async function load() {
+  try {
+    const r = await fetch('/api/dashboard');
+    if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+    const d = await r.json();
+    const now = new Date();
+
+    // Header / meta
+    document.getElementById('ts').textContent =
+      '⏱ ' + now.toLocaleTimeString() + ' · ' + now.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+    const wallet = d.overview?.wallet || d.wallet || '';
+    if (wallet) {
+      document.getElementById('wallet').textContent = wallet.slice(0,6) + '…' + wallet.slice(-4);
+    }
+
+    /* Helper: set hero card */
+    const setHero = (id, txt, cls) => {
+      const e = document.getElementById(id);
+      if (!e) return;
+      e.textContent = txt;
+      if (cls) e.className = 'hv ' + cls;
+    };
+
+    // ── Hero KPIs ──────────────────────────────────────────────────────────
+    const bal  = parseFloat(d.overview?.balance ?? d.balance ?? '0') || 0;
+    setHero('h-balance', '$' + bal.toFixed(2), 'a');
+
+    const pnlN = parseFloat(d.overview?.pnl ?? d.totalPnl ?? '0') || 0;
+    setHero('h-pnl', (pnlN >= 0 ? '+' : '') + '$' + Math.abs(pnlN).toFixed(2), pc(pnlN));
+
+    const wrN  = parseFloat(d.overview?.winRate ?? d.winRate ?? '0') || 0;
+    setHero('h-wr', wrN.toFixed(1) + '%', wrN >= 55 ? 'g' : wrN >= 45 ? 'a' : 'r');
+
+    const posArr = d.positions || [];
+    setHero('h-pos', String(posArr.length), posArr.length > 0 ? 'a' : 'd');
+
+    const claimArr = d.claimable || [];
+    if (claimArr.length) {
+      const total = claimArr.reduce((s, c) => s + (parseFloat(c.expectedPayout) || 0), 0);
+      setHero('h-claim', '$' + total.toFixed(2), 'p');
+    } else {
+      setHero('h-claim', '—', 'd');
+    }
+
+    // ── P&L Chart ──────────────────────────────────────────────────────────
+    drawPnl(document.getElementById('pnl-chart'), d.cumPnl || []);
+
+    // ── Open Positions ──────────────────────────────────────────────────────
+    const posN = document.getElementById('pos-n');
+    posN.textContent = posArr.length ? '(' + posArr.length + ')' : '';
+    const posEmpty = document.getElementById('pos-empty');
+    posEmpty.style.display  = posArr.length ? 'none' : 'block';
+    posEmpty.textContent    = 'No open positions';
+    document.getElementById('tbl-positions').innerHTML = posArr.map(p => {
+      const side    = p.side || '—';
+      const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
+      const currRaw = p.currentPrice ?? p.fillPrice ?? null;
+      const mark    = currRaw != null ? (parseFloat(currRaw) * 100).toFixed(0) + '¢' : '—';
+      const upnl    = p.unrealizedPnl != null
+        ? `<span class="${pc(p.unrealizedPnl)}">${ps(p.unrealizedPnl)}</span>` : '<span class="d">—</span>';
+      return `<tr>
+        <td title="${p.marketSlug || ''}">${trunc(p.marketTitle, 32)}</td>
+        <td><span class="badge ${badgeCls}">${side}</span></td>
+        <td>${p.size != null ? '$' + parseFloat(p.size).toFixed(2) : '—'}</td>
+        <td class="d">${mark}</td>
+        <td>${upnl}</td>
+      </tr>`;
+    }).join('');
+
+    // ── Open Orders ────────────────────────────────────────────────────────
+    const ordArr = d.orders || [];
+    document.getElementById('orders-n').textContent = ordArr.length ? '(' + ordArr.length + ')' : '';
+    const ordEmpty = document.getElementById('orders-empty');
+    ordEmpty.style.display = ordArr.length ? 'none' : 'block';
+    ordEmpty.textContent   = 'No open orders';
+    document.getElementById('tbl-orders').innerHTML = ordArr.map(o => {
+      const side    = o.side || '—';
+      const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
+      const price   = o.price != null ? parseFloat(o.price).toFixed(0) + '¢' : '—';
+      return `<tr>
+        <td>${trunc(o.marketTitle || o.marketSlug, 28)}</td>
+        <td><span class="badge ${badgeCls}">${side}</span></td>
+        <td class="d">${price}</td>
+        <td>${o.size != null ? '$' + parseFloat(o.size).toFixed(2) : '—'}</td>
+        <td><span class="badge b-blue">${o.status || 'LIVE'}</span></td>
+      </tr>`;
+    }).join('');
+
+    // ── Trade History ──────────────────────────────────────────────────────
+    const tradeArr = d.trades || [];
+    const tradesEmpty = document.getElementById('trades-empty');
+    tradesEmpty.style.display = tradeArr.length ? 'none' : 'block';
+    tradesEmpty.textContent   = 'No trade history';
+    document.getElementById('tbl-trades').innerHTML = tradeArr.slice(0, 30).map(t => {
+      const ts   = t.timestamp ? new Date(t.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '?';
+      const side = t.side || t.outcome || '—';
+      const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
+      const title = t.marketTitle || (t.market?.title) || t.marketId || '—';
+      const amt   = t.tradeAmountUSD || t.tradeAmount;
+      return `<tr>
+        <td class="d">${ts}</td>
+        <td>${trunc(typeof title === 'string' ? title : String(title), 28)}</td>
+        <td><span class="badge ${badgeCls}">${side}</span></td>
+        <td>${amt != null ? '$' + parseFloat(amt).toFixed(2) : '—'}</td>
+      </tr>`;
+    }).join('');
+
+    // ── Claimable ──────────────────────────────────────────────────────────
+    document.getElementById('claim-n').textContent = claimArr.length ? '(' + claimArr.length + ')' : '';
+    const claimEmpty = document.getElementById('claimable-empty');
+    claimEmpty.style.display = claimArr.length ? 'none' : 'block';
+    claimEmpty.textContent   = 'No claimable winnings';
+    document.getElementById('tbl-claimable').innerHTML = claimArr.map(c => {
+      return `<tr>
+        <td>${trunc(c.marketTitle || c.marketSlug, 50)}</td>
+        <td><span class="badge b-w">${c.side || '—'}</span></td>
+        <td><span class="badge b-purple">${c.expectedPayout || '—'}</span></td>
+        <td><button class="btn-claim" onclick="claimMarket('${c.marketSlug}',this)">Claim</button></td>
+      </tr>`;
+    }).join('');
+
+    // Dot back to green on success
+    document.getElementById('dot').style.animation = 'pulse 2s ease-in-out infinite';
+    document.getElementById('dot').style.background = 'var(--green)';
+
+  } catch(e) {
+    document.getElementById('ts').textContent  = '❌ ' + e.message;
+    document.getElementById('dot').style.background  = 'var(--red)';
+    document.getElementById('dot').style.animation   = 'none';
+  }
+}
+
+/* ── SSE for live dot + triggered refreshes ───────────────────────────────── */
+const es = new EventSource('/api/events');
+es.onmessage = ev => {
+  try {
+    const d = JSON.parse(ev.data);
+    if (d.type === 'update') load();
+  } catch {}
+};
+es.onerror  = () => { document.getElementById('dot').style.background = 'var(--red)'; document.getElementById('dot').style.animation = 'none'; };
+es.onopen   = () => { document.getElementById('dot').style.background = 'var(--green)'; document.getElementById('dot').style.animation = 'pulse 2s ease-in-out infinite'; };
+
+/* ── Initial load + 30 s poll fallback ───────────────────────────────────── */
+load();
+setInterval(load, 30_000);
+</script>
+</body>
+</html>
