@@ -37,7 +37,6 @@ export class LimitlessClient {
         if (options.offset) params.append('offset', options.offset.toString());
 
         try {
-            // Docs say: GET /markets/active
             const url = `${this.baseUrl}/markets/active?${params.toString()}`;
             logger.debug({ url }, 'Fetching active markets');
             const res = await fetch(url, { headers: getHeaders() });
@@ -57,10 +56,10 @@ export class LimitlessClient {
                 }
             });
 
-            // Normalize markets (map tokens -> positionIds)
+            // Normalize: map tokens -> positionIds
             return markets.map((m: any) => ({
                 ...m,
-                positionIds: m.tokens ? [m.tokens.yes, m.tokens.no] : m.positionIds
+                positionIds: m.tokens ? [m.tokens.yes, m.tokens.no] : m.positionIds,
             }));
         } catch (error) {
             logger.error({ error }, 'Error fetching active markets');
@@ -88,7 +87,6 @@ export class LimitlessClient {
                 throw new Error(`Failed to search markets: ${res.status} ${res.statusText}`);
             }
 
-            // Docs: Returns markets matching the search query
             const data = await res.json();
             // Response format: { markets: [...], totalMarketsCount: N }
             const markets = Array.isArray(data) ? data : (data.markets || data.data || []);
@@ -105,6 +103,43 @@ export class LimitlessClient {
             logger.error({ error, query }, 'Error searching markets');
             throw error;
         }
+    }
+
+    /**
+     * Find short-expiry (hourly) lumy markets for a given asset.
+     *
+     * Lumy markets are auto-generated hourly prediction markets, e.g.
+     * "Will BTC be above $X at 14:00?". They are great for high-frequency
+     * trading because they resolve quickly.
+     *
+     * Strategy:
+     * 1. Search for `"ASSET above"` to surface lumy-style markets.
+     * 2. Filter by `automationType === 'lumy'` when the field is present.
+     * 3. Filter by expiry within the next 60 minutes.
+     *
+     * @param asset - Asset symbol, e.g. `'BTC'`, `'ETH'`, `'SOL'`
+     * @returns Markets expiring within the next 60 minutes
+     *
+     * @example
+     * const markets = await client.searchHourlyMarkets('BTC');
+     * // markets[0] → { title: 'Will BTC be above $95,000 at 15:00?', ... }
+     */
+    async searchHourlyMarkets(asset: string): Promise<Market[]> {
+        const query = `${asset.toUpperCase()} above`;
+        const results = await this.searchMarkets(query, { limit: 50 });
+
+        const nowMs = Date.now();
+        const sixtyMinMs = 60 * 60 * 1000;
+
+        return results.filter((m: any) => {
+            // Only lumy automation type when field is present
+            if (m.automationType && m.automationType !== 'lumy') return false;
+
+            // Only markets expiring within the next 60 minutes
+            if (!m.expirationTimestamp) return false;
+            const msUntilExpiry = m.expirationTimestamp - nowMs;
+            return msUntilExpiry > 0 && msUntilExpiry <= sixtyMinMs;
+        });
     }
 
     async getMarket(slug: string): Promise<MarketDetail> {
@@ -128,11 +163,6 @@ export class LimitlessClient {
                 market.positionIds = [(market as any).tokens.yes, (market as any).tokens.no];
             }
 
-            // Normalize
-            if ((market as any).tokens && !market.positionIds) {
-                market.positionIds = [(market as any).tokens.yes, (market as any).tokens.no];
-            }
-
             return market;
 
         } catch (error) {
@@ -142,8 +172,6 @@ export class LimitlessClient {
     }
 
     async getOrderbook(slug: string): Promise<Orderbook> {
-        // Determine strict URL for orderbook. Usually /markets/:slug/orderbook or similar
-        // Based on user prompt: "GET /markets/{slug}/orderbook"
         try {
             const url = `${this.baseUrl}/markets/${slug}/orderbook`;
             const res = await fetch(url, { headers: getHeaders() });
