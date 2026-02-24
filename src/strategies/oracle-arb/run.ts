@@ -69,8 +69,9 @@ async function main() {
         // Max concurrent positions
         maxPositions: parseInt(process.env.ORACLE_MAX_POSITIONS || '10'),
         // Only trade markets expiring in this window (minutes)
-        minMinutesToExpiry: parseInt(process.env.ORACLE_MIN_MINUTES || '5'),
-        maxMinutesToExpiry: parseInt(process.env.ORACLE_MAX_MINUTES || '60'),
+        // Set min to 0 to catch markets right up to expiry
+        minMinutesToExpiry: parseInt(process.env.ORACLE_MIN_MINUTES || '0'),
+        maxMinutesToExpiry: parseInt(process.env.ORACLE_MAX_MINUTES || '90'),
     };
 
     logger.info({

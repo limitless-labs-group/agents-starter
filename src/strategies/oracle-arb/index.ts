@@ -165,14 +165,24 @@ export class OracleArbStrategy extends BaseStrategy {
                 }
 
                 // Search for markets with this asset
-                const markets = await this.limitless.searchMarkets(asset, { limit: 20 });
+                const markets = await this.limitless.searchMarkets(asset, { limit: 50 });
+                this.logger.debug({ asset, count: markets.length }, 'Found markets');
+
+                let validMarkets = 0;
+                let skippedMarkets = 0;
 
                 for (const market of markets) {
                     // Skip if already traded
-                    if (this.tradedMarkets.has(market.slug)) continue;
+                    if (this.tradedMarkets.has(market.slug)) {
+                        skippedMarkets++;
+                        continue;
+                    }
 
                     // Skip AMM markets (no CLOB)
-                    if (market.tradeType !== 'clob') continue;
+                    if (market.tradeType !== 'clob') {
+                        skippedMarkets++;
+                        continue;
+                    }
 
                     // Check expiry window
                     const expiresAt = market.expirationTimestamp;
@@ -181,8 +191,11 @@ export class OracleArbStrategy extends BaseStrategy {
 
                     if (minutesToExpiry < config.minMinutesToExpiry ||
                         minutesToExpiry > config.maxMinutesToExpiry) {
+                        skippedMarkets++;
                         continue;
                     }
+                    
+                    validMarkets++;
 
                     // Parse strike price
                     const strike = this.parseStrikePrice(market);
@@ -297,11 +310,17 @@ export class OracleArbStrategy extends BaseStrategy {
                         await this.savePositions();
                     }
                 }
+                
+                this.logger.debug({ asset, validMarkets, skippedMarkets, decisions: decisions.length }, 'Asset scan complete');
             } catch (e: any) {
                 this.logger.error({ asset, err: e?.message }, 'Error processing asset');
             }
         }
 
+        if (decisions.length > 0) {
+            this.logger.info({ count: decisions.length }, 'Trade decisions generated');
+        }
+        
         return decisions;
     }
 
