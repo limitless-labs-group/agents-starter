@@ -305,6 +305,68 @@ export class OracleArbStrategy extends BaseStrategy {
         return decisions;
     }
 
+    /**
+     * Override executeDecisions to add auto-approval logic
+     */
+    protected async executeDecisions(decisions: TradeDecision[]): Promise<void> {
+        for (const decision of decisions) {
+            if (decision.action === 'SKIP') continue;
+
+            try {
+                this.logger.info({ decision }, 'Executing trade decision');
+
+                if (decision.action === 'BUY') {
+                    try {
+                        await this.trading.createOrder({
+                            marketSlug: decision.marketSlug,
+                            side: decision.side,
+                            limitPriceCents: decision.priceLimit,
+                            usdAmount: decision.amountUsd,
+                            orderType: 'GTC',
+                        });
+                    } catch (error: any) {
+                        const errMsg = error?.message || String(error);
+                        
+                        // Auto-approve if market not approved
+                        if (errMsg.includes('not approved') || errMsg.includes('allowance') || errMsg.includes('Insufficient collateral')) {
+                            this.logger.info({ marketSlug: decision.marketSlug }, 'Market not approved, auto-approving...');
+                            
+                            try {
+                                await this.approveMarket(decision.marketSlug);
+                                this.logger.info({ marketSlug: decision.marketSlug }, 'Approval complete, retrying order...');
+                                
+                                // Retry the order
+                                await this.trading.createOrder({
+                                    marketSlug: decision.marketSlug,
+                                    side: decision.side,
+                                    limitPriceCents: decision.priceLimit,
+                                    usdAmount: decision.amountUsd,
+                                    orderType: 'GTC',
+                                });
+                                this.logger.info({ marketSlug: decision.marketSlug }, 'Order submitted successfully after approval');
+                            } catch (approvalError: any) {
+                                this.logger.error({ err: approvalError?.message, marketSlug: decision.marketSlug }, 'Auto-approval failed');
+                            }
+                        } else {
+                            throw error; // Re-throw if not an approval issue
+                        }
+                    }
+                }
+            } catch (error: any) {
+                this.logger.error({ err: error?.message || error, decision }, 'Failed to execute decision');
+            }
+        }
+    }
+
+    /**
+     * Approve a market for trading (USDC + CTF tokens)
+     */
+    private async approveMarket(marketSlug: string): Promise<void> {
+        const { approveMarketVenue } = await import('../../core/limitless/approve.js');
+        await approveMarketVenue(marketSlug);
+        this.logger.info({ marketSlug }, 'Market approval complete');
+    }
+
     async shutdown(): Promise<void> {
         this.hermes.disconnect();
         await this.savePositions();

@@ -94,7 +94,7 @@ export abstract class BaseStrategy {
         }
     }
 
-    private async executeDecisions(decisions: TradeDecision[]) {
+    protected async executeDecisions(decisions: TradeDecision[]) {
         for (const decision of decisions) {
             if (decision.action === 'SKIP') continue;
 
