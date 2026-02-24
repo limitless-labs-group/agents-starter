@@ -60,7 +60,21 @@ cp .env.example .env
 # Edit .env with your private key + API key
 ```
 
-### 6. Dry Run (No Real Trades)
+### 6. Market Approval (Required Before Trading)
+
+Limitless uses the Conditional Tokens Framework (CTF). Before you can trade on a market, you must approve the exchange to spend your USDC and handle CTF tokens.
+
+**Option A: Manual approval per market**
+```bash
+npm start approve <market-slug>
+```
+
+**Option B: Let the strategy auto-approve**
+The oracle-arb strategy automatically detects "not approved" errors and approves markets on-the-fly. This is the recommended approach for AI agents.
+
+**Why this matters:** Each market has a unique venue (exchange contract). Approval is a one-time, on-chain transaction that costs a small gas fee (~$0.01-0.05 on Base).
+
+### 7. Dry Run (No Real Trades)
 ```bash
 npm run signal-sniper
 # Watches markets, finds opportunities, logs what it WOULD trade
@@ -266,12 +280,25 @@ The bot checks your **wallet's USDC balance on-chain**, not a separate deposit. 
 
 You need **ETH on Base** for gas fees. Bridge a small amount (~$2) from Ethereum or buy on Base.
 
-### "Market not approved" error
+### "Market not approved" / "Insufficient collateral allowance" error
 
-Run the approval command before trading:
+**Why this happens:** Each market requires a one-time approval for the exchange to spend your USDC and CTF tokens.
+
+**For AI agents / Auto-trading:** Use the oracle-arb strategy — it auto-approves markets when encountering this error.
+
+**Manual fix:**
 ```bash
 npm start approve <market-slug>
 ```
+
+**What the approval does:**
+1. Approves USDC for the market's exchange contract
+2. Approves CTF tokens for the exchange contract
+3. (For group markets) Approves CTF for the adapter contract
+
+Gas cost: ~$0.01-0.05 per market on Base.
+
+**Note:** After approval, you can trade unlimited times on that market without re-approving.
 
 ## License
 MIT

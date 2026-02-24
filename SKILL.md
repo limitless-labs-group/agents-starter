@@ -439,19 +439,71 @@ You should see output like:
 
 The bot will scan markets and log what it *would* trade without executing.
 
-### Step 6: Approve Tokens (Before Going Live)
+### Step 6: Market Approval (CRITICAL for AI Agents)
 
-Before your first real trade on any market, you must approve the USDC and CTF tokens for that market's venue contracts:
+Limitless uses the Conditional Tokens Framework (CTF). Before trading on any market, you must approve the exchange to spend your USDC and handle CTF tokens. **This is a one-time, per-market requirement.**
+
+#### Why This Matters
+
+Each market has a unique venue (exchange contract address). The blockchain requires explicit approval before smart contracts can move your tokens. Attempting to trade without approval results in:
+```
+Error: Insufficient collateral allowance for this order
+```
+
+#### Option A: Manual Approval (CLI)
 
 ```bash
-# Approve tokens for a specific market
+# Approve tokens for a specific market before trading
 npx tsx src/index.ts approve <market-slug>
+
+# Example:
+npx tsx src/index.ts approve bitcoin-above-100k-2025-06-01
 ```
 
 This sends on-chain approval transactions for:
-1. USDC → Exchange contract (required for BUY orders)
-2. CTF → Exchange contract (required for SELL orders)
-3. CTF → Adapter contract (required for NegRisk/group market SELL orders)
+1. **USDC → Exchange** (required for BUY orders)
+2. **CTF → Exchange** (required for SELL orders)
+3. **CTF → Adapter** (required for NegRisk/group market SELL orders)
+
+Gas cost: ~$0.01-0.05 on Base chain per market.
+
+#### Option B: Auto-Approval (Built-in to oracle-arb)
+
+The oracle-arb strategy automatically detects approval errors and approves markets on-the-fly:
+
+```typescript
+// In oracle-arb/index.ts, the executeDecisions method:
+if (errMsg.includes('not approved') || errMsg.includes('allowance')) {
+    this.logger.info({ marketSlug }, 'Market not approved, auto-approving...');
+    await this.approveMarket(decision.marketSlug);
+    // Retry the order after approval
+    await this.trading.createOrder({...});
+}
+```
+
+**For AI agents:** Auto-approval is the recommended approach. It eliminates manual intervention and ensures the strategy self-heals when encountering new markets.
+
+#### AI Agent Pattern: Handling Approval Errors
+
+If building your own strategy, implement this pattern:
+
+```typescript
+try {
+    await trading.createOrder({ marketSlug, side, ... });
+} catch (error: any) {
+    const errMsg = error?.message || String(error);
+    
+    if (errMsg.includes('allowance') || errMsg.includes('not approved')) {
+        // Step 1: Approve the market
+        await approveMarketVenue(marketSlug);
+        
+        // Step 2: Retry the order
+        await trading.createOrder({ marketSlug, side, ... });
+    } else {
+        throw error; // Re-throw non-approval errors
+    }
+}
+```
 
 ### Step 7: Go Live
 
