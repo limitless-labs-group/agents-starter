@@ -8,3 +8,6 @@ trade-events.jsonl
 iteration-log.jsonl
 experiments/
 .DS_Store
+
+# Work-in-progress: Hermes SSE price feed (not ready for public)
+src/core/price-feeds/hermes.ts

@@ -4,16 +4,15 @@ import { pino } from 'pino';
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
 const API_BASE = process.env.LIMITLESS_API_URL || 'https://api.limitless.exchange';
-const API_KEY = process.env.LIMITLESS_API_KEY;
 
-if (!API_KEY) {
-    logger.warn('LIMITLESS_API_KEY is not set. Portfolio endpoints will fail.');
+// Lazily evaluate headers to ensure env is loaded
+function getHeaders(): Record<string, string> {
+    const apiKey = process.env.LIMITLESS_API_KEY;
+    return {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+    };
 }
-
-const headers = {
-    'Content-Type': 'application/json',
-    ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
-};
 
 export interface Trade {
     id: string;
@@ -53,7 +52,7 @@ export class PortfolioClient {
         try {
             const url = `${this.baseUrl}/portfolio/trades`;
             logger.debug({ url }, 'Fetching user trades');
-            const res = await fetch(url, { headers });
+            const res = await fetch(url, { headers: getHeaders() });
 
             if (!res.ok) throw new Error(`Failed to fetch trades: ${res.status}`);
             return await res.json();
@@ -67,7 +66,7 @@ export class PortfolioClient {
         try {
             const url = `${this.baseUrl}/portfolio/positions`;
             logger.debug({ url }, 'Fetching user positions');
-            const res = await fetch(url, { headers });
+            const res = await fetch(url, { headers: getHeaders() });
 
             if (!res.ok) throw new Error(`Failed to fetch positions: ${res.status}`);
             // Docs say it returns an object with { clob: [...], amm: [...], ... }
@@ -82,7 +81,7 @@ export class PortfolioClient {
     async getHistory(page: number = 1, limit: number = 10): Promise<any> {
         try {
             const url = `${this.baseUrl}/portfolio/history?page=${page}&limit=${limit}`;
-            const res = await fetch(url, { headers });
+            const res = await fetch(url, { headers: getHeaders() });
             if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
             return await res.json();
         } catch (error) {
@@ -94,7 +93,7 @@ export class PortfolioClient {
     async getAllowance(type: 'clob' | 'negrisk'): Promise<{ allowance: string; spender: string }> {
         try {
             const url = `${this.baseUrl}/portfolio/trading/allowance?type=${type}`;
-            const res = await fetch(url, { headers });
+            const res = await fetch(url, { headers: getHeaders() });
             if (!res.ok) throw new Error(`Failed to fetch allowance: ${res.status}`);
             return await res.json();
         } catch (error) {
@@ -106,7 +105,7 @@ export class PortfolioClient {
     async getPnlChart(period: '1d' | '1w' | '1m' | 'all' = '1d'): Promise<any> {
         try {
             const url = `${this.baseUrl}/portfolio/pnl-chart?period=${period}`;
-            const res = await fetch(url, { headers });
+            const res = await fetch(url, { headers: getHeaders() });
             if (!res.ok) throw new Error(`Failed to fetch PnL chart: ${res.status}`);
             return await res.json();
         } catch (error) {
@@ -118,7 +117,7 @@ export class PortfolioClient {
     async getPoints(): Promise<any> {
         try {
             const url = `${this.baseUrl}/portfolio/points`;
-            const res = await fetch(url, { headers });
+            const res = await fetch(url, { headers: getHeaders() });
             if (!res.ok) throw new Error(`Failed to fetch points: ${res.status}`);
             return await res.json();
         } catch (error) {
@@ -157,7 +156,7 @@ export class PortfolioClient {
         let raw: any;
         try {
             const url = `${this.baseUrl}/portfolio/positions`;
-            const res = await fetch(url, { headers });
+            const res = await fetch(url, { headers: getHeaders() });
             if (!res.ok) throw new Error(`Failed to fetch positions: ${res.status}`);
             raw = await res.json();
         } catch (error) {

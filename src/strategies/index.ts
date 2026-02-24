@@ -15,10 +15,12 @@ export function registerStrategy(type: string, cls: StrategyConstructor) {
 
 import { SignalSniperStrategy } from './signal-sniper/index.js';
 import { ComplementArbStrategy } from './cross-market-arb/index.js';
+import { OracleArbStrategy } from './oracle-arb/index.js';
 
 // Register built-in strategies
 registerStrategy('signal-sniper', SignalSniperStrategy);
 registerStrategy('cross-market-arb', ComplementArbStrategy);
+registerStrategy('oracle-arb', OracleArbStrategy);
 
 export function createStrategy(
     config: StrategyConfig,

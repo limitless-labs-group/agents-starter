@@ -40,7 +40,16 @@ Build autonomous trading agents for [Limitless Exchange](https://limitless.excha
 ⚠️ Use a dedicated trading wallet. Never use your main wallet.
 
 ### 4. Fund Your Wallet
-You need USDC on Base chain. Bridge from Ethereum or buy directly on Base.
+
+You need two things on **Base chain**:
+
+**USDC** — for trading collateral
+- The bot checks your wallet's USDC balance directly (no deposit to Limitless needed)
+- Bridge from Ethereum or buy directly on Base
+
+**ETH** — for gas fees
+- You'll need ~$1-2 worth of ETH for transaction fees
+- Base gas is cheap (~$0.01-0.10 per transaction)
 
 ### 5. Setup
 ```bash
@@ -71,6 +80,14 @@ Monitors CoinGecko prices and finds prediction markets where the current price c
 ```bash
 npm run signal-sniper
 # Configure via env: SNIPER_ASSETS, SNIPER_BET_SIZE, SNIPER_MIN_EDGE
+```
+
+### Oracle Arb
+Uses the Hermes/Pyth oracle SSE stream to get sub-second price updates. Scans short-term crypto prediction markets and fires FOK orders when the oracle shows strong directional conviction that the market hasn't priced in yet. Low fill rate but high EV when orders hit.
+
+```bash
+npm run oracle-arb
+# Configure via env: ORACLE_ASSETS, ORACLE_BET_SIZE, ORACLE_MIN_EDGE
 ```
 
 ### Binary Complement Arb
@@ -212,10 +229,22 @@ src/
 | USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 
 ## Docs & Resources
-- [Limitless API Docs](https://docs.limitless.exchange)
+- [Limitless API Docs](https://docs.limitless.exchange) — Full API reference
+- [Limitless MCP Server](https://docs.limitless.exchange/mcp) — Live docs via Model Context Protocol
 - [Python SDK](https://pypi.org/project/limitless-py/)
 - [TypeScript SDK](https://www.npmjs.com/package/@limitless-exchange/sdk)
 - [OpenClaw](https://github.com/openclaw/openclaw) — AI agent platform
+
+### Using the MCP Documentation Server
+
+The Limitless MCP server provides live, searchable documentation that AI agents can query:
+
+```bash
+# Endpoint: https://docs.limitless.exchange/mcp
+# Use with AI agents that support MCP to query the knowledge base
+```
+
+This is especially useful for getting up-to-date API examples and resolving integration issues without reading through static docs.
 
 ## Safety
 
@@ -223,6 +252,26 @@ src/
 - Use a dedicated wallet with limited funds
 - Set MAX_TOTAL_EXPOSURE_USD conservatively
 - The strategies included are starting points — test thoroughly before running with real money
+
+## Troubleshooting
+
+### "Portfolio balance is $0" warning
+
+The bot checks your **wallet's USDC balance on-chain**, not a separate deposit. Make sure:
+- You have USDC on Base chain (not Ethereum mainnet)
+- Your wallet is connected to Base network
+- The `.env` file has the correct private key
+
+### Orders failing with "insufficient funds"
+
+You need **ETH on Base** for gas fees. Bridge a small amount (~$2) from Ethereum or buy on Base.
+
+### "Market not approved" error
+
+Run the approval command before trading:
+```bash
+npm start approve <market-slug>
+```
 
 ## License
 MIT
