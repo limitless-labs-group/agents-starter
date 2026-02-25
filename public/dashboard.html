@@ -36,9 +36,18 @@
 
   /* ── Hero KPIs ──────────────────────────────────────────────────────────── */
   .hero { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:18px; }
-  .hc { background:var(--bg1); border:1px solid var(--border); border-radius:8px; padding:14px; text-align:center; }
+  .hc { background:var(--bg1); border:1px solid var(--border); border-radius:8px; padding:14px; text-align:center; position:relative; overflow:hidden; }
+  .hc::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent, var(--dim), transparent); opacity:0.3; }
+  .hc.positive { border-color:rgba(0,255,136,0.3); background:linear-gradient(180deg, rgba(0,255,136,0.05), var(--bg1)); }
+  .hc.positive::before { background:linear-gradient(90deg, transparent, var(--green), transparent); opacity:0.5; }
+  .hc.negative { border-color:rgba(255,68,102,0.3); background:linear-gradient(180deg, rgba(255,68,102,0.05), var(--bg1)); }
+  .hc.negative::before { background:linear-gradient(90deg, transparent, var(--red), transparent); opacity:0.5; }
   .hv { font-size:1.85em; font-weight:800; }
   .hl { font-size:0.58em; color:#3a3a4a; text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
+
+  /* ── Stats highlight ─────────────────────────────────────────────────────── */
+  .stat-highlight { animation:glow 2s ease-in-out infinite; }
+  @keyframes glow { 0%,100% { text-shadow:0 0 10px currentColor; } 50% { text-shadow:0 0 20px currentColor, 0 0 30px currentColor; } }
 
   /* ── Panels ─────────────────────────────────────────────────────────────── */
   .panels { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
@@ -76,16 +85,6 @@
 
   /* ── P&L chart container ─────────────────────────────────────────────────── */
   #pnl-chart { height:180px; position:relative; min-height:140px; }
-
-  /* ── Claim button ─────────────────────────────────────────────────────────── */
-  .btn-claim {
-    background:rgba(68,136,255,0.15); color:var(--blue);
-    border:1px solid rgba(68,136,255,0.35); border-radius:4px;
-    padding:3px 10px; font-size:0.72em; cursor:pointer;
-    transition:all .15s; font-family:inherit;
-  }
-  .btn-claim:hover  { background:rgba(68,136,255,0.3); }
-  .btn-claim:disabled { opacity:0.4; cursor:default; }
 
   /* ── Responsive ──────────────────────────────────────────────────────────── */
   @media (max-width:768px) {
@@ -179,7 +178,7 @@
       <h2>📜 Recent Trades</h2>
       <table>
         <thead><tr>
-          <th>Time</th><th>Market</th><th>Side</th><th>Amount</th>
+          <th>Time</th><th>Market</th><th>Side</th><th>Amount</th><th>Status</th>
         </tr></thead>
         <tbody id="tbl-trades"></tbody>
       </table>
@@ -189,14 +188,14 @@
 
   <!-- ── Claimable Winnings ────────────────────────────────────────────── -->
   <div class="panel-full">
-    <h2>🏆 Claimable Winnings <span class="p" id="claim-n"></span></h2>
+    <h2>🏆 Claimable Winnings <span class="p" id="claim-n"></span> <span style="font-size:0.6em;color:var(--dim)">(auto-claimed by bot)</span></h2>
     <table>
       <thead><tr>
-        <th>Market</th><th>Side</th><th>Expected Payout</th><th>Action</th>
+        <th>Market</th><th>Side</th><th>Expected Payout</th>
       </tr></thead>
       <tbody id="tbl-claimable"></tbody>
     </table>
-    <div id="claimable-empty" class="empty">Loading…</div>
+    <div id="claimable-empty" class="empty">No claimable winnings (bot auto-claims)</div>
   </div>
 </div>
 
@@ -265,27 +264,6 @@ function renderBars(el, data) {
   }).join('');
 }
 
-/* ── Claim action ─────────────────────────────────────────────────────────── */
-async function claimMarket(slug, btn) {
-  btn.disabled = true;
-  btn.textContent = 'Claiming…';
-  try {
-    const r = await fetch(`/api/claim/${encodeURIComponent(slug)}`, { method: 'POST' });
-    const d = await r.json();
-    if (d.ok) {
-      btn.textContent = 'Claimed';
-      btn.style.background = 'var(--green-bg)';
-      btn.style.color = 'var(--green)';
-    } else {
-      btn.textContent = 'Failed';
-      btn.style.color = 'var(--red)';
-    }
-  } catch {
-    btn.textContent = 'Error';
-    btn.style.color = 'var(--red)';
-  }
-}
-
 /* ── Main data loader ─────────────────────────────────────────────────────── */
 async function load() {
   try {
@@ -303,30 +281,46 @@ async function load() {
     }
 
     /* Helper: set hero card */
-    const setHero = (id, txt, cls) => {
+    const setHero = (id, txt, cls, highlight = false) => {
       const e = document.getElementById(id);
       if (!e) return;
       e.textContent = txt;
-      if (cls) e.className = 'hv ' + cls;
+      if (cls) e.className = 'hv ' + cls + (highlight ? ' stat-highlight' : '');
+      // Add positive/negative class to parent card
+      const card = e.closest('.hc');
+      if (card) {
+        card.classList.remove('positive', 'negative');
+        if (cls === 'g') card.classList.add('positive');
+        if (cls === 'r') card.classList.add('negative');
+      }
     };
 
     // ── Hero KPIs ──────────────────────────────────────────────────────────
-    const bal  = parseFloat(d.overview?.balance ?? d.balance ?? '0') || 0;
-    setHero('h-balance', '$' + bal.toFixed(2), 'a');
+    const walletBal = parseFloat(d.walletBalance ?? '0') || 0;
+    const posValue = parseFloat(d.positionValue ?? '0') || 0;
+    const totalBal = parseFloat(d.overview?.balance ?? d.balance ?? '0') || 0;
+    
+    // Show total as main balance, with breakdown on sub-label
+    setHero('h-balance', '$' + totalBal.toFixed(2), 'a');
+    document.querySelector('#h-balance + .hl').innerHTML = 
+      `Wallet: $${walletBal.toFixed(2)} · Positions: $${posValue.toFixed(2)}`;
 
     const pnlN = parseFloat(d.overview?.pnl ?? d.totalPnl ?? '0') || 0;
-    setHero('h-pnl', (pnlN >= 0 ? '+' : '') + '$' + Math.abs(pnlN).toFixed(2), pc(pnlN));
+    const pnlHighlight = Math.abs(pnlN) > 1; // Highlight if P&L > $1
+    setHero('h-pnl', (pnlN >= 0 ? '+' : '') + '$' + Math.abs(pnlN).toFixed(2), pc(pnlN), pnlHighlight);
 
     const wrN  = parseFloat(d.overview?.winRate ?? d.winRate ?? '0') || 0;
-    setHero('h-wr', wrN.toFixed(1) + '%', wrN >= 55 ? 'g' : wrN >= 45 ? 'a' : 'r');
+    const wrHighlight = wrN >= 60; // Highlight if win rate >= 60%
+    setHero('h-wr', wrN.toFixed(1) + '%', wrN >= 55 ? 'g' : wrN >= 45 ? 'a' : 'r', wrHighlight);
 
     const posArr = d.positions || [];
-    setHero('h-pos', String(posArr.length), posArr.length > 0 ? 'a' : 'd');
+    const activePosCount = posArr.filter(p => parseFloat(p.size || 0) > 0).length;
+    setHero('h-pos', String(activePosCount), activePosCount > 0 ? 'a' : 'd');
 
     const claimArr = d.claimable || [];
     if (claimArr.length) {
       const total = claimArr.reduce((s, c) => s + (parseFloat(c.expectedPayout) || 0), 0);
-      setHero('h-claim', '$' + total.toFixed(2), 'p');
+      setHero('h-claim', '$' + total.toFixed(2), 'p', true);
     } else {
       setHero('h-claim', '—', 'd');
     }
@@ -335,20 +329,24 @@ async function load() {
     drawPnl(document.getElementById('pnl-chart'), d.cumPnl || []);
 
     // ── Open Positions ──────────────────────────────────────────────────────
+    // Filter out positions with size <= 0 (they're closed/resolved)
+    const activePos = posArr.filter(p => parseFloat(p.size || 0) > 0);
     const posN = document.getElementById('pos-n');
-    posN.textContent = posArr.length ? '(' + posArr.length + ')' : '';
+    posN.textContent = activePos.length ? '(' + activePos.length + ')' : '';
     const posEmpty = document.getElementById('pos-empty');
-    posEmpty.style.display  = posArr.length ? 'none' : 'block';
+    posEmpty.style.display  = activePos.length ? 'none' : 'block';
     posEmpty.textContent    = 'No open positions';
-    document.getElementById('tbl-positions').innerHTML = posArr.map(p => {
+    document.getElementById('tbl-positions').innerHTML = activePos.map(p => {
       const side    = p.side || '—';
       const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
       // Price is already in cents from API
       const mark    = p.currentPrice != null ? p.currentPrice + '¢' : '—';
       const upnl    = p.unrealizedPnl != null
         ? `<span class="${pc(p.unrealizedPnl)}">${ps(p.unrealizedPnl)}</span>` : '<span class="d">—</span>';
+      const marketUrl = p.marketSlug ? `https://limitless.exchange/markets/${p.marketSlug}` : null;
+      const marketLink = marketUrl ? `<a href="${marketUrl}" target="_blank" style="color:var(--text)">${trunc(p.marketTitle, 28)} ↗</a>` : trunc(p.marketTitle, 32);
       return `<tr>
-        <td title="${p.marketSlug || ''}">${trunc(p.marketTitle, 32)}</td>
+        <td title="${p.marketSlug || ''}">${marketLink}</td>
         <td><span class="badge ${badgeCls}">${side}</span></td>
         <td>${p.size != null ? '$' + parseFloat(p.size).toFixed(2) : '—'}</td>
         <td class="d">${mark}</td>
@@ -386,12 +384,16 @@ async function load() {
       const side = t.side || t.outcome || '—';
       const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
       const title = t.marketTitle || (t.market?.title) || t.marketId || '—';
-      const amt   = t.tradeAmountUSD || t.tradeAmount;
+      const amt   = t.filledAmount || t.tradeAmountUSD || t.tradeAmount;
+      const statusBadge = t.filled ? '<span class="badge b-w">✓</span>' : 
+                         t.success ? '<span class="badge b-p">⏳</span>' : 
+                         '<span class="badge b-l">✗</span>';
       return `<tr>
         <td class="d">${ts}</td>
         <td>${trunc(typeof title === 'string' ? title : String(title), 28)}</td>
         <td><span class="badge ${badgeCls}">${side}</span></td>
         <td>${amt != null ? '$' + parseFloat(amt).toFixed(2) : '—'}</td>
+        <td>${statusBadge}</td>
       </tr>`;
     }).join('');
 
@@ -399,13 +401,14 @@ async function load() {
     document.getElementById('claim-n').textContent = claimArr.length ? '(' + claimArr.length + ')' : '';
     const claimEmpty = document.getElementById('claimable-empty');
     claimEmpty.style.display = claimArr.length ? 'none' : 'block';
-    claimEmpty.textContent   = 'No claimable winnings';
+    claimEmpty.textContent   = 'No claimable winnings (bot auto-claims)';
     document.getElementById('tbl-claimable').innerHTML = claimArr.map(c => {
+      const claimUrl = c.marketSlug ? `https://limitless.exchange/markets/${c.marketSlug}` : null;
+      const claimLink = claimUrl ? `<a href="${claimUrl}" target="_blank" style="color:var(--text)">${trunc(c.marketTitle || c.marketSlug, 45)} ↗</a>` : trunc(c.marketTitle || c.marketSlug, 50);
       return `<tr>
-        <td>${trunc(c.marketTitle || c.marketSlug, 50)}</td>
+        <td>${claimLink}</td>
         <td><span class="badge b-w">${c.side || '—'}</span></td>
         <td><span class="badge b-purple">${c.expectedPayout || '—'}</span></td>
-        <td><button class="btn-claim" onclick="claimMarket('${c.marketSlug}',this)">Claim</button></td>
       </tr>`;
     }).join('');
 

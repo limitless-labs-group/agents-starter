@@ -9,5 +9,11 @@ iteration-log.jsonl
 experiments/
 .DS_Store
 
+# Runtime data files (user-specific)
+data/*.json
+data/*.jsonl
+data/*-backup-*
+
 # Work-in-progress: Hermes SSE price feed (not ready for public)
 src/core/price-feeds/hermes.ts
+data/oracle-arb-positions.json

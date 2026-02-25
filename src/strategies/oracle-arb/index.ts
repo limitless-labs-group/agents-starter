@@ -2,12 +2,28 @@ import { BaseStrategy, StrategyConfig, TradeDecision } from '../base-strategy.js
 import { LimitlessClient } from '../../core/limitless/markets.js';
 import { TradingClient } from '../../core/limitless/trading.js';
 import { HermesClient } from '../../core/price-feeds/hermes.js';
-import { createPublicClient, http, parseAbi, formatUnits } from 'viem';
+import { createPublicClient, http, parseAbi, formatUnits, PublicClient } from 'viem';
 import { base } from 'viem/chains';
 import fs from 'fs/promises';
 import path from 'path';
 
 const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const;
+
+// Fallback Base RPC endpoints
+const BASE_RPCS = [
+    'https://mainnet.base.org',
+    'https://base-rpc.publicnode.com',
+    'https://base.llamarpc.com',
+    'https://base.drpc.org',
+];
+
+let rpcIndex = 0;
+
+function getNextRpc(): string {
+    const url = BASE_RPCS[rpcIndex];
+    rpcIndex = (rpcIndex + 1) % BASE_RPCS.length;
+    return url;
+}
 
 export interface OracleArbConfig extends StrategyConfig {
     assets: string[]; // e.g., ['BTC', 'ETH', 'SOL']
@@ -41,13 +57,18 @@ export class OracleArbStrategy extends BaseStrategy {
     private lastBalanceCheck: number = 0;
     private tickCount: number = 0;
 
+    private baseIntervalMs: number = 10000;
+    private goldenIntervalMs: number = 3000;
+
     constructor(
         config: StrategyConfig,
         deps: { limitless: LimitlessClient; trading: TradingClient }
     ) {
         super(config, deps);
         this.hermes = new HermesClient();
-        this.tickIntervalMs = 10000; // Scan every 10s
+        this.baseIntervalMs = 10000; // Normal: scan every 10s
+        this.goldenIntervalMs = 3000; // Golden window: scan every 3s
+        this.tickIntervalMs = this.baseIntervalMs;
 
         // Store positions persistently
         this.dataDir = process.env.DATA_DIR || './data';
@@ -91,31 +112,68 @@ export class OracleArbStrategy extends BaseStrategy {
      * Returns available USDC balance for trading
      */
     private async checkPortfolioBalance(): Promise<number> {
-        try {
-            if (!this.walletAddress) {
-                this.logger.warn('Cannot check balance: wallet address not set');
-                return 0;
+        for (let i = 0; i < BASE_RPCS.length; i++) {
+            const rpcUrl = getNextRpc();
+            try {
+                if (!this.walletAddress) {
+                    this.logger.warn('Cannot check balance: wallet address not set');
+                    return 0;
+                }
+
+                const publicClient = createPublicClient({
+                    chain: base,
+                    transport: http(rpcUrl),
+                });
+
+                const balance = await publicClient.readContract({
+                    address: USDC_ADDRESS,
+                    abi: parseAbi(['function balanceOf(address) view returns (uint256)']),
+                    functionName: 'balanceOf',
+                    args: [this.walletAddress as `0x${string}`],
+                });
+
+                this.portfolioBalance = parseFloat(formatUnits(balance, 6));
+                this.lastBalanceCheck = Date.now();
+                this.logger.info({ balance: this.portfolioBalance, rpc: rpcUrl }, 'Wallet USDC balance');
+                return this.portfolioBalance;
+            } catch (e: any) {
+                this.logger.warn({ rpc: rpcUrl, err: e.message }, 'RPC failed, trying next...');
             }
-
-            const publicClient = createPublicClient({
-                chain: base,
-                transport: http(),
-            });
-
-            const balance = await publicClient.readContract({
-                address: USDC_ADDRESS,
-                abi: parseAbi(['function balanceOf(address) view returns (uint256)']),
-                functionName: 'balanceOf',
-                args: [this.walletAddress as `0x${string}`],
-            });
-
-            this.portfolioBalance = parseFloat(formatUnits(balance, 6));
-            this.lastBalanceCheck = Date.now();
-            this.logger.info({ balance: this.portfolioBalance }, 'Wallet USDC balance');
-        } catch (e: any) {
-            this.logger.error({ err: e.message }, 'Error checking wallet balance');
         }
+        this.logger.error('All RPCs failed for balance check');
         return this.portfolioBalance;
+    }
+
+    /**
+     * Check if we're in the "golden window" - the last 3 minutes of each hour
+     * when markets are about to expire and resolution is imminent.
+     */
+    private isGoldenWindow(): boolean {
+        const now = new Date();
+        const minute = now.getUTCMinutes();
+        const second = now.getUTCSeconds();
+        // Golden window: xx:57:00 to xx:03:00 (across hour boundary)
+        return (minute >= 57) || (minute <= 3);
+    }
+
+    /**
+     * Adjust tick interval based on time of hour
+     */
+    private adjustTickInterval(): void {
+        const inGoldenWindow = this.isGoldenWindow();
+        const targetInterval = inGoldenWindow ? this.goldenIntervalMs : this.baseIntervalMs;
+        
+        if (this.tickIntervalMs !== targetInterval) {
+            this.tickIntervalMs = targetInterval;
+            this.logger.info(
+                { 
+                    interval: `${targetInterval}ms`, 
+                    mode: inGoldenWindow ? 'GOLDEN' : 'NORMAL',
+                    time: new Date().toISOString()
+                }, 
+                'Scan frequency adjusted'
+            );
+        }
     }
 
     async tick(): Promise<TradeDecision[]> {
@@ -123,6 +181,9 @@ export class OracleArbStrategy extends BaseStrategy {
         const config = this.config as OracleArbConfig;
 
         this.tickCount++;
+
+        // Adjust scanning frequency based on time of hour
+        this.adjustTickInterval();
 
         // Check portfolio balance periodically (every 60 seconds)
         if (Date.now() - this.lastBalanceCheck > 60000) {
@@ -139,6 +200,23 @@ export class OracleArbStrategy extends BaseStrategy {
                 );
             }
             return decisions;
+        }
+
+        // Clean up expired positions from count
+        const now = Date.now();
+        let expiredCount = 0;
+        for (const [slug, pos] of this.positions) {
+            // Position timestamp is when we entered - if > 2 hours ago, consider expired
+            // Most markets resolve within 1 hour of expiry
+            const hoursSinceEntry = (now - pos.timestamp) / (1000 * 60 * 60);
+            if (hoursSinceEntry > 2) {
+                this.positions.delete(slug);
+                expiredCount++;
+            }
+        }
+        if (expiredCount > 0) {
+            this.logger.info({ expired: expiredCount, remaining: this.positions.size }, 'Cleaned up expired positions');
+            await this.savePositions();
         }
 
         // Don't exceed max positions

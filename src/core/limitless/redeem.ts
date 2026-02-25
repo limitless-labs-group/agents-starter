@@ -232,6 +232,7 @@ export class RedeemClient {
     /**
      * Find all claimable positions across a list of market slugs.
      * Useful when you want to batch-check many markets before redeeming.
+     * Runs checks in parallel with concurrency limiting for speed.
      */
     async findClaimablePositions(marketSlugs: string[]): Promise<ClaimablePosition[]> {
         const claimable: ClaimablePosition[] = [];
@@ -240,49 +241,61 @@ export class RedeemClient {
             ...(process.env.LIMITLESS_API_KEY ? { 'X-API-Key': process.env.LIMITLESS_API_KEY } : {}),
         };
 
-        for (const slug of marketSlugs) {
-            try {
-                const res = await fetch(`${API_BASE}/markets/${slug}`, { headers });
-                if (!res.ok) continue;
+        // Process in batches of 3 to avoid overwhelming the API/rpc
+        const batchSize = 3;
+        const uniqueSlugs = [...new Set(marketSlugs)];
+        
+        for (let i = 0; i < uniqueSlugs.length; i += batchSize) {
+            const batch = uniqueSlugs.slice(i, i + batchSize);
+            const batchResults = await Promise.all(
+                batch.map(async (slug) => {
+                    try {
+                        const res = await fetch(`${API_BASE}/markets/${slug}`, { headers });
+                        if (!res.ok) return null;
 
-                const market = await res.json();
+                        const market = await res.json();
 
-                if (market.status !== 'RESOLVED') continue;
+                        if (market.status !== 'RESOLVED') return null;
 
-                if (market.winningOutcomeIndex === null || market.winningOutcomeIndex === undefined) {
-                    logger.debug(
-                        { slug },
-                        'Market RESOLVED but winningOutcomeIndex is null — skipping (resolution still propagating)',
-                    );
-                    continue;
-                }
+                        if (market.winningOutcomeIndex === null || market.winningOutcomeIndex === undefined) {
+                            logger.debug(
+                                { slug },
+                                'Market RESOLVED but winningOutcomeIndex is null — skipping (resolution still propagating)',
+                            );
+                            return null;
+                        }
 
-                const conditionId = market.conditionId as `0x${string}`;
-                const winningIndex = market.winningOutcomeIndex;
-                const winningSide = winningIndex === 0 ? 'YES' : 'NO';
+                        const conditionId = market.conditionId as `0x${string}`;
+                        const winningIndex = market.winningOutcomeIndex;
+                        const winningSide = winningIndex === 0 ? 'YES' : 'NO';
 
-                const tokenId = winningIndex === 0
-                    ? BigInt(market.tokens?.yes || 0)
-                    : BigInt(market.tokens?.no || 0);
+                        const tokenId = winningIndex === 0
+                            ? BigInt(market.tokens?.yes || 0)
+                            : BigInt(market.tokens?.no || 0);
 
-                if (tokenId === 0n) continue;
+                        if (tokenId === 0n) return null;
 
-                const balance = await this.getPositionBalance(tokenId);
+                        const balance = await this.getPositionBalance(tokenId);
 
-                if (balance > 0n) {
-                    claimable.push({
-                        marketSlug: slug,
-                        marketTitle: market.title,
-                        conditionId,
-                        winningOutcomeIndex: winningIndex,
-                        side: winningSide,
-                        balance,
-                        expectedPayout: formatUnits(balance, 6) + ' USDC',
-                    });
-                }
-            } catch (e: any) {
-                logger.debug({ slug, error: e.message }, 'Error checking market');
-            }
+                        if (balance > 0n) {
+                            return {
+                                marketSlug: slug,
+                                marketTitle: market.title,
+                                conditionId,
+                                winningOutcomeIndex: winningIndex,
+                                side: winningSide,
+                                balance,
+                                expectedPayout: formatUnits(balance, 6) + ' USDC',
+                            };
+                        }
+                    } catch (e: any) {
+                        logger.debug({ slug, error: e.message }, 'Error checking market');
+                    }
+                    return null;
+                })
+            );
+            
+            claimable.push(...batchResults.filter((r): r is ClaimablePosition => r !== null));
         }
 
         return claimable;
@@ -376,47 +389,68 @@ async function main() {
         }
 
         case 'claim-all': {
-            // Fetch portfolio positions via the API (no dependency on local files).
-            // Works for any public user — no learnings.jsonl required.
-            console.log('Fetching portfolio positions from API...');
+            // Fetch portfolio positions via the API (with fallback to local file).
+            console.log('Fetching portfolio positions...');
 
             const headers = {
                 'Content-Type': 'application/json',
                 ...(process.env.LIMITLESS_API_KEY ? { 'X-API-Key': process.env.LIMITLESS_API_KEY } : {}),
             };
 
-            const posRes = await fetch(`${API_BASE}/portfolio/positions`, { headers });
-            if (!posRes.ok) {
-                console.error(`Failed to fetch portfolio: ${posRes.status}`);
-                break;
+            let slugs: string[] = [];
+            
+            // Try API first
+            try {
+                const posRes = await fetch(`${API_BASE}/portfolio/positions`, { headers });
+                if (posRes.ok) {
+                    const raw = await posRes.json();
+                    const positions: any[] = Array.isArray(raw)
+                        ? raw
+                        : [
+                            ...(raw.clob ?? []),
+                            ...(raw.amm ?? []),
+                            ...(raw.group ?? []),
+                        ];
+                    
+                    const slugSet = new Set<string>();
+                    for (const pos of positions) {
+                        const slug = pos.market?.slug ?? pos.marketSlug;
+                        if (slug) slugSet.add(slug);
+                    }
+                    slugs = [...slugSet];
+                    console.log(`Found ${slugs.length} markets from API`);
+                }
+            } catch (e) {
+                console.log('API fetch failed, falling back to local file');
+            }
+            
+            // Fallback to local positions file
+            if (slugs.length === 0) {
+                try {
+                    const fs = await import('fs');
+                    const path = await import('path');
+                    const posFile = path.default.join(process.cwd(), 'data', 'oracle-arb-positions.json');
+                    if (fs.existsSync(posFile)) {
+                        const content = fs.readFileSync(posFile, 'utf8');
+                        const positions = JSON.parse(content);
+                        const slugSet = new Set<string>();
+                        for (const [slug, pos] of Object.entries(positions)) {
+                            if (slug) slugSet.add(slug);
+                        }
+                        slugs = [...slugSet];
+                        console.log(`Found ${slugs.length} markets from local file`);
+                    }
+                } catch (e: any) {
+                    console.error('Failed to read local positions:', e.message);
+                }
             }
 
-            const raw = await posRes.json();
-
-            // API may return { clob: [...], amm: [...], group: [...] } or a flat array.
-            const positions: any[] = Array.isArray(raw)
-                ? raw
-                : [
-                    ...(raw.clob ?? []),
-                    ...(raw.amm ?? []),
-                    ...(raw.group ?? []),
-                ];
-
-            if (positions.length === 0) {
+            if (slugs.length === 0) {
                 console.log('No portfolio positions found.');
                 break;
             }
 
-            // Extract unique market slugs from all positions.
-            const slugSet = new Set<string>();
-            for (const pos of positions) {
-                const slug = pos.market?.slug ?? pos.marketSlug;
-                if (slug) slugSet.add(slug);
-            }
-
-            const slugs = [...slugSet];
-            console.log(`Found ${slugs.length} unique markets in portfolio — checking for claimable winnings...`);
-
+            console.log(`Checking ${slugs.length} markets for claimable winnings...`);
             const result = await client.claimAll(slugs);
             console.log('Claim result:', result);
             break;
