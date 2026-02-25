@@ -51,7 +51,7 @@ try {
     trading  = new TradingClient(limitless, signer);
     redeemer = new RedeemClient();
 } catch {
-    console.warn('⚠  PRIVATE_KEY not set — trading/claiming features disabled.');
+    console.warn('WARNING: PRIVATE_KEY not set — trading/claiming features disabled.');
 }
 
 // ── SSE broadcast infrastructure ──────────────────────────────────────────────
@@ -449,19 +449,19 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 server.listen(PORT, '127.0.0.1', () => {
-    console.log('\n📊 Limitless Agent Dashboard');
+    console.log('\nLimitless Agent Dashboard');
     console.log(`   → http://localhost:${PORT}\n`);
     console.log('   SSE live updates every 30 s. Press Ctrl+C to stop.\n');
     if (!walletAddress) {
-        console.warn('   ⚠  No PRIVATE_KEY set — order & claim endpoints disabled.\n');
+        console.warn('   WARNING: No PRIVATE_KEY set — order & claim endpoints disabled.\n');
     }
 });
 
 server.on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {
-        console.error(`\n❌ Port ${PORT} already in use. Set DASHBOARD_PORT= to override.\n`);
+        console.error(`\nERROR: Port ${PORT} already in use. Set DASHBOARD_PORT= to override.\n`);
     } else {
-        console.error('\n❌ Server error:', err.message);
+        console.error('\nERROR: Server error:', err.message);
     }
     process.exit(1);
 });

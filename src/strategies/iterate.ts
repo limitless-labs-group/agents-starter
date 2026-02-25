@@ -86,7 +86,7 @@ async function scanMarkets(): Promise<string> {
     if (isSkewed || isArbable || isExpiringSoon) {
       oppCount++;
       const flags = [
-        isSkewed ? '📊 SKEWED' : '',
+        isSkewed ? ' SKEWED' : '',
         isArbable ? `💰 ARB (${((1-total)*100).toFixed(1)}%)` : '',
         isExpiringSoon ? `⏰ ${minutesToExpiry.toFixed(0)}m` : '',
       ].filter(Boolean).join(' ');
@@ -133,11 +133,11 @@ async function analyze(): Promise<string> {
     const marketScan = await scanMarkets();
     output += marketScan;
   } catch (e: any) {
-    output += `\n⚠️ Market scan failed: ${e.message}\n`;
+    output += `\nWARNING: Market scan failed: ${e.message}\n`;
   }
   
   // Recommendations
-  output += '\n💡 Recommendations:\n';
+  output += '\n Recommendations:\n';
   if (recommendations.length === 0) {
     output += '  None — keep iterating.\n';
   } else {

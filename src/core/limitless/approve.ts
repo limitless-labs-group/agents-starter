@@ -72,7 +72,7 @@ export async function approveMarketVenue(marketSlug: string) {
         }
     }
 
-    logger.info('✅ All approvals complete!');
+    logger.info('SUCCESS: All approvals complete!');
 }
 
 async function approveUsdc(publicClient: any, walletClient: any, owner: `0x${string}`, spender: `0x${string}`) {

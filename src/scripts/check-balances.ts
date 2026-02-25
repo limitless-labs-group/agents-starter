@@ -22,7 +22,7 @@ async function main() {
     functionName: 'balanceOf',
     args: [address],
   });
-  console.log('1️⃣  Wallet USDC (on-chain): $' + formatUnits(walletBalance, 6));
+  console.log('  Wallet USDC (on-chain): $' + formatUnits(walletBalance, 6));
   console.log('    → This is USDC in your wallet, not yet deposited to Limitless');
   console.log();
 
@@ -34,15 +34,15 @@ async function main() {
     });
     if (profileRes.ok) {
       const profile = await profileRes.json();
-      console.log('2️⃣  Limitless Portfolio Balance: $' + (profile.balance || 0));
+      console.log('  Limitless Portfolio Balance: $' + (profile.balance || 0));
       console.log('    → This is USDC deposited and available for trading');
       console.log('    Portfolio ID:', profile.id);
     } else {
-      console.log('2️⃣  Limitless Portfolio: Not created yet (status ' + profileRes.status + ')');
+      console.log('  Limitless Portfolio: Not created yet (status ' + profileRes.status + ')');
       console.log('    → You need to deposit USDC to create a portfolio');
     }
   } catch(e: any) {
-    console.log('2️⃣  Limitless Portfolio: Error -', e.message);
+    console.log('  Limitless Portfolio: Error -', e.message);
   }
   console.log();
 
@@ -55,7 +55,7 @@ async function main() {
     if (positionsRes.ok) {
       const positions = await positionsRes.json();
       const openPositions = positions.filter((p: any) => p.status === 'OPEN');
-      console.log('3️⃣  Open Positions:', openPositions.length);
+      console.log('  Open Positions:', openPositions.length);
       if (openPositions.length > 0) {
         for (const pos of openPositions.slice(0, 5)) {
           const size = formatUnits(BigInt(pos.collateralAmount || 0), 6);
@@ -66,10 +66,10 @@ async function main() {
         console.log('    → No open positions');
       }
     } else {
-      console.log('3️⃣  Open Positions: None (new account)');
+      console.log('  Open Positions: None (new account)');
     }
   } catch(e: any) {
-    console.log('3️⃣  Positions: Error -', e.message);
+    console.log('  Positions: Error -', e.message);
   }
   console.log();
 
@@ -81,7 +81,7 @@ async function main() {
     if (eventsRes.ok) {
       const events = await eventsRes.json();
       const claimable = events.filter((e: any) => e.type === 'RESOLVED' && !e.claimed);
-      console.log('4️⃣  Claimable Winnings:', claimable.length + ' markets');
+      console.log('  Claimable Winnings:', claimable.length + ' markets');
       if (claimable.length > 0) {
         for (const win of claimable.slice(0, 3)) {
           console.log('    - ' + win.market?.title + ': $' + formatUnits(BigInt(win.amount || 0), 6));
@@ -92,7 +92,7 @@ async function main() {
       }
     }
   } catch(e: any) {
-    console.log('4️⃣  Winnings check: Error -', e.message);
+    console.log('  Winnings check: Error -', e.message);
   }
 }
 

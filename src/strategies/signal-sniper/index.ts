@@ -133,7 +133,7 @@ export class SignalSniperStrategy extends BaseStrategy {
                                     yesPrice, 
                                     fairYes,
                                     edge: yesEdge 
-                                }, '🎯 SIGNAL: BUY YES');
+                                }, ' SIGNAL: BUY YES');
 
                                 decisions.push({
                                     action: 'BUY',
@@ -166,7 +166,7 @@ export class SignalSniperStrategy extends BaseStrategy {
                                     noPrice, 
                                     fairNo: 1 - fairYes,
                                     edge: noEdge 
-                                }, '🎯 SIGNAL: BUY NO');
+                                }, ' SIGNAL: BUY NO');
 
                                 decisions.push({
                                     action: 'BUY',

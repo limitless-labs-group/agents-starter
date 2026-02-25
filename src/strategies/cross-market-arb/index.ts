@@ -92,7 +92,7 @@ export class ComplementArbStrategy extends BaseStrategy {
                     no: noPrice.toFixed(3),
                     total: totalCost.toFixed(3),
                     profit: profitPercent.toFixed(1) + '%',
-                }, '🎯 COMPLEMENT ARB FOUND');
+                }, ' COMPLEMENT ARB FOUND');
 
                 // Buy both sides
                 const betPerSide = config.maxPositionUsd / 2;

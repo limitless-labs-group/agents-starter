@@ -129,7 +129,7 @@ This skill gives an AI agent the complete toolkit to:
 
 ## 2. Live Documentation (MCP)
 
-### ⚠️ CRITICAL: Always Query the Docs First
+### CRITICAL: Always Query the Docs First
 
 Limitless Exchange provides a live documentation search endpoint via the **Model Context Protocol (MCP)**. This is the single most important tool for staying accurate. The API evolves — endpoints change, parameters get added, response formats shift. **Before implementing any API call, verify it against the live docs.**
 
@@ -1298,7 +1298,7 @@ All contracts are on **Base chain** (chainId: `8453`).
 | **Exchange** | *Dynamic — from `market.venue.exchange`* | CLOB order matching (verifyingContract for EIP-712) |
 | **Adapter** | *Dynamic — from `market.venue.adapter`* | NegRisk adapter for group markets |
 
-**⚠️ Never hardcode exchange/adapter addresses.** They vary per market and may change. Always fetch from `market.venue`.
+**WARNING: Never hardcode exchange/adapter addresses.** They vary per market and may change. Always fetch from `market.venue`.
 
 **Block Explorer:** [basescan.org](https://basescan.org)
 
@@ -1826,7 +1826,7 @@ console.log(`Avg edge on wins: ${stats.avgEdgeOnWins.toFixed(1)}%`);
 console.log(`Avg edge on losses: ${stats.avgEdgeOnLosses.toFixed(1)}%`);
 
 const suggestions = suggestAdjustments();
-suggestions.forEach(s => console.log(`💡 ${s}`));
+suggestions.forEach(s => console.log(`SUGGESTION: ${s}`));
 ```
 
 ### Approve Tokens for a New Market

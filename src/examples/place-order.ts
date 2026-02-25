@@ -110,7 +110,7 @@ async function main() {
     const { filled, balance } = await portfolio.verifyFill(market.slug, SIDE);
 
     if (filled) {
-        console.log(`\n✅ Order filled! You hold ${Number(balance) / 1e6} ${SIDE} contracts.`);
+        console.log(`\nSUCCESS: Order filled! You hold ${Number(balance) / 1e6} ${SIDE} contracts.`);
     } else {
         console.log('\n⏳ Order not yet filled — it may still be resting in the orderbook.');
         console.log('   Check again later, or cancel with: trading.cancelAllOrders(slug)');

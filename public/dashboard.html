@@ -115,7 +115,7 @@
 <!-- ── Hero KPIs ─────────────────────────────────────────────────────────── -->
 <div class="section">
   <div class="section-header">
-    <span class="section-title g">📊 Portfolio</span>
+    <span class="section-title g">Portfolio</span>
     <span class="section-badge sb-live">LIVE</span>
     <span class="section-meta">
       <a href="https://limitless.exchange" target="_blank" style="color:var(--green)">Limitless Exchange ↗</a>
@@ -152,7 +152,7 @@
       <div id="pnl-chart"></div>
     </div>
     <div class="panel">
-      <h2>🔴 Open Positions <span class="a" id="pos-n"></span></h2>
+      <h2>Open Positions <span class="a" id="pos-n"></span></h2>
       <table>
         <thead><tr>
           <th>Market</th><th>Side</th><th>Size</th><th>Mark</th><th>uPnL</th>
@@ -273,15 +273,15 @@ async function claimMarket(slug, btn) {
     const r = await fetch(`/api/claim/${encodeURIComponent(slug)}`, { method: 'POST' });
     const d = await r.json();
     if (d.ok) {
-      btn.textContent = '✅ Claimed';
+      btn.textContent = 'Claimed';
       btn.style.background = 'var(--green-bg)';
       btn.style.color = 'var(--green)';
     } else {
-      btn.textContent = '❌ Failed';
+      btn.textContent = 'Failed';
       btn.style.color = 'var(--red)';
     }
   } catch {
-    btn.textContent = '❌ Error';
+    btn.textContent = 'Error';
     btn.style.color = 'var(--red)';
   }
 }
@@ -414,7 +414,7 @@ async function load() {
     document.getElementById('dot').style.background = 'var(--green)';
 
   } catch(e) {
-    document.getElementById('ts').textContent  = '❌ ' + e.message;
+    document.getElementById('ts').textContent  = 'ERROR: ' + e.message;
     document.getElementById('dot').style.background  = 'var(--red)';
     document.getElementById('dot').style.animation   = 'none';
   }

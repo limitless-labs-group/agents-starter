@@ -26,12 +26,12 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 async function main() {
     // Validate env
     if (!process.env.PRIVATE_KEY) {
-        console.error('❌ PRIVATE_KEY not set in .env');
+        console.error('ERROR: PRIVATE_KEY not set in .env');
         process.exit(1);
     }
 
     if (!process.env.LIMITLESS_API_KEY) {
-        console.error('❌ LIMITLESS_API_KEY not set in .env');
+        console.error('ERROR: LIMITLESS_API_KEY not set in .env');
         process.exit(1);
     }
 

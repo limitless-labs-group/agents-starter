@@ -241,7 +241,7 @@ export class OracleArbStrategy extends BaseStrategy {
                             yesPrice,
                             oracleYesProb: (oracleYesProb * 100).toFixed(1) + '%',
                             edge: (yesEdge * 100).toFixed(1) + '%',
-                        }, '🎯 ORACLE EDGE: BUY YES');
+                        }, 'ORACLE EDGE: BUY YES');
 
                         // Fire FOK at aggressive price (5¢ above current to try to get filled)
                         const fokPrice = Math.min(Math.floor((yesPrice + 0.05) * 100), 95);
@@ -283,7 +283,7 @@ export class OracleArbStrategy extends BaseStrategy {
                             noPrice,
                             oracleNoProb: ((1 - oracleYesProb) * 100).toFixed(1) + '%',
                             edge: (noEdge * 100).toFixed(1) + '%',
-                        }, '🎯 ORACLE EDGE: BUY NO');
+                        }, 'ORACLE EDGE: BUY NO');
 
                         const fokPrice = Math.min(Math.floor((noPrice + 0.05) * 100), 95);
 

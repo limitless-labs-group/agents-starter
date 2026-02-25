@@ -37,7 +37,7 @@ Build autonomous trading agents for [Limitless Exchange](https://limitless.excha
 **MetaMask:** Settings → Security → Export Private Key
 **Rabby:** Settings → Security → Export Private Key
 
-⚠️ Use a dedicated trading wallet. Never use your main wallet.
+WARNING: Use a dedicated trading wallet. Never use your main wallet.
 
 ### 4. Fund Your Wallet
 

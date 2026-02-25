@@ -147,14 +147,14 @@ export class RedeemClient {
                 ],
             });
 
-            logger.info({ conditionId, hash }, '✅ Redemption submitted');
+            logger.info({ conditionId, hash }, 'SUCCESS: Redemption submitted');
 
             const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
             logger.info({ hash, status: receipt.status }, 'Redemption confirmed');
 
             return hash;
         } catch (e: any) {
-            logger.error({ conditionId, error: e.message }, '❌ Redemption failed');
+            logger.error({ conditionId, error: e.message }, 'ERROR: Redemption failed');
             return null;
         }
     }

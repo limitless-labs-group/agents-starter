@@ -53,9 +53,9 @@ async function main() {
         const tx = await client.redeemSingle(singleSlug);
 
         if (tx) {
-            console.log(`\n✅ Claimed! Transaction: ${tx}`);
+            console.log(`\nSUCCESS: Claimed! Transaction: ${tx}`);
         } else {
-            console.log('\nℹ️  Nothing to claim for that market.');
+            console.log('\nINFO:  Nothing to claim for that market.');
             console.log('   Possible reasons:');
             console.log('   - Market is not resolved yet');
             console.log('   - You held the losing side');
@@ -67,7 +67,7 @@ async function main() {
     // ── Batch claim across multiple markets ───────────────────────────────────
 
     if (MY_MARKET_SLUGS.length === 0) {
-        console.log('\n⚠️  No market slugs configured.');
+        console.log('\nWARNING:  No market slugs configured.');
         console.log('   Edit MY_MARKET_SLUGS in this file, or pass a slug as a CLI argument:');
         console.log('   npx tsx src/examples/auto-claim.ts <market-slug>');
         return;
@@ -80,13 +80,13 @@ async function main() {
     const claimable = await client.findClaimablePositions(MY_MARKET_SLUGS);
 
     if (claimable.length === 0) {
-        console.log('\nℹ️  No claimable positions found.');
+        console.log('\nINFO:  No claimable positions found.');
         return;
     }
 
     console.log(`\nFound ${claimable.length} claimable position(s):`);
     for (const pos of claimable) {
-        console.log(`  ✓ ${pos.marketTitle}`);
+        console.log(`  OK ${pos.marketTitle}`);
         console.log(`      Side: ${pos.side}  |  Expected payout: ${pos.expectedPayout}`);
     }
 
@@ -94,7 +94,7 @@ async function main() {
     console.log('\nClaiming all positions...');
     const result = await client.claimAll(MY_MARKET_SLUGS);
 
-    console.log(`\n✅ Done!`);
+    console.log(`\nSUCCESS: Done!`);
     console.log(`   Claimed:     ${result.claimed} position(s)`);
     console.log(`   Total value: ${result.totalValue} USDC`);
     if (result.txHashes.length > 0) {

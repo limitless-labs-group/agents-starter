@@ -81,7 +81,7 @@ async function main() {
         console.log('   No hourly markets found right now — falling back to any active market.');
         const markets = await limitless.getActiveMarkets({ tradeType: 'clob', limit: 5 });
         if (markets.length === 0) {
-            console.error('❌ No active markets found. Check LIMITLESS_API_KEY and connectivity.');
+            console.error('ERROR: No active markets found. Check LIMITLESS_API_KEY and connectivity.');
             process.exit(1);
         }
         targetMarket = markets[0];
@@ -90,7 +90,7 @@ async function main() {
 
     // ── 4. Show market details ───────────────────────────────────────────────
     hr();
-    console.log('\n📊 Market Details\n');
+    console.log('\n Market Details\n');
 
     const yesPrice = targetMarket.prices?.[0] ?? 50;
     const noPrice  = targetMarket.prices?.[1] ?? 50;
@@ -134,7 +134,7 @@ async function main() {
         console.log('  ', JSON.stringify(orderResult, null, 2).split('\n').join('\n   '));
         summary.push(`Demo order signed: BUY ${SIDE} @ ${PRICE_CENTS}¢ for $${BET_USD} [DRY_RUN — not submitted]`);
     } catch (err: any) {
-        console.log(`   ⚠️  Could not sign order: ${err.message}`);
+        console.log(`   WARNING:  Could not sign order: ${err.message}`);
         summary.push(`Demo order skipped: ${err.message}`);
     }
 
@@ -173,7 +173,7 @@ async function main() {
         }
         summary.push(`Open positions: ${openPositions}`);
     } catch (err: any) {
-        console.log(`   ⚠️  Could not fetch portfolio: ${err.message}`);
+        console.log(`   WARNING:  Could not fetch portfolio: ${err.message}`);
         summary.push('Portfolio: could not fetch');
     }
 
@@ -221,13 +221,13 @@ async function main() {
         }
         summary.push(`Claimable winnings: ${claimableCount} position(s)`);
     } catch (err: any) {
-        console.log(`   ⚠️  Could not check winnings: ${err.message}`);
+        console.log(`   WARNING:  Could not check winnings: ${err.message}`);
         summary.push('Claimable winnings: could not check');
     }
 
     // ── 8. Summary ──────────────────────────────────────────────────────────
     hr();
-    console.log('\n✅ Demo Summary\n');
+    console.log('\nSUCCESS: Demo Summary\n');
     summary.forEach(line => console.log(`   • ${line}`));
 
     console.log('\n📖 Next Steps:');
@@ -238,6 +238,6 @@ async function main() {
 }
 
 main().catch(err => {
-    console.error('\n❌ Demo failed:', err.message);
+    console.error('\nERROR: Demo failed:', err.message);
     process.exit(1);
 });
