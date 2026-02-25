@@ -17,6 +17,9 @@ export interface TradeDecision {
     amountUsd: number;
     priceLimit: number;
     reason: string;
+    // Optional: confidence from oracle and ladder tiers (cents)
+    confidence?: number;
+    ladder?: number[];
 }
 
 export interface StrategyStats {

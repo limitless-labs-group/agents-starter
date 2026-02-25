@@ -185,6 +185,11 @@ export class OracleArbStrategy extends BaseStrategy {
         // Adjust scanning frequency based on time of hour
         this.adjustTickInterval();
 
+        // Only trade in golden window (xx:57–xx:03)
+        if (!this.isGoldenWindow()) {
+            return decisions;
+        }
+
         // Check portfolio balance periodically (every 60 seconds)
         if (Date.now() - this.lastBalanceCheck > 60000) {
             await this.checkPortfolioBalance();
@@ -324,12 +329,16 @@ export class OracleArbStrategy extends BaseStrategy {
                         // Fire FOK at aggressive price (5¢ above current to try to get filled)
                         const fokPrice = Math.min(Math.floor((yesPrice + 0.05) * 100), 95);
 
+                        const ladder = oracleYesProb >= 0.90 ? [50, 53, 56] : undefined;
+
                         decisions.push({
                             action: 'BUY',
                             marketSlug: market.slug,
                             side: 'YES',
                             amountUsd: config.betSizeUsd,
                             priceLimit: fokPrice,
+                            confidence: oracleYesProb,
+                            ladder,
                             reason: `Oracle: ${asset} $${oraclePrice.toFixed(2)} > $${strike} strike (${(oracleYesProb * 100).toFixed(0)}% prob). Market YES at ${(yesPrice * 100).toFixed(0)}¢`,
                         });
 
@@ -365,13 +374,18 @@ export class OracleArbStrategy extends BaseStrategy {
 
                         const fokPrice = Math.min(Math.floor((noPrice + 0.05) * 100), 95);
 
+                        const noConf = (1 - oracleYesProb);
+                        const ladder = noConf >= 0.90 ? [50, 53, 56] : undefined;
+
                         decisions.push({
                             action: 'BUY',
                             marketSlug: market.slug,
                             side: 'NO',
                             amountUsd: config.betSizeUsd,
                             priceLimit: fokPrice,
-                            reason: `Oracle: ${asset} $${oraclePrice.toFixed(2)} < $${strike} strike (${((1 - oracleYesProb) * 100).toFixed(0)}% prob). Market NO at ${(noPrice * 100).toFixed(0)}¢`,
+                            confidence: noConf,
+                            ladder,
+                            reason: `Oracle: ${asset} $${oraclePrice.toFixed(2)} < $${strike} strike (${(noConf * 100).toFixed(0)}% prob). Market NO at ${(noPrice * 100).toFixed(0)}¢`,
                         });
 
                         this.positions.set(market.slug, {
@@ -437,14 +451,19 @@ export class OracleArbStrategy extends BaseStrategy {
 
                 if (decision.action === 'BUY') {
                     try {
-                        await this.trading.createOrder({
-                            marketSlug: decision.marketSlug,
-                            side: decision.side,
-                            limitPriceCents: decision.priceLimit,
-                            usdAmount: decision.amountUsd,
-                            orderType: 'GTC',
-                        });
-                        this.logger.info({ marketSlug: decision.marketSlug }, 'Order submitted successfully');
+                        const ladder = decision.ladder && decision.ladder.length > 0 ? decision.ladder : [decision.priceLimit];
+                        const perOrderUsd = Math.max(0.5, decision.amountUsd / ladder.length);
+
+                        for (const price of ladder) {
+                            await this.trading.createOrder({
+                                marketSlug: decision.marketSlug,
+                                side: decision.side,
+                                limitPriceCents: price,
+                                usdAmount: perOrderUsd,
+                                orderType: 'FOK',
+                            });
+                        }
+                        this.logger.info({ marketSlug: decision.marketSlug, ladder }, 'FOK orders submitted');
                         await this.logTrade(decision, true);
                     } catch (error: any) {
                         const errMsg = error?.message || String(error);
@@ -457,15 +476,18 @@ export class OracleArbStrategy extends BaseStrategy {
                                 await this.approveMarket(decision.marketSlug);
                                 this.logger.info({ marketSlug: decision.marketSlug }, 'Approval complete, retrying order...');
                                 
-                                // Retry the order
-                                await this.trading.createOrder({
-                                    marketSlug: decision.marketSlug,
-                                    side: decision.side,
-                                    limitPriceCents: decision.priceLimit,
-                                    usdAmount: decision.amountUsd,
-                                    orderType: 'GTC',
-                                });
-                                this.logger.info({ marketSlug: decision.marketSlug }, 'Order submitted successfully after approval');
+                                const ladder = decision.ladder && decision.ladder.length > 0 ? decision.ladder : [decision.priceLimit];
+                                const perOrderUsd = Math.max(0.5, decision.amountUsd / ladder.length);
+                                for (const price of ladder) {
+                                    await this.trading.createOrder({
+                                        marketSlug: decision.marketSlug,
+                                        side: decision.side,
+                                        limitPriceCents: price,
+                                        usdAmount: perOrderUsd,
+                                        orderType: 'FOK',
+                                    });
+                                }
+                                this.logger.info({ marketSlug: decision.marketSlug, ladder }, 'FOK orders submitted after approval');
                                 await this.logTrade(decision, true);
                             } catch (approvalError: any) {
                                 this.logger.error({ err: approvalError?.message, marketSlug: decision.marketSlug }, 'Auto-approval failed');

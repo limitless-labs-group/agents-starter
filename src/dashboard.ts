@@ -129,7 +129,10 @@ function buildCumPnl(
             return ta < tb ? -1 : ta > tb ? 1 : 0;
         });
 
-    if (!sells.length) return [];
+    if (!sells.length) {
+        // Return a single point so chart isn't empty
+        return [{ ts: new Date().toISOString(), pnl: 0 }];
+    }
 
     let running = 0;
     return sells.map(t => {
@@ -365,52 +368,44 @@ async function fetchDashboardData(): Promise<object> {
     }
 
     // ── Oracle Arb trade log (fallback when portfolio trades empty or fails) ───────────
-    // Load local positions to check filled status
-    const localPositions = readOracleArbPositions();
-    const positionMap = new Map(localPositions.map((p: any) => [p.marketSlug, p]));
-    
+    // NOTE: These are PLACED orders, not necessarily filled. GTC orders at 55¢ may not fill.
+    // Only claimed positions are verified as "real" profits.
     try {
         const oracleTrades = await readOracleArbTrades();
         if (oracleTrades.length > 0 && (results.trades.length === 0 || apiTradesFailed)) {
-            results.trades = oracleTrades.map((t: any) => {
-                const pos = positionMap.get(t.marketSlug);
-                const isFilled = !!pos && pos.side === t.side;
-                return {
-                    marketId: t.marketSlug,
-                    marketTitle: t.marketSlug,
-                    strategy: 'oracle-arb',
-                    side: t.side,
-                    tradeAmountUSD: isFilled ? t.amountUsd : 0,
-                    timestamp: new Date(t.timestamp).toISOString(),
-                    success: t.success,
-                    filled: isFilled,
-                    filledAmount: isFilled ? t.amountUsd : 0,
-                };
-            });
+            results.trades = oracleTrades.map((t: any) => ({
+                marketId: t.marketSlug,
+                marketTitle: t.marketSlug,
+                strategy: 'oracle-arb',
+                side: t.side,
+                tradeAmountUSD: t.amountUsd,
+                timestamp: new Date(t.timestamp).toISOString(),
+                success: t.success,
+                // FOK orders: success means filled immediately
+                filled: t.success === true,
+                filledAmount: t.success ? t.amountUsd : 0,
+                status: 'FOK',
+            }));
         }
     } catch (e: any) {
         console.error('[dashboard] oracle trades error:', e.message);
     }
 
     // ── PnL calculation ─────────────────────────────────────────────────────
-    // Track claimed winnings from P&L tracker file
+    // Use pnl-tracker events written by auto-claim (claimed - costBasis)
     let realizedPnl = 0;
-    let claimedWinnings = 0;
-    let totalInvested = 0;
+    let winningPositions = 0;
+    let pnlEvents: any[] = [];
     try {
         const pnlFile = resolve(__dirname, '..', 'data', 'pnl-tracker.json');
         if (existsSync(pnlFile)) {
             const pnlData = JSON.parse(readFileSync(pnlFile, 'utf8'));
-            claimedWinnings = pnlData.claimedWinnings || 0;
-            totalInvested = pnlData.totalInvested || 0;
-            // P&L = claimed winnings - (invested in winning positions)
-            // Approximate: 3 positions claimed out of 12 = 25% of invested
-            const investedInClaimed = totalInvested * 0.25;
-            realizedPnl = claimedWinnings - investedInClaimed;
+            pnlEvents = pnlData.events || [];
+            realizedPnl = pnlData.totalPnl || 0;
+            winningPositions = pnlEvents.length;
         }
     } catch { 
-        // Fallback to simple estimate
-        realizedPnl = 0.2;
+        realizedPnl = 0;
     }
     
     let chartRaw: any = null;
@@ -433,19 +428,26 @@ async function fetchDashboardData(): Promise<object> {
         results.totalPnl = realizedPnl;
     }
 
-    // Build cumulative P&L data for chart
-    results.cumPnl = buildCumPnl(chartRaw, results.trades);
+    // Build cumulative P&L data for chart - use pnl tracker events if available
+    if (pnlEvents.length > 0) {
+        let running = 0;
+        results.cumPnl = pnlEvents.map((e: any) => {
+            running += (e.pnl || 0);
+            return { ts: e.ts, pnl: Math.round(running * 100) / 100 };
+        });
+    } else {
+        // Fallback to trade-based chart
+        results.cumPnl = buildCumPnl(chartRaw, results.trades);
+    }
 
-    // Derive win rate from trades if not provided by API
-    if (results.winRate === null && results.trades.length > 0) {
-        // For oracle-arb trades, count filled positions as wins
-        const trades = results.trades as any[];
-        const oracleTrades = trades.filter(t => t.strategy === 'oracle-arb');
-        if (oracleTrades.length > 0) {
-            const wins = oracleTrades.filter(t => t.success === true).length;
-            results.winRate = Math.round((wins / oracleTrades.length) * 1000) / 10;
-            // Estimate total PnL from trades (rough: count successful entries as +EV)
-            results.totalPnl = oracleTrades.reduce((sum, t) => sum + (parseFloat(t.tradeAmountUSD || 0) * (t.success ? 0.1 : -0.1)), 0);
+    // Calculate win rate from actual claimed positions only
+    // GTC orders at 55¢ don't count until claimed
+    if (results.winRate === null || results.winRate === 100) {
+        const totalAttempted = results.trades.length;
+        if (winningPositions > 0 && totalAttempted > 0) {
+            results.winRate = Math.round((winningPositions / totalAttempted) * 1000) / 10;
+        } else {
+            results.winRate = 0;
         }
     }
 

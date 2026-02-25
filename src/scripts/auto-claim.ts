@@ -46,11 +46,60 @@ async function main() {
     
     // Check for claimable positions
     log(`Checking ${slugs.length} markets for claimable winnings...`);
-    const result = await client.claimAll(slugs);
-    
-    if (result.claimed > 0) {
-        log(`✅ Claimed ${result.claimed} positions, total value: ${result.totalValue} USDC`);
-        log(`Transactions: ${result.txHashes.join(', ')}`);
+    const claimable = await client.findClaimablePositions(slugs);
+
+    if (claimable.length === 0) {
+        log('No claimable positions found');
+        return;
+    }
+
+    // Load trade log for cost basis lookup
+    const tradeLogFile = path.join(dataDir, 'oracle-arb-trades.jsonl');
+    const tradeLog = fs.existsSync(tradeLogFile)
+        ? fs.readFileSync(tradeLogFile, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+        : [];
+
+    // Load/update PnL tracker
+    const pnlFile = path.join(dataDir, 'pnl-tracker.json');
+    let pnlData: any = { events: [], totalPnl: 0 };
+    if (fs.existsSync(pnlFile)) {
+        try { pnlData = JSON.parse(fs.readFileSync(pnlFile, 'utf8')); } catch {}
+    }
+
+    let totalClaimed = 0;
+    const txHashes: string[] = [];
+
+    for (const position of claimable) {
+        const indexSet = position.winningOutcomeIndex === 0 ? 1 : 2;
+        const hash = await client.redeemPositions(position.conditionId, [indexSet]);
+        if (hash) {
+            txHashes.push(hash);
+            const claimedUsd = parseFloat(position.expectedPayout.replace(' USDC', '')) || 0;
+            totalClaimed += claimedUsd;
+
+            // Find cost basis from trade log (latest matching slug)
+            const trade = [...tradeLog].reverse().find(t => t.marketSlug === position.marketSlug);
+            const costBasis = trade?.amountUsd || 2; // default $2 per position
+            const pnl = claimedUsd - costBasis;
+
+            pnlData.events = pnlData.events || [];
+            pnlData.events.push({
+                ts: new Date().toISOString(),
+                marketSlug: position.marketSlug,
+                claimed: claimedUsd,
+                costBasis,
+                pnl,
+                tx: hash,
+            });
+            pnlData.totalPnl = (pnlData.totalPnl || 0) + pnl;
+        }
+    }
+
+    fs.writeFileSync(pnlFile, JSON.stringify(pnlData, null, 2));
+
+    if (txHashes.length > 0) {
+        log(`✅ Claimed ${txHashes.length} positions, total value: ${totalClaimed.toFixed(3)} USDC`);
+        log(`Transactions: ${txHashes.join(', ')}`);
     } else {
         log('No claimable positions found');
     }

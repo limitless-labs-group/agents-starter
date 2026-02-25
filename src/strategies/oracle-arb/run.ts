@@ -59,11 +59,11 @@ async function main() {
         // Assets to monitor via Hermes/Pyth
         assets: (process.env.ORACLE_ASSETS || 'BTC,ETH,SOL').split(',').map(s => s.trim()),
         // Minimum oracle confidence (0-1)
-        minConfidencePercent: parseFloat(process.env.ORACLE_MIN_CONFIDENCE || '0.75'),
+        minConfidencePercent: parseFloat(process.env.ORACLE_MIN_CONFIDENCE || '0.82'),
         // Minimum edge between oracle and market (0-1)
-        minEdgePercent: parseFloat(process.env.ORACLE_MIN_EDGE || '0.15'),
+        minEdgePercent: parseFloat(process.env.ORACLE_MIN_EDGE || '0.20'),
         // Max price to pay per contract (0-1)
-        maxMarketPrice: parseFloat(process.env.ORACLE_MAX_PRICE || '0.70'),
+        maxMarketPrice: parseFloat(process.env.ORACLE_MAX_PRICE || '0.65'),
         // Bet size per trade in USD
         betSizeUsd: parseFloat(process.env.ORACLE_BET_SIZE || '1'),
         // Max concurrent positions

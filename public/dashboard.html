@@ -175,14 +175,14 @@
       <div id="orders-empty" class="empty">Loading…</div>
     </div>
     <div class="panel">
-      <h2>📜 Recent Trades</h2>
+      <h2>📜 FOK Fills <span style="font-size:0.6em;color:var(--dim)">(instant fill or fail)</span></h2>
       <table>
         <thead><tr>
-          <th>Time</th><th>Market</th><th>Side</th><th>Amount</th><th>Status</th>
+          <th>Time</th><th>Market</th><th>Side</th><th>Amount</th><th>Fill</th>
         </tr></thead>
         <tbody id="tbl-trades"></tbody>
       </table>
-      <div id="trades-empty" class="empty">Loading…</div>
+      <div id="trades-empty" class="empty">No fills yet</div>
     </div>
   </div>
 
@@ -384,8 +384,10 @@ async function load() {
       const side = t.side || t.outcome || '—';
       const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
       const title = t.marketTitle || (t.market?.title) || t.marketId || '—';
-      const amt   = t.filledAmount || t.tradeAmountUSD || t.tradeAmount;
-      const statusBadge = t.filled ? '<span class="badge b-w">✓</span>' : 
+      const amt   = t.tradeAmountUSD || t.tradeAmount || 0;
+      // FOK: success means filled immediately
+      const statusBadge = t.status === 'FOK' ? (t.filled ? '<span class="badge b-w">✓</span>' : '<span class="badge b-l">✗</span>') :
+                         t.filled ? '<span class="badge b-w">✓</span>' : 
                          t.success ? '<span class="badge b-p">⏳</span>' : 
                          '<span class="badge b-l">✗</span>';
       return `<tr>
