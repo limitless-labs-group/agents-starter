@@ -4,23 +4,89 @@
 
 ---
 
+## 🚀 OpenClaw Quickstart (For AI Agents)
+
+### Example Prompts for Claude/Cursor/Other Agents
+
+```markdown
+# Example 1: Full Setup and First Trade
+"I want to set up the Limitless prediction market trading bot. 
+Please:
+1. Clone the agents-starter repo to ~/limitless-trader
+2. Install dependencies and configure environment
+3. Check my wallet has USDC on Base and ETH for gas
+4. Start the dashboard on port 3456
+5. Run the oracle-arb strategy in dry-run mode first
+6. Once confirmed working, enable live trading with $2 bets"
+
+# Example 2: Monitor and Optimize
+"Check on my Limitless trading bot:
+1. What's the current P&L and win rate?
+2. How many positions are open?
+3. Are there any claimable winnings?
+4. Run the iterator to analyze performance
+5. Suggest parameter adjustments based on the data"
+
+# Example 3: Emergency Stop
+"Stop all Limitless trading activity immediately:
+1. Stop the oracle-arb strategy
+2. Cancel any open orders
+3. Claim all redeemable winnings
+4. Show me the final P&L summary"
+
+# Example 4: Strategy Iteration
+"Analyze my oracle-arb strategy performance:
+1. Read the trade logs from data/oracle-arb-trades.jsonl
+2. Calculate actual win rate and average edge
+3. Compare oracle predictions vs actual outcomes
+4. Suggest improvements to confidence thresholds
+5. Implement the top suggestion and restart"
+```
+
+### Agent Workflow Pattern
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  Setup/Config   │────▶│  Dry Run Test    │────▶│  Live Trading   │
+│  (One-time)     │     │  (Validate)      │     │  (Autonomous)   │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+   Clone repo              Check logs              Iterate &
+   Set env vars            Verify signals          optimize
+   Fund wallet             No real trades          Claim winnings
+```
+
+### Key Files for Agents
+
+| File | Purpose | When to Check |
+|------|---------|---------------|
+| `data/oracle-arb-positions.json` | Tracked positions | Verify what markets we're in |
+| `data/oracle-arb-trades.jsonl` | Trade execution log | Analyze performance |
+| `logs/oracle-arb-out.log` | Runtime logs | Debug issues |
+| `.env` | Configuration | Before any changes |
+
+---
+
 ## Table of Contents
 
 1. [Overview](#1-overview)
-2. [Live Documentation (MCP)](#2-live-documentation-mcp)
-3. [Market Structure](#3-market-structure)
-4. [Architecture](#4-architecture)
-5. [Setup Guide](#5-setup-guide)
-6. [Core SDK Reference](#6-core-sdk-reference)
-7. [EIP-712 Signing Deep Dive](#7-eip-712-signing-deep-dive)
-8. [Contract Addresses](#8-contract-addresses)
-9. [Strategies Reference](#9-strategies-reference)
-10. [Building Your Own Strategy](#10-building-your-own-strategy)
-11. [Autonomous Iteration](#11-autonomous-iteration-the-openclaw-superpower)
-12. [Safety & Risk Management](#12-safety--risk-management)
-13. [Common Patterns & Recipes](#13-common-patterns--recipes)
-14. [Troubleshooting](#14-troubleshooting)
-15. [Links & Resources](#15-links--resources)
+2. [OpenClaw Quickstart (For AI Agents)](#-openclaw-quickstart-for-ai-agents)
+3. [Live Documentation (MCP)](#2-live-documentation-mcp)
+4. [Market Structure](#3-market-structure)
+5. [Architecture](#4-architecture)
+6. [Setup Guide](#5-setup-guide)
+7. [Core SDK Reference](#6-core-sdk-reference)
+8. [EIP-712 Signing Deep Dive](#7-eip-712-signing-deep-dive)
+9. [Contract Addresses](#8-contract-addresses)
+10. [Strategies Reference](#9-strategies-reference)
+11. [Building Your Own Strategy](#10-building-your-own-strategy)
+12. [Autonomous Iteration](#11-autonomous-iteration-the-openclaw-superpower)
+13. [Safety & Risk Management](#12-safety--risk-management)
+14. [Common Patterns & Recipes](#13-common-patterns--recipes)
+15. [OpenClaw Agent Integration Patterns](#14-openclaw-agent-integration-patterns)
+16. [Troubleshooting](#15-troubleshooting)
+17. [Links & Resources](#16-links--resources)
 
 ---
 
@@ -1789,7 +1855,150 @@ console.log('Midpoint:', book.midpoint);
 
 ---
 
-## 14. Troubleshooting
+## 14. OpenClaw Agent Integration Patterns
+
+This skill is designed for AI agents operating through OpenClaw. Here are specific patterns for autonomous operation:
+
+### Pattern 1: Setup from Scratch
+
+```typescript
+// Clone and setup
+await exec('git clone https://github.com/limitless-labs-group/agents-starter.git ~/limitless-trader');
+await exec('cd ~/limitless-trader && npm install');
+
+// Create .env
+await writeFile('~/limitless-trader/.env', `
+PRIVATE_KEY=${walletPrivateKey}
+LIMITLESS_API_KEY=${apiKey}
+DRY_RUN=true
+ORACLE_BET_SIZE=2
+`);
+
+// Verify setup
+const { stdout } = await exec('cd ~/limitless-trader && npm run iterate');
+console.log(stdout); // Should show wallet balance
+```
+
+### Pattern 2: Continuous Monitoring Loop
+
+```typescript
+// This would run in a heartbeat or cron
+async function tradingHeartbeat() {
+  // Check if strategy is running
+  const { stdout: pm2Status } = await exec('pm2 status oracle-live');
+  
+  if (!pm2Status.includes('online')) {
+    // Restart if crashed
+    await exec('cd ~/limitless-trader && pm2 start --name oracle-live "npx tsx src/strategies/oracle-arb/run.ts"');
+    notify('Strategy restarted');
+  }
+  
+  // Check for claimable winnings
+  const { stdout: claimable } = await exec('cd ~/limitless-trader && npx tsx src/core/limitless/redeem.ts claim-all --dry-run');
+  if (claimable.includes('Found')) {
+    await exec('cd ~/limitless-trader && npx tsx src/core/limitless/redeem.ts claim-all');
+    notify('Winnings claimed');
+  }
+  
+  // Read recent trades
+  const trades = await readFile('~/limitless-trader/data/oracle-arb-trades.jsonl', 'utf8');
+  const recentTrades = trades.split('\n').filter(Boolean).slice(-10);
+  
+  // Analyze performance
+  const successRate = recentTrades.filter(t => JSON.parse(t).success).length / recentTrades.length;
+  if (successRate < 0.5 && recentTrades.length > 5) {
+    notify(`Warning: Recent success rate is ${(successRate * 100).toFixed(0)}%`);
+  }
+}
+```
+
+### Pattern 3: Parameter Optimization
+
+```typescript
+// Read trade history
+const trades = await readFile('~/limitless-trader/data/oracle-arb-trades.jsonl', 'utf8')
+  .then(content => content.split('\n').filter(Boolean).map(JSON.parse));
+
+// Analyze by edge threshold
+const byEdge = trades.reduce((acc, t) => {
+  const edgeBracket = Math.floor(t.edge * 100 / 5) * 5; // 5% buckets
+  if (!acc[edgeBracket]) acc[edgeBracket] = { total: 0, success: 0 };
+  acc[edgeBracket].total++;
+  if (t.success) acc[edgeBracket].success++;
+  return acc;
+}, {});
+
+// Find optimal threshold
+const optimal = Object.entries(byEdge)
+  .filter(([_, data]: [string, any]) => data.total >= 3) // Min sample size
+  .sort((a, b) => (b[1].success / b[1].total) - (a[1].success / a[1].total))[0];
+
+console.log(`Optimal edge threshold: ${optimal[0]}% with ${(optimal[1].success/optimal[1].total*100).toFixed(0)}% success rate`);
+
+// Update config if significantly different
+if (parseInt(optimal[0]) > 20) {
+  const env = await readFile('~/limitless-trader/.env', 'utf8');
+  await writeFile('~/limitless-trader/.env', env.replace(/ORACLE_MIN_EDGE=.*/, `ORACLE_MIN_EDGE=${parseInt(optimal[0])/100}`));
+  await exec('pm2 restart oracle-live');
+}
+```
+
+### Pattern 4: Emergency Shutdown
+
+```typescript
+async function emergencyShutdown() {
+  // Stop trading immediately
+  await exec('pm2 stop oracle-live');
+  
+  // Cancel all open orders
+  const dashboard = await fetch('http://localhost:3003/api/dashboard').then(r => r.json());
+  for (const order of dashboard.orders || []) {
+    // Cancel order via API
+    await trading.cancelOrder(order.marketSlug, order.id);
+  }
+  
+  // Claim any winnings
+  await exec('cd ~/limitless-trader && npx tsx src/core/limitless/redeem.ts claim-all');
+  
+  // Generate final report
+  const finalBalance = await checkWalletBalance();
+  const pnl = finalBalance - startingBalance;
+  notify(`Trading stopped. Final P&L: $${pnl.toFixed(2)}`);
+}
+```
+
+### Pattern 5: Multi-Strategy Deployment
+
+```typescript
+// Deploy different strategies with different parameters
+const strategies = [
+  { name: 'oracle-arb-conservative', edge: 0.20, price: 0.60, size: 1 },
+  { name: 'oracle-arb-aggressive', edge: 0.10, price: 0.75, size: 2 },
+];
+
+for (const strat of strategies) {
+  const env = baseEnv + `
+ORACLE_MIN_EDGE=${strat.edge}
+ORACLE_MAX_PRICE=${strat.price}
+ORACLE_BET_SIZE=${strat.size}
+  `;
+  
+  await writeFile(`~/limitless-trader/.env.${strat.name}`, env);
+  await exec(`cd ~/limitless-trader && PORT=${3000 + i} pm2 start --name ${strat.name} "npx tsx src/strategies/oracle-arb/run.ts" -- --env .env.${strat.name}`);
+}
+
+// Monitor and compare performance
+setInterval(async () => {
+  for (const strat of strategies) {
+    const data = await fetch(`http://localhost:${3000 + i}/api/dashboard`).then(r => r.json());
+    console.log(`${strat.name}: ${data.overview.pnl} P&L, ${data.overview.winRate}% WR`);
+  }
+}, 60000);
+```
+
+---
+
+## 15. Troubleshooting
 
 ### Order Rejected: Insufficient Balance
 
