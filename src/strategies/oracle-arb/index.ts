@@ -325,6 +325,29 @@ export class OracleArbStrategy extends BaseStrategy {
     }
 
     /**
+     * Log trade execution for dashboard/history
+     */
+    private async logTrade(decision: TradeDecision, success: boolean, error?: string): Promise<void> {
+        const tradeLog = {
+            timestamp: Date.now(),
+            marketSlug: decision.marketSlug,
+            side: decision.side,
+            amountUsd: decision.amountUsd,
+            priceLimit: decision.priceLimit,
+            success,
+            error,
+            strategy: 'oracle-arb',
+        };
+        
+        try {
+            const logFile = path.join(this.dataDir, 'oracle-arb-trades.jsonl');
+            await fs.appendFile(logFile, JSON.stringify(tradeLog) + '\n');
+        } catch (e) {
+            this.logger.error({ err: e }, 'Failed to log trade');
+        }
+    }
+
+    /**
      * Override executeDecisions to add auto-approval logic
      */
     protected async executeDecisions(decisions: TradeDecision[]): Promise<void> {
@@ -343,6 +366,8 @@ export class OracleArbStrategy extends BaseStrategy {
                             usdAmount: decision.amountUsd,
                             orderType: 'GTC',
                         });
+                        this.logger.info({ marketSlug: decision.marketSlug }, 'Order submitted successfully');
+                        await this.logTrade(decision, true);
                     } catch (error: any) {
                         const errMsg = error?.message || String(error);
                         
@@ -363,8 +388,10 @@ export class OracleArbStrategy extends BaseStrategy {
                                     orderType: 'GTC',
                                 });
                                 this.logger.info({ marketSlug: decision.marketSlug }, 'Order submitted successfully after approval');
+                                await this.logTrade(decision, true);
                             } catch (approvalError: any) {
                                 this.logger.error({ err: approvalError?.message, marketSlug: decision.marketSlug }, 'Auto-approval failed');
+                                await this.logTrade(decision, false, approvalError?.message);
                             }
                         } else {
                             throw error; // Re-throw if not an approval issue

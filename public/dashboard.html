@@ -343,8 +343,8 @@ async function load() {
     document.getElementById('tbl-positions').innerHTML = posArr.map(p => {
       const side    = p.side || '—';
       const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
-      const currRaw = p.currentPrice ?? p.fillPrice ?? null;
-      const mark    = currRaw != null ? (parseFloat(currRaw) * 100).toFixed(0) + '¢' : '—';
+      // Price is already in cents from API
+      const mark    = p.currentPrice != null ? p.currentPrice + '¢' : '—';
       const upnl    = p.unrealizedPnl != null
         ? `<span class="${pc(p.unrealizedPnl)}">${ps(p.unrealizedPnl)}</span>` : '<span class="d">—</span>';
       return `<tr>
@@ -365,7 +365,8 @@ async function load() {
     document.getElementById('tbl-orders').innerHTML = ordArr.map(o => {
       const side    = o.side || '—';
       const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
-      const price   = o.price != null ? parseFloat(o.price).toFixed(0) + '¢' : '—';
+      // Price is already in cents from API
+      const price   = o.price != null ? o.price + '¢' : '—';
       return `<tr>
         <td>${trunc(o.marketTitle || o.marketSlug, 28)}</td>
         <td><span class="badge ${badgeCls}">${side}</span></td>

@@ -177,14 +177,21 @@ async function fetchDashboardData(): Promise<object> {
                 ? (p.positions?.yes ?? p.yes)
                 : (p.positions?.no  ?? p.no);
 
-            const fillPrice    = sideData?.fillPrice    ?? null;
-            const currentPrice = sideData?.currentPrice ?? fillPrice;
+            // Prices are 0-1 decimal, convert to cents for display
+            const fillPriceRaw    = sideData?.fillPrice    ?? null;
+            const currentPriceRaw = sideData?.currentPrice ?? fillPriceRaw;
+            const fillPrice    = fillPriceRaw != null ? Math.round(parseFloat(fillPriceRaw) * 100) : null;
+            const currentPrice = currentPriceRaw != null ? Math.round(parseFloat(currentPriceRaw) * 100) : null;
+
+            // size is in micro-USDC, convert to USD
+            const sizeRaw = sideData?.marketValue ?? sideData?.collateralAmount ?? null;
+            const sizeUsd = sizeRaw ? parseFloat(sizeRaw) / 1_000_000 : null;
 
             return {
                 marketTitle:   p.market?.title   ?? p.marketTitle ?? 'Unknown',
                 marketSlug:    p.market?.slug     ?? p.marketSlug  ?? '',
                 side,
-                size:          sideData?.marketValue  ?? null,
+                size:          sizeUsd,
                 fillPrice,
                 currentPrice,
                 unrealizedPnl: sideData?.unrealizedPnl ?? null,
@@ -244,8 +251,10 @@ async function fetchDashboardData(): Promise<object> {
                         marketSlug:  slug,
                         marketTitle: results.positions.find((p: any) => p.marketSlug === slug)?.marketTitle ?? slug,
                         side:        o.side || o.outcome || '—',
-                        price:       o.price  ?? null,
-                        size:        o.size   ?? o.makerAmount ?? null,
+                        // Price is 0-1 decimal, convert to cents (0.55 -> 55)
+                        price:       o.price != null ? Math.round(parseFloat(o.price) * 100) : null,
+                        // makerAmount is in micro-USDC (1_000_000 = $1)
+                        size:        o.size ?? (o.makerAmount ? parseFloat(o.makerAmount) / 1_000_000 : null),
                         status:      o.status ?? 'LIVE',
                         timestamp:   o.createdAt ?? o.timestamp ?? null,
                     }));
