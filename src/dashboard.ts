@@ -118,6 +118,47 @@ function buildCumPnl(
 }
 
 /**
+ * Read oracle-arb trade log from JSONL file
+ */
+async function readOracleArbTrades(): Promise<any[]> {
+    // Use __dirname to get the directory of the current file
+    const logFile = resolve(__dirname, '..', '..', 'data', 'oracle-arb-trades.jsonl');
+    if (!existsSync(logFile)) return [];
+    
+    try {
+        const content = readFileSync(logFile, 'utf8');
+        const lines = content.split('\n').filter(Boolean);
+        return lines.map(line => JSON.parse(line));
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Read oracle-arb positions from JSON file
+ */
+function readOracleArbPositions(): any[] {
+    // Use __dirname to get the directory of the current file
+    const posFile = resolve(__dirname, '..', '..', 'data', 'oracle-arb-positions.json');
+    console.log('[dashboard] Looking for positions at:', posFile);
+    if (!existsSync(posFile)) {
+        console.log('[dashboard] Positions file not found');
+        return [];
+    }
+    
+    try {
+        const content = readFileSync(posFile, 'utf8');
+        const data = JSON.parse(content);
+        const positions = Object.values(data);
+        console.log('[dashboard] Loaded positions:', positions.length);
+        return positions;
+    } catch (e: any) {
+        console.error('[dashboard] Error reading positions:', e.message);
+        return [];
+    }
+}
+
+/**
  * Compute per-market asset breakdown from trade history for the bar charts.
  * Groups by market title, counting buys as "pending" and sells as resolved.
  */
@@ -161,6 +202,7 @@ async function fetchDashboardData(): Promise<object> {
     // ── Positions ────────────────────────────────────────────────────────────
     try {
         const raw = await portfolio.getPositions();
+        console.log('[dashboard] Raw positions:', raw ? (Array.isArray(raw) ? raw.length : Object.keys(raw)) : 'null');
         const positions: any[] = Array.isArray(raw)
             ? raw
             : [
@@ -168,8 +210,22 @@ async function fetchDashboardData(): Promise<object> {
                 ...((raw as any).amm   ?? []),
                 ...((raw as any).group ?? []),
               ];
+        console.log('[dashboard] Processed positions count:', positions.length);
 
-        results.positions = positions.map((p: any) => {
+        // Fallback to local positions file if API returns empty
+        if (positions.length === 0) {
+            const localPositions = readOracleArbPositions();
+            results.positions = localPositions.map((p: any) => ({
+                marketTitle: p.marketSlug,
+                marketSlug: p.marketSlug,
+                side: p.side,
+                size: p.amountUsd,
+                fillPrice: Math.round(p.entryPrice * 100),
+                currentPrice: null,
+                unrealizedPnl: null,
+            }));
+        } else {
+            results.positions = positions.map((p: any) => {
             const hasYes = p.positions?.yes || p.yes;
             const hasNo  = p.positions?.no  || p.no;
             const side   = hasYes ? 'YES' : hasNo ? 'NO' : null;
@@ -196,7 +252,8 @@ async function fetchDashboardData(): Promise<object> {
                 currentPrice,
                 unrealizedPnl: sideData?.unrealizedPnl ?? null,
             };
-        });
+            });
+        }
     } catch (e: any) {
         console.error('[dashboard] positions error:', e.message);
     }
@@ -207,6 +264,24 @@ async function fetchDashboardData(): Promise<object> {
         results.trades = Array.isArray(trades) ? trades : [];
     } catch (e: any) {
         console.error('[dashboard] trades error:', e.message);
+    }
+
+    // ── Oracle Arb trade log (fallback when portfolio trades empty) ───────────
+    try {
+        const oracleTrades = await readOracleArbTrades();
+        if (oracleTrades.length > 0 && results.trades.length === 0) {
+            results.trades = oracleTrades.map((t: any) => ({
+                marketId: t.marketSlug,
+                marketTitle: t.marketSlug,
+                strategy: 'oracle-arb',
+                side: t.side,
+                tradeAmountUSD: t.success ? t.amountUsd : 0,
+                timestamp: new Date(t.timestamp).toISOString(),
+                success: t.success,
+            }));
+        }
+    } catch (e: any) {
+        console.error('[dashboard] oracle trades error:', e.message);
     }
 
     // ── PnL chart (total P&L + win rate + optional time-series) ─────────────
