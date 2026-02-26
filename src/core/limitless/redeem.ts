@@ -335,6 +335,10 @@ export class RedeemClient {
             if (hash) {
                 txHashes.push(hash);
                 totalValue += position.balance;
+                // Wait 2s between claims to avoid nonce conflicts
+                if (claimable.indexOf(position) < claimable.length - 1) {
+                    await new Promise(r => setTimeout(r, 2000));
+                }
             }
         }
 
