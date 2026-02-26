@@ -60,15 +60,17 @@ npm run dashboard
 npm run redeem claim-all
 ```
 
-## Strategies
+## Example Strategies
 
-**Oracle Arb** — Uses Pyth Hermes SSE for sub-second oracle prices. Scans short-term crypto prediction markets and fires FOK orders when the oracle shows conviction the market hasn't priced in. Checks actual orderbook ask price before ordering — only trades when there's real edge at the fill price.
+Three strategies are included as starting points. They demonstrate different approaches to finding edge in prediction markets — study them, modify them, or use them as templates for your own.
 
-**Signal Sniper** — Trades on CoinGecko momentum signals against prediction market pricing.
+**Oracle Arb** (`npm run oracle-arb`) — The primary example. Connects to Pyth Hermes SSE for sub-second oracle prices and compares them against Limitless market pricing. When the oracle shows conviction the market hasn't priced in, it fires FOK orders at the actual orderbook ask. Includes orderbook validation, position tracking, and auto-approval.
 
-**Binary Complement Arb** — Finds markets where YES + NO < $1.00 for guaranteed profit.
+**Signal Sniper** (`npm run signal-sniper`) — Simpler approach using CoinGecko price data. Finds prediction markets where the current spot price creates an edge against market odds. Good starting point for understanding the strategy framework.
 
-**Build your own** — Extend `BaseStrategy` with a `tick()` method. See `src/strategies/oracle-arb/` for a complete example.
+**Cross-Market Arb** (`npm run complement-arb`) — Scans for pricing inefficiencies where YES + NO < $1.00. Experimental — demonstrates the complement arbitrage concept.
+
+**Build your own** — Extend `BaseStrategy` with a `tick()` method that returns trade decisions. The base class handles the execution loop, order submission, and PM2 lifecycle. See `src/strategies/oracle-arb/` for the most complete example.
 
 ## Architecture
 
