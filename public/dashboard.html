@@ -277,10 +277,10 @@ async function load() {
     $('v-pos-sub').textContent=pos.length+' total tracked';
 
     // KPI: Trades
-    const trades=d.trades||[];
-    const filled=trades.filter(t=>t.filled||t.success);
-    $('v-trades').textContent=filled.length+'/'+trades.length;
-    $('v-trades-sub').textContent=filled.length+' filled, '+(trades.length-filled.length)+' missed';
+    const allTrades=d.trades||[];
+    const filled=allTrades.filter(t=>t.filled||t.success);
+    $('v-trades').textContent=filled.length+'/'+allTrades.length;
+    $('v-trades-sub').textContent=filled.length+' filled, '+(allTrades.length-filled.length)+' missed';
 
     // Chart
     drawChart($('pnl-chart'), d.cumPnl||[]);
