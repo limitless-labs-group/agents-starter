@@ -75,6 +75,22 @@ Setup → Dry Run → Research → Go Live → Monitor → Iterate → Scale
                                               Adjust params → restart
 ```
 
+### Strategy Tips: What Actually Works
+
+The oracle-arb strategy works best when you:
+
+1. **Hit the actual ask, don't fish at 50¢** — Check the orderbook with `getOrderbook(slug)` and bid 1-2¢ above the best ask. Markets with real liquidity fill instantly. Fishing at low prices = FOK rejections.
+
+2. **Target balanced markets** — Markets where YES/NO is between 30-70% have real two-sided liquidity. One-sided markets (95%+) have thin books and no opportunity.
+
+3. **Scan continuously, not just at expiry** — New markets appear throughout the hour. The golden window (xx:57-xx:03) has the most urgency, but opportunities exist anytime.
+
+4. **Use the oracle for conviction, not entry price** — Pyth Hermes gives sub-second prices. If oracle says 90%+ probability and market is at 50¢, that's a fill. If market is already at 90¢, there's no edge.
+
+5. **Small bets, many trades** — $1-2 per trade, spread across assets. One XMR trade at 72¢ that resolves YES = 38% return. That compounds.
+
+The included strategy implements all of this — study `src/strategies/oracle-arb/index.ts` and iterate from there.
+
 ### Key Files for Agents
 
 | File | Purpose | When to Check |
