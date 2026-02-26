@@ -14,6 +14,5 @@ data/*.json
 data/*.jsonl
 data/*-backup-*
 
-# Work-in-progress: Hermes SSE price feed (not ready for public)
-src/core/price-feeds/hermes.ts
+# Runtime data (user-specific)
 data/oracle-arb-positions.json
