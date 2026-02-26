@@ -168,7 +168,7 @@ export class TradingClient {
         /** Order type. Defaults to 'GTC'. */
         orderType?: 'GTC' | 'FOK';
     }): Promise<any> {
-        const { marketSlug, side, limitPriceCents, usdAmount, orderType = 'GTC' } = params;
+        const { marketSlug, side, limitPriceCents, usdAmount, orderType = 'FOK' } = params;
 
         // --- Rate limit: enforce 300 ms gap between order submissions ---
         await this.orderSemaphore.acquire();
