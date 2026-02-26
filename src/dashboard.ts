@@ -244,23 +244,14 @@ function buildByAsset(trades: any[]): Record<string, { wins: number; losses: num
         const a = map[key];
         const amt = parseFloat(t.tradeAmountUSD ?? t.tradeAmount ?? '0') || 0;
         
-        // Handle API format (Buy/Sell strategy) and oracle-arb format
-        if (t.strategy === 'Sell') {
-            if (amt > 0) { a.wins++; a.pnl += amt; }
-            else        { a.losses++; a.pnl += amt; }
-        } else if (t.strategy === 'oracle-arb') {
-            // Oracle arb trades - count success as win, pending until resolved
-            if (t.success === true) {
-                a.wins++;
-                a.pnl += amt * 0.1; // Assume 10% edge
-            } else if (t.success === false) {
-                a.losses++;
-                a.pnl -= amt * 0.1;
-            } else {
-                a.pending++;
-            }
+        // wins = filled FOK orders, losses = missed FOK orders
+        // Note: "wins" here means "filled", not "resolved profitably"
+        const filled = t.filled || t.success === true;
+        if (filled) {
+            a.wins++;
+            a.pnl += amt;
         } else {
-            a.pending++;
+            a.losses++;
         }
         a.pnl = Math.round(a.pnl * 100) / 100;
     }

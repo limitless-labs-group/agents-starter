@@ -136,10 +136,10 @@
     <div class="kpi-label">Open Positions</div>
     <div class="kpi-sub" id="v-pos-sub"></div>
   </div>
-  <div class="kpi" id="kpi-claim">
-    <div class="kpi-val p" id="v-claim">--</div>
-    <div class="kpi-label">Claimable</div>
-    <div class="kpi-sub" id="v-claim-sub"></div>
+  <div class="kpi" id="kpi-trades">
+    <div class="kpi-val cy" id="v-trades">--</div>
+    <div class="kpi-label">Trades</div>
+    <div class="kpi-sub" id="v-trades-sub"></div>
   </div>
 </div>
 
@@ -160,7 +160,7 @@
 <!-- Row 2: Per-Asset Performance + Positions -->
 <div class="two-col">
   <div class="panel">
-    <div class="panel-title">Performance by Asset <span class="count" id="asset-count"></span></div>
+    <div class="panel-title">Fill Rate by Asset <span class="count" id="asset-count"></span></div>
     <div id="asset-bars"></div>
   </div>
   <div class="panel">
@@ -175,28 +175,16 @@
   </div>
 </div>
 
-<!-- Row 3: Recent Trades + Claimable -->
-<div class="two-col">
-  <div class="panel">
-    <div class="panel-title">Recent Trades <span class="count" id="trade-count"></span></div>
-    <div class="scroll-wrap">
-      <table>
-        <thead><tr><th>Time</th><th>Market</th><th>Side</th><th>$</th><th>Edge</th><th>Status</th></tr></thead>
-        <tbody id="tbl-trades"></tbody>
-      </table>
-    </div>
-    <div id="trades-empty" class="empty-msg">No trades yet</div>
+<!-- Row 3: Recent Trades (full width) -->
+<div class="panel" style="margin-bottom:16px">
+  <div class="panel-title">Recent Trades <span class="count" id="trade-count"></span></div>
+  <div class="scroll-wrap">
+    <table>
+      <thead><tr><th>Time</th><th>Market</th><th>Side</th><th>$</th><th>Edge</th><th>Status</th></tr></thead>
+      <tbody id="tbl-trades"></tbody>
+    </table>
   </div>
-  <div class="panel">
-    <div class="panel-title">Claimable Winnings <span class="count" id="claim-count"></span></div>
-    <div class="scroll-wrap">
-      <table>
-        <thead><tr><th>Market</th><th>Side</th><th>Payout</th></tr></thead>
-        <tbody id="tbl-claim"></tbody>
-      </table>
-    </div>
-    <div id="claim-empty" class="empty-msg">No claimable winnings</div>
-  </div>
+  <div id="trades-empty" class="empty-msg">No trades yet</div>
 </div>
 
 <script>
@@ -243,10 +231,10 @@ function renderBars(el, assets) {
     return `<div class="bar-row">
       <span class="bar-label">${name}</span>
       <div class="bar-track">
-        <div class="bar-w" style="width:${wp}%">${w?w+'W':''}</div>
-        <div class="bar-l" style="width:${lp}%">${l?l+'L':''}</div>
+        <div class="bar-w" style="width:${wp}%">${w?w+'✓':''}</div>
+        <div class="bar-l" style="width:${lp}%">${l?l+'✗':''}</div>
       </div>
-      <span class="bar-stat">${wr}% &middot; <span class="${pnlCls(pnl)}">${fmtUsd(pnl)}</span></span>
+      <span class="bar-stat">${wr}% fill &middot; $${pnl.toFixed(0)} vol</span>
     </div>`;
   }).join('');
 }
@@ -288,16 +276,11 @@ async function load() {
     $('v-pos').textContent=activePos.length;
     $('v-pos-sub').textContent=pos.length+' total tracked';
 
-    // KPI: Claimable
-    const cl=d.claimable||[];
-    if(cl.length) {
-      const tot=cl.reduce((s,c)=>s+(parseFloat(c.expectedPayout)||0),0);
-      $('v-claim').textContent='$'+tot.toFixed(2);
-      $('v-claim-sub').textContent=cl.length+' positions';
-    } else {
-      $('v-claim').textContent='—';
-      $('v-claim-sub').textContent='auto-claimed by bot';
-    }
+    // KPI: Trades
+    const trades=d.trades||[];
+    const filled=trades.filter(t=>t.filled||t.success);
+    $('v-trades').textContent=filled.length+'/'+trades.length;
+    $('v-trades-sub').textContent=filled.length+' filled, '+(trades.length-filled.length)+' missed';
 
     // Chart
     drawChart($('pnl-chart'), d.cumPnl||[]);
@@ -355,18 +338,7 @@ async function load() {
       </tr>`;
     }).join('');
 
-    // Claimable table
-    $('claim-count').textContent=cl.length?'('+cl.length+')':'';
-    $('claim-empty').style.display=cl.length?'none':'block';
-    $('tbl-claim').innerHTML=cl.map(c=>{
-      const url=c.marketSlug?'https://limitless.exchange/markets/'+c.marketSlug:null;
-      const link=url?`<a href="${url}" target="_blank">${trunc(c.marketTitle||c.marketSlug,35)} ↗</a>`:trunc(c.marketTitle,35);
-      return `<tr>
-        <td>${link}</td>
-        <td><span class="badge b-yes">${c.side||'—'}</span></td>
-        <td class="g">${c.expectedPayout||'—'}</td>
-      </tr>`;
-    }).join('');
+    // (Claimable removed — auto-claimed by bot)
 
     // Dot green
     $('dot').className='dot';
