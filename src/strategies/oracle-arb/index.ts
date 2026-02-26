@@ -314,14 +314,25 @@ export class OracleArbStrategy extends BaseStrategy {
                         yesPrice <= config.maxMarketPrice &&
                         oracleYesProb > config.minConfidencePercent) {
 
-                        // Check orderbook for actual ask price
-                        let askPrice = yesPrice + 0.05; // fallback: 5¢ above last trade
+                        // Check orderbook for actual ask price — THIS is the real price we'd pay
+                        let askPrice = yesPrice;
                         try {
                             const book = await this.limitless.getOrderbook(market.slug);
                             if (book.asks?.[0]?.price) {
                                 askPrice = parseFloat(book.asks[0].price);
                             }
                         } catch { /* use fallback */ }
+
+                        // CRITICAL: check ask price against max AND recalculate edge vs actual fill price
+                        if (askPrice > config.maxMarketPrice) {
+                            this.logger.debug({ market: market.slug, askPrice: (askPrice*100).toFixed(0)+'¢', max: (config.maxMarketPrice*100)+'¢' }, 'Ask too expensive, skipping');
+                            continue;
+                        }
+                        const realEdge = oracleYesProb - askPrice;
+                        if (realEdge < config.minEdgePercent) {
+                            this.logger.debug({ market: market.slug, askPrice: (askPrice*100).toFixed(0)+'¢', realEdge: (realEdge*100).toFixed(1)+'%' }, 'No edge at ask price, skipping');
+                            continue;
+                        }
 
                         // Bid 1¢ above the ask to ensure fill
                         const fokPrice = Math.min(Math.ceil(askPrice * 100) + 1, 95);
@@ -334,8 +345,8 @@ export class OracleArbStrategy extends BaseStrategy {
                             yesPrice,
                             askPrice: (askPrice * 100).toFixed(1) + '¢',
                             fokPrice: fokPrice + '¢',
+                            realEdge: (realEdge * 100).toFixed(1) + '%',
                             oracleYesProb: (oracleYesProb * 100).toFixed(1) + '%',
-                            edge: (yesEdge * 100).toFixed(1) + '%',
                         }, 'ORACLE EDGE: BUY YES');
 
                         const ladder = oracleYesProb >= 0.90 ? [50, 53, 56] : undefined;
@@ -372,7 +383,7 @@ export class OracleArbStrategy extends BaseStrategy {
                         (1 - oracleYesProb) > config.minConfidencePercent) {
 
                         // Check orderbook for actual NO ask price
-                        let noAskPrice = noPrice + 0.05;
+                        let noAskPrice = noPrice;
                         try {
                             const book = await this.limitless.getOrderbook(market.slug);
                             // NO side asks — need to look at YES bids (complement)
@@ -380,6 +391,18 @@ export class OracleArbStrategy extends BaseStrategy {
                                 noAskPrice = 1 - parseFloat(book.bids[0].price);
                             }
                         } catch { /* use fallback */ }
+
+                        // CRITICAL: check actual ask price, not just displayed price
+                        if (noAskPrice > config.maxMarketPrice) {
+                            this.logger.debug({ market: market.slug, noAskPrice: (noAskPrice*100).toFixed(0)+'¢', max: (config.maxMarketPrice*100)+'¢' }, 'NO ask too expensive, skipping');
+                            continue;
+                        }
+                        const noConf = 1 - oracleYesProb;
+                        const realNoEdge = noConf - noAskPrice;
+                        if (realNoEdge < config.minEdgePercent) {
+                            this.logger.debug({ market: market.slug, noAskPrice: (noAskPrice*100).toFixed(0)+'¢', realNoEdge: (realNoEdge*100).toFixed(1)+'%' }, 'No edge at NO ask, skipping');
+                            continue;
+                        }
 
                         const fokPrice = Math.min(Math.ceil(noAskPrice * 100) + 1, 95);
 
@@ -391,8 +414,8 @@ export class OracleArbStrategy extends BaseStrategy {
                             noPrice,
                             noAskPrice: (noAskPrice * 100).toFixed(1) + '¢',
                             fokPrice: fokPrice + '¢',
-                            oracleNoProb: ((1 - oracleYesProb) * 100).toFixed(1) + '%',
-                            edge: (noEdge * 100).toFixed(1) + '%',
+                            realEdge: (realNoEdge * 100).toFixed(1) + '%',
+                            oracleNoProb: (noConf * 100).toFixed(1) + '%',
                         }, 'ORACLE EDGE: BUY NO');
 
                         const noConf = (1 - oracleYesProb);
