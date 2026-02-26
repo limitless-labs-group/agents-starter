@@ -1,127 +1,164 @@
-# Prediction Market Trading Agent — Limitless Exchange
+# Limitless Prediction Market Trading Agent
 
-> An OpenClaw skill for autonomous prediction market trading on [Limitless Exchange](https://limitless.exchange), the #1 prediction market on Base chain.
+Complete SDK and strategy framework for autonomous prediction market trading on Limitless Exchange (Base chain).
+
+This file is the operating manual. An agent with shell access and this file can go from zero to live trading autonomously.
 
 ---
 
-## 🚀 OpenClaw Quickstart (For AI Agents)
+## Agent Setup Wizard
 
-### Demo Flow: Fresh Agent → Live Trading
+Follow these steps in order. Each step builds on the previous one.
 
-Feed this SKILL.md to a fresh OpenClaw/Clawdbot instance, then use these ready-to-go prompts:
+### Step 1: Clone and Install
 
-#### Prompt 1: Setup & First Trade
-```
-Set up the Limitless prediction market trading bot:
-1. Clone https://github.com/limitless-labs-group/agents-starter.git to ~/limitless-trader
-2. Run npm install
-3. Create .env from .env.example — I'll provide PRIVATE_KEY and LIMITLESS_API_KEY
-4. Check my wallet balance (USDC on Base + ETH for gas)
-5. Start the dashboard: npm run dashboard (port 3456)
-6. Run oracle-arb in dry-run mode: DRY_RUN=true npm run oracle-arb
-7. Show me the dashboard URL and confirm it's scanning markets
+```bash
+git clone https://github.com/limitless-labs-group/agents-starter.git ~/limitless-trader
+cd ~/limitless-trader
+npm install
+cp .env.example .env
 ```
 
-#### Prompt 2: Strategy Research
-```
-Research the current Limitless market landscape:
-1. Query the Limitless MCP docs (POST https://limitless.mintlify.app/mcp) for current market types
-2. Run npm run iterate:markets to scan all active CLOB markets
-3. Identify: which assets have the most markets? What expiry windows exist?
-4. Check the Hermes oracle feed — what's the latency vs on-chain prices?
-5. Summarize: what's the best strategy opportunity right now and why?
-```
+### Step 2: Configure Credentials
 
-#### Prompt 3: Go Live
-```
-Enable live trading with conservative parameters:
-1. Set DRY_RUN=false in .env
-2. Set ORACLE_BET_SIZE=1 (start with $1 bets)
-3. Set ORACLE_ASSETS=BTC,ETH,SOL
-4. Start the strategy: pm2 start "npx tsx src/strategies/oracle-arb/run.ts" --name oracle-live
-5. Start the dashboard: pm2 start "npx tsx src/dashboard.ts" --name dashboard
-6. Watch the first few trades in the logs: pm2 logs oracle-live --lines 50
-7. Confirm the dashboard shows live data
-```
-
-#### Prompt 4: Strategy Iteration
-```
-Analyze and iterate on the oracle-arb strategy:
-1. Read data/oracle-arb-trades.jsonl — how many trades, what's the fill rate?
-2. Check data/pnl-tracker.json — what's the realized P&L?
-3. Break down win rate by asset (BTC vs ETH vs SOL)
-4. Check if we're hitting the edge threshold too aggressively or conservatively
-5. Query the Limitless MCP for any new market types or API changes
-6. Suggest ONE specific parameter change, implement it, and restart
-7. Log the change in data/iteration-log.jsonl
-```
-
-#### Prompt 5: Emergency Stop
-```
-Stop all trading immediately:
-1. pm2 stop oracle-live
-2. Cancel any open orders
-3. Claim all redeemable winnings: npx tsx src/core/limitless/redeem.ts claim-all
-4. Show final P&L summary from dashboard
-```
-
-### Agent Workflow
+Edit `.env` and set these required values. Ask your user for them if not provided:
 
 ```
-Setup → Dry Run → Research → Go Live → Monitor → Iterate → Scale
-  │                  │                     │          │
-  └── .env config    └── MCP docs query    └── dashboard + logs
-                                                      │
-                                              Adjust params → restart
+PRIVATE_KEY=0x...          # Base chain wallet private key (dedicated trading wallet)
+LIMITLESS_API_KEY=lmts_... # From limitless.exchange -> Profile -> API Keys
 ```
 
-### Strategy Tips: What Actually Works
+The wallet needs USDC (collateral) and a small amount of ETH (gas, ~$1-2) on Base chain.
 
-The oracle-arb strategy works best when you:
+### Step 3: Verify Wallet
 
-1. **Hit the actual ask, don't fish at 50¢** — Check the orderbook with `getOrderbook(slug)` and bid 1-2¢ above the best ask. Markets with real liquidity fill instantly. Fishing at low prices = FOK rejections.
+```bash
+npx tsx -e "
+import { getWallet } from './src/core/wallet.js';
+import { createPublicClient, http, formatUnits } from 'viem';
+import { base } from 'viem/chains';
+const { account } = getWallet();
+const client = createPublicClient({ chain: base, transport: http() });
+const usdc = await client.readContract({
+  address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  abi: [{ name: 'balanceOf', type: 'function', inputs: [{type:'address'}], outputs: [{type:'uint256'}], stateMutability: 'view' }],
+  functionName: 'balanceOf', args: [account.address]
+});
+console.log('Address:', account.address);
+console.log('USDC:', formatUnits(usdc, 6));
+"
+```
 
-2. **Target balanced markets** — Markets where YES/NO is between 30-70% have real two-sided liquidity. One-sided markets (95%+) have thin books and no opportunity.
+If USDC is 0, the user needs to fund the wallet before proceeding.
 
-3. **Scan continuously, not just at expiry** — New markets appear throughout the hour. The golden window (xx:57-xx:03) has the most urgency, but opportunities exist anytime.
+### Step 4: Dry Run
 
-4. **Use the oracle for conviction, not entry price** — Pyth Hermes gives sub-second prices. If oracle says 90%+ probability and market is at 50¢, that's a fill. If market is already at 90¢, there's no edge.
+```bash
+DRY_RUN=true npm run oracle-arb
+```
 
-5. **Small bets, many trades** — $1-2 per trade, spread across assets. One XMR trade at 72¢ that resolves YES = 38% return. That compounds.
+Confirm: Hermes SSE connects, markets are scanned, no orders placed. If this works, the setup is correct.
 
-The included strategy implements all of this — study `src/strategies/oracle-arb/index.ts` and iterate from there.
+### Step 5: Go Live
 
-### Key Files for Agents
+Edit `.env`:
+```
+DRY_RUN=false
+ORACLE_BET_SIZE=1
+ORACLE_ASSETS=BTC,ETH,SOL
+ORACLE_MAX_PRICE=0.75
+ORACLE_MIN_EDGE=0.10
+```
 
-| File | Purpose | When to Check |
-|------|---------|---------------|
-| `data/oracle-arb-positions.json` | Tracked positions | Verify what markets we're in |
-| `data/oracle-arb-trades.jsonl` | Trade execution log | Analyze performance |
-| `data/pnl-tracker.json` | Realized P&L from claims | Check actual profitability |
-| `.env` | Strategy configuration | Before any parameter changes |
-| `SKILL.md` | This file — full SDK reference | When implementing new features |
+Start with PM2 for persistence:
+```bash
+pm2 start "npx tsx src/strategies/oracle-arb/run.ts" --name oracle-live --max-restarts 999 --restart-delay 5000
+pm2 start "npx tsx src/dashboard.ts" --name dashboard
+pm2 logs oracle-live --lines 20
+```
+
+### Step 6: Monitor
+
+Dashboard: `http://localhost:3456` (or set `DASHBOARD_PORT`)
+
+Check logs: `pm2 logs oracle-live --lines 50`
+
+Claim winnings: `npx tsx src/core/limitless/redeem.ts claim-all`
+
+### Step 7: Iterate
+
+Read `data/oracle-arb-trades.jsonl` for trade history. Analyze fill rates, win rates by asset, and edge distribution. Adjust `.env` parameters and restart:
+
+```bash
+pm2 restart oracle-live
+```
+
+Log parameter changes to `data/iteration-log.jsonl` for tracking what works.
+
+### Emergency Stop
+
+```bash
+pm2 stop oracle-live
+npx tsx src/core/limitless/redeem.ts claim-all
+```
+
+---
+
+## Strategy Notes
+
+The oracle-arb strategy uses Pyth Hermes SSE for sub-second oracle prices and compares them against Limitless market pricing. When the oracle shows strong conviction that a market is mispriced, it fires FOK (Fill-or-Kill) orders.
+
+Key behaviors:
+
+- **Checks actual orderbook ask before ordering.** The API's displayed price can be stale. The strategy fetches the real ask and validates it against `ORACLE_MAX_PRICE` before placing any order.
+- **FOK orders only.** Fill instantly or reject. No ghost orders on the book.
+- **Continuous scanning** with faster intervals during the golden window (xx:57-xx:03 of each hour) when new markets appear.
+- **Auto-approval.** First trade on a new market triggers automatic USDC/CTF approval.
+- **Position tracking.** Prevents duplicate bets on the same market.
+
+What works: targeting balanced markets (30-70% odds) where the orderbook has real liquidity below 75 cents. Hit the ask, don't fish.
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `.env` | All strategy configuration |
+| `src/strategies/oracle-arb/index.ts` | Main strategy logic |
+| `src/strategies/base-strategy.ts` | Strategy base class (tick loop, order execution) |
+| `src/core/limitless/trading.ts` | Order creation, signing, submission |
+| `src/core/limitless/markets.ts` | Market discovery, orderbook, search |
+| `src/core/limitless/redeem.ts` | Claim winnings from resolved markets |
+| `src/core/price-feeds/hermes.ts` | Pyth Hermes SSE price streaming |
+| `src/dashboard.ts` | Analytics dashboard server |
+| `data/oracle-arb-trades.jsonl` | Trade execution log |
+| `data/oracle-arb-positions.json` | Current tracked positions |
+| `data/pnl-tracker.json` | Realized P&L from claims |
 
 ---
 
 ## Table of Contents
 
-1. [Overview](#1-overview)
-2. [OpenClaw Quickstart (For AI Agents)](#-openclaw-quickstart-for-ai-agents)
-3. [Live Documentation (MCP)](#2-live-documentation-mcp)
-4. [Market Structure](#3-market-structure)
-5. [Architecture](#4-architecture)
-6. [Setup Guide](#5-setup-guide)
-7. [Core SDK Reference](#6-core-sdk-reference)
-8. [EIP-712 Signing Deep Dive](#7-eip-712-signing-deep-dive)
-9. [Contract Addresses](#8-contract-addresses)
-10. [Strategies Reference](#9-strategies-reference)
-11. [Building Your Own Strategy](#10-building-your-own-strategy)
-12. [Autonomous Iteration](#11-autonomous-iteration-the-openclaw-superpower)
-13. [Safety & Risk Management](#12-safety--risk-management)
-14. [Common Patterns & Recipes](#13-common-patterns--recipes)
-15. [OpenClaw Agent Integration Patterns](#14-openclaw-agent-integration-patterns)
-16. [Troubleshooting](#15-troubleshooting)
-17. [Links & Resources](#16-links--resources)
+1. [Agent Setup Wizard](#agent-setup-wizard) — start here
+2. [Strategy Notes](#strategy-notes)
+3. [Key Files](#key-files)
+4. [Overview](#1-overview)
+5. [Live Documentation (MCP)](#2-live-documentation-mcp)
+6. [Market Structure](#3-market-structure)
+7. [Architecture](#4-architecture)
+8. [Setup Guide](#5-setup-guide)
+9. [Core SDK Reference](#6-core-sdk-reference)
+10. [EIP-712 Signing Deep Dive](#7-eip-712-signing-deep-dive)
+11. [Contract Addresses](#8-contract-addresses)
+12. [Strategies Reference](#9-strategies-reference)
+13. [Building Your Own Strategy](#10-building-your-own-strategy)
+14. [Autonomous Iteration](#11-autonomous-iteration)
+15. [Safety and Risk Management](#12-safety--risk-management)
+16. [Common Patterns and Recipes](#13-common-patterns--recipes)
+17. [Agent Integration Patterns](#14-agent-integration-patterns)
+18. [Troubleshooting](#15-troubleshooting)
+19. [Links and Resources](#15-links--resources)
 
 ---
 
@@ -1587,7 +1624,7 @@ Then use it in your strategy's `tick()` method alongside or instead of CoinGecko
 
 ---
 
-## 11. Autonomous Iteration (The OpenClaw Superpower)
+## 11. Autonomous Iteration
 
 This is where AI agents shine. The `iterate.ts` module provides commands designed to be called by an AI agent on a schedule, creating a continuous improvement loop.
 
@@ -1890,7 +1927,7 @@ console.log('Midpoint:', book.midpoint);
 
 ---
 
-## 14. OpenClaw Agent Integration Patterns
+## 14. Agent Integration Patterns
 
 This skill is designed for AI agents operating through OpenClaw. Here are specific patterns for autonomous operation:
 
@@ -2113,7 +2150,7 @@ This approves both USDC and CTF for the market's venue contracts.
 
 ---
 
-## 15. Links & Resources
+## 15. Links and Resources
 
 ### Limitless Exchange
 - **App:** [limitless.exchange](https://limitless.exchange)

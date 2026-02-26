@@ -1,304 +1,104 @@
-# Limitless Agents Starter Kit
+# Limitless Agents Starter
 
-Build autonomous trading agents for [Limitless Exchange](https://limitless.exchange) — the #1 prediction market on Base.
+Autonomous trading agents for [Limitless Exchange](https://limitless.exchange), the prediction market on Base.
 
-## What's Inside
+Built as an [OpenClaw](https://github.com/openclaw/openclaw) skill. Feed `SKILL.md` to your agent and it handles the rest — setup, trading, iteration.
 
-**Core SDK** — Full TypeScript client for the Limitless API
-- Market discovery & orderbook
-- Order creation with EIP-712 signing
-- Position management & P&L tracking
-- Auto-redeem winnings from resolved markets
-- Real-time WebSocket data
+## For AI Agents
 
-**Strategies** — Starting points for your own trading logic
-- Signal Sniper — trade on CoinGecko momentum signals
-- Cross-Market Arb — exploit YES+NO pricing inefficiencies
-- Bring your own strategy using the base class
+This repo is designed to be operated by AI agents, not just read by humans.
 
-**AI Agent Integration** — Built as an [OpenClaw](https://github.com/openclaw/openclaw) skill
-- Install as a skill and let your AI agent research, trade, and iterate
-- The iterator analyzes past trades and suggests parameter improvements
-- SKILL.md provides the full agent interface
+**Quick start with OpenClaw or any coding agent:**
 
-## Quick Start
+1. Clone this repo
+2. Read `SKILL.md` — it contains the full SDK reference, setup guide, and strategy documentation
+3. The agent handles: environment setup, wallet configuration, strategy selection, deployment, monitoring, and iteration
 
-### 1. Prerequisites
-- Node.js 18+
-- A wallet with USDC on Base chain
-- A Limitless API key
+The `SKILL.md` acts as a complete operating manual. An agent with file access and a shell can go from zero to live trading by following it.
 
-### 2. Get Your API Key
-1. Go to [limitless.exchange](https://limitless.exchange)
-2. Connect your wallet
-3. Profile → API Keys → Generate
+## For Humans
 
-### 3. Export Your Private Key
-**MetaMask:** Settings → Security → Export Private Key
-**Rabby:** Settings → Security → Export Private Key
+If you prefer to set things up manually:
 
-WARNING: Use a dedicated trading wallet. Never use your main wallet.
-
-### 4. Fund Your Wallet
-
-You need two things on **Base chain**:
-
-**USDC** — for trading collateral
-- The bot checks your wallet's USDC balance directly (no deposit to Limitless needed)
-- Bridge from Ethereum or buy directly on Base
-
-**ETH** — for gas fees
-- You'll need ~$1-2 worth of ETH for transaction fees
-- Base gas is cheap (~$0.01-0.10 per transaction)
-
-### 5. Setup
 ```bash
 git clone https://github.com/limitless-labs-group/agents-starter.git
 cd agents-starter
 npm install
 cp .env.example .env
-# Edit .env with your private key + API key
+# Add PRIVATE_KEY and LIMITLESS_API_KEY to .env
 ```
 
-### 6. Market Approval (Required Before Trading)
+### Get Your Credentials
 
-Limitless uses the Conditional Tokens Framework (CTF). Before you can trade on a market, you must approve the exchange to spend your USDC and handle CTF tokens.
+**API Key:** [limitless.exchange](https://limitless.exchange) → Connect wallet → Profile → API Keys → Generate
 
-**Option A: Manual approval per market**
+**Private Key:** Export from MetaMask or Rabby. Use a dedicated trading wallet — never your main wallet.
+
+**Funding:** You need USDC (trading collateral) and a small amount of ETH (gas) on Base chain.
+
+### Run a Strategy
+
 ```bash
-npm start approve <market-slug>
-```
+# Dry run (no real trades)
+npm run oracle-arb
 
-**Option B: Let the strategy auto-approve**
-The oracle-arb strategy automatically detects "not approved" errors and approves markets on-the-fly. This is the recommended approach for AI agents.
-
-**Why this matters:** Each market has a unique venue (exchange contract). Approval is a one-time, on-chain transaction that costs a small gas fee (~$0.01-0.05 on Base).
-
-### 7. Dry Run (No Real Trades)
-```bash
-npm run signal-sniper
-# Watches markets, finds opportunities, logs what it WOULD trade
-```
-
-### 7. Go Live
-```bash
+# Live trading
 # Edit .env: DRY_RUN=false
-npm run signal-sniper
+npm run oracle-arb
+```
+
+### Dashboard
+
+```bash
+npm run dashboard
+# Opens at http://localhost:3456
+```
+
+### Claim Winnings
+
+```bash
+npm run redeem claim-all
 ```
 
 ## Strategies
 
-### Signal Sniper
-Monitors CoinGecko prices and finds prediction markets where the current price creates an edge. For example, if BTC is trading at $97,500 and there's a market "BTC above $97,000?" with YES at 60¢, the bot recognizes YES should be closer to 90¢+ and buys.
+**Oracle Arb** — Uses Pyth Hermes SSE for sub-second oracle prices. Scans short-term crypto prediction markets and fires FOK orders when the oracle shows conviction the market hasn't priced in. Checks actual orderbook ask price before ordering — only trades when there's real edge at the fill price.
 
-```bash
-npm run signal-sniper
-# Configure via env: SNIPER_ASSETS, SNIPER_BET_SIZE, SNIPER_MIN_EDGE
-```
+**Signal Sniper** — Trades on CoinGecko momentum signals against prediction market pricing.
 
-### Oracle Arb
-Uses the Hermes/Pyth oracle SSE stream to get sub-second price updates. Scans short-term crypto prediction markets and fires FOK orders when the oracle shows strong directional conviction that the market hasn't priced in yet. Low fill rate but high EV when orders hit.
+**Binary Complement Arb** — Finds markets where YES + NO < $1.00 for guaranteed profit.
 
-```bash
-npm run oracle-arb
-# Configure via env: ORACLE_ASSETS, ORACLE_BET_SIZE, ORACLE_MIN_EDGE
-```
-
-### Binary Complement Arb
-Scans all markets for pricing inefficiencies where YES + NO < $1.00. In a binary market, buying both sides for less than $1 guarantees profit at resolution.
-
-```bash
-npm run complement-arb
-# Configure via env: ARB_BET_SIZE, ARB_MIN_SPREAD
-```
-
-### Iterator (AI Agent Integration)
-Analyzes your trade history, scans markets, and suggests improvements. Designed to be called by an AI agent on a schedule.
-
-```bash
-npm run iterate           # Quick status report
-npm run iterate:analyze   # Deep analysis + recommendations
-npm run iterate:markets   # Scan current opportunities
-```
-
-## Demo Mode
-
-Not sure where to start? Run the interactive demo — it needs only your private key and API key, and never submits real orders:
-
-```bash
-npm run demo
-```
-
-The demo:
-1. Finds a live hourly prediction market
-2. Shows current YES/NO prices and market details
-3. Signs (but does **not** submit) a sample order
-4. Checks your portfolio for open positions
-5. Scans for any claimable winnings
-6. Prints a summary with next-step suggestions
-
-## Analytics Dashboard
-
-Visualise your agent's performance in a local web UI:
-
-```bash
-npm run dashboard
-# → open http://localhost:3456
-```
-
-Shows:
-- **Portfolio overview** — balance, total P&L, win rate
-- **Open positions** — market, side, size, unrealised P&L
-- **Open orders** — market, side, price, status
-- **Trade history** — recent fills with timestamps and amounts
-- **Claimable winnings** — resolved markets with one-click claim
-
-The dashboard auto-refreshes every 30 s. Port defaults to `3456`; override with `DASHBOARD_PORT=`.
-
-## Claiming Winnings
-
-When markets resolve, claim your winnings:
-
-```bash
-# Check a specific market
-npm run redeem check <market-slug>
-
-# Claim a specific market
-npm run redeem claim <market-slug>
-
-# Claim all resolved positions from your portfolio (no config files needed)
-npm run redeem claim-all
-
-# Claim specific markets in bulk
-npm run redeem claim-many slug-1 slug-2 slug-3
-```
-
-`claim-all` automatically fetches your portfolio from the API and claims every resolved position — no local files required.
-
-## Building Your Own Strategy
-
-Extend `BaseStrategy`:
-```typescript
-import { BaseStrategy, TradeDecision } from './strategies/base-strategy.js';
-
-class MyStrategy extends BaseStrategy {
-  async initialize(): Promise<void> {
-    // Setup logic
-  }
-
-  async tick(): Promise<TradeDecision[]> {
-    const markets = await this.limitless.getActiveMarkets();
-    // Your logic here — return trade decisions
-    return [];
-  }
-
-  async shutdown(): Promise<void> {
-    // Cleanup
-  }
-
-  getStats() {
-    return { activePositions: 0, totalVolumeUsd: 0, pnlUsd: 0, lastTickDurationMs: 0 };
-  }
-}
-```
-
-See `src/strategies/signal-sniper/` for a complete example.
+**Build your own** — Extend `BaseStrategy` with a `tick()` method. See `src/strategies/oracle-arb/` for a complete example.
 
 ## Architecture
 
 ```
 src/
-├── core/
-│   ├── wallet.ts                  # Private key → viem wallet
-│   ├── limitless/
-│   │   ├── types.ts               # Type definitions
-│   │   ├── markets.ts             # Market discovery & search
-│   │   ├── trading.ts             # Order creation & submission
-│   │   ├── sign.ts                # EIP-712 order signing
-│   │   ├── approve.ts             # USDC + CTF token approvals
-│   │   ├── redeem.ts              # Claim winnings from resolved markets
-│   │   ├── portfolio.ts           # Position & P&L tracking
-│   │   └── websocket.ts           # Real-time price data
-│   └── price-feeds/
-│       └── coingecko.ts           # CoinGecko price client
-├── strategies/
-│   ├── base-strategy.ts           # Strategy base class
-│   ├── index.ts                   # Strategy registry
-│   ├── iterate.ts                 # AI-powered analysis & iteration
-│   ├── signal-sniper/             # CoinGecko momentum strategy
-│   │   ├── index.ts
-│   │   ├── run.ts
-│   │   └── learnings.ts
-│   └── cross-market-arb/          # Binary complement arb
-│       ├── index.ts
-│       └── run.ts
-└── index.ts                       # CLI entry point
+  core/
+    limitless/          # Full Limitless API client (markets, trading, signing, redeem)
+    price-feeds/        # Pyth Hermes SSE, CoinGecko
+  strategies/
+    base-strategy.ts    # Strategy base class with tick loop
+    oracle-arb/         # Oracle arbitrage strategy
+    signal-sniper/      # CoinGecko momentum strategy
+    cross-market-arb/   # Binary complement arb
+  dashboard.ts          # Analytics dashboard server
 ```
 
-## Contracts (Base Chain)
+## Contracts (Base)
 
 | Contract | Address |
 |----------|---------|
-| CTF (Conditional Tokens) | `0xC9c98965297Bc527861c898329Ee280632B76e18` |
+| CTF | `0xC9c98965297Bc527861c898329Ee280632B76e18` |
 | USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 
-## Docs & Resources
-- [Limitless API Docs](https://docs.limitless.exchange) — Full API reference
-- [Limitless MCP Server](https://docs.limitless.exchange/mcp) — Live docs via Model Context Protocol
-- [Python SDK](https://pypi.org/project/limitless-py/)
-- [TypeScript SDK](https://www.npmjs.com/package/@limitless-exchange/sdk)
+## Resources
+
+- [Limitless API Docs](https://docs.limitless.exchange)
+- [Limitless MCP Server](https://docs.limitless.exchange/mcp) — live docs for AI agents
 - [OpenClaw](https://github.com/openclaw/openclaw) — AI agent platform
-
-### Using the MCP Documentation Server
-
-The Limitless MCP server provides live, searchable documentation that AI agents can query:
-
-```bash
-# Endpoint: https://docs.limitless.exchange/mcp
-# Use with AI agents that support MCP to query the knowledge base
-```
-
-This is especially useful for getting up-to-date API examples and resolving integration issues without reading through static docs.
-
-## Safety
-
-- **Always start with DRY_RUN=true**
-- Use a dedicated wallet with limited funds
-- Set MAX_TOTAL_EXPOSURE_USD conservatively
-- The strategies included are starting points — test thoroughly before running with real money
-
-## Troubleshooting
-
-### "Portfolio balance is $0" warning
-
-The bot checks your **wallet's USDC balance on-chain**, not a separate deposit. Make sure:
-- You have USDC on Base chain (not Ethereum mainnet)
-- Your wallet is connected to Base network
-- The `.env` file has the correct private key
-
-### Orders failing with "insufficient funds"
-
-You need **ETH on Base** for gas fees. Bridge a small amount (~$2) from Ethereum or buy on Base.
-
-### "Market not approved" / "Insufficient collateral allowance" error
-
-**Why this happens:** Each market requires a one-time approval for the exchange to spend your USDC and CTF tokens.
-
-**For AI agents / Auto-trading:** Use the oracle-arb strategy — it auto-approves markets when encountering this error.
-
-**Manual fix:**
-```bash
-npm start approve <market-slug>
-```
-
-**What the approval does:**
-1. Approves USDC for the market's exchange contract
-2. Approves CTF tokens for the exchange contract
-3. (For group markets) Approves CTF for the adapter contract
-
-Gas cost: ~$0.01-0.05 per market on Base.
-
-**Note:** After approval, you can trade unlimited times on that market without re-approving.
+- [SKILL.md](./SKILL.md) — full agent operating manual
 
 ## License
+
 MIT
