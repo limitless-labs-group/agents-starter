@@ -185,10 +185,8 @@ export class OracleArbStrategy extends BaseStrategy {
         // Adjust scanning frequency based on time of hour
         this.adjustTickInterval();
 
-        // Only trade in golden window (xx:57–xx:03)
-        if (!this.isGoldenWindow()) {
-            return decisions;
-        }
+        // Continuous scanning mode — golden window gives burst speed (3s vs 10s)
+        // but we scan at all times to catch opportunities
 
         // Check portfolio balance periodically (every 60 seconds)
         if (Date.now() - this.lastBalanceCheck > 60000) {
@@ -316,18 +314,29 @@ export class OracleArbStrategy extends BaseStrategy {
                         yesPrice <= config.maxMarketPrice &&
                         oracleYesProb > config.minConfidencePercent) {
 
+                        // Check orderbook for actual ask price
+                        let askPrice = yesPrice + 0.05; // fallback: 5¢ above last trade
+                        try {
+                            const book = await this.limitless.getOrderbook(market.slug);
+                            if (book.asks?.[0]?.price) {
+                                askPrice = parseFloat(book.asks[0].price);
+                            }
+                        } catch { /* use fallback */ }
+
+                        // Bid 1¢ above the ask to ensure fill
+                        const fokPrice = Math.min(Math.ceil(askPrice * 100) + 1, 95);
+
                         this.logger.info({
                             action: 'BUY YES',
                             market: market.title,
                             oraclePrice,
                             strike,
                             yesPrice,
+                            askPrice: (askPrice * 100).toFixed(1) + '¢',
+                            fokPrice: fokPrice + '¢',
                             oracleYesProb: (oracleYesProb * 100).toFixed(1) + '%',
                             edge: (yesEdge * 100).toFixed(1) + '%',
                         }, 'ORACLE EDGE: BUY YES');
-
-                        // Fire FOK at aggressive price (5¢ above current to try to get filled)
-                        const fokPrice = Math.min(Math.floor((yesPrice + 0.05) * 100), 95);
 
                         const ladder = oracleYesProb >= 0.90 ? [50, 53, 56] : undefined;
 
@@ -362,17 +371,29 @@ export class OracleArbStrategy extends BaseStrategy {
                         noPrice <= config.maxMarketPrice &&
                         (1 - oracleYesProb) > config.minConfidencePercent) {
 
+                        // Check orderbook for actual NO ask price
+                        let noAskPrice = noPrice + 0.05;
+                        try {
+                            const book = await this.limitless.getOrderbook(market.slug);
+                            // NO side asks — need to look at YES bids (complement)
+                            if (book.bids?.[0]?.price) {
+                                noAskPrice = 1 - parseFloat(book.bids[0].price);
+                            }
+                        } catch { /* use fallback */ }
+
+                        const fokPrice = Math.min(Math.ceil(noAskPrice * 100) + 1, 95);
+
                         this.logger.info({
                             action: 'BUY NO',
                             market: market.title,
                             oraclePrice,
                             strike,
                             noPrice,
+                            noAskPrice: (noAskPrice * 100).toFixed(1) + '¢',
+                            fokPrice: fokPrice + '¢',
                             oracleNoProb: ((1 - oracleYesProb) * 100).toFixed(1) + '%',
                             edge: (noEdge * 100).toFixed(1) + '%',
                         }, 'ORACLE EDGE: BUY NO');
-
-                        const fokPrice = Math.min(Math.floor((noPrice + 0.05) * 100), 95);
 
                         const noConf = (1 - oracleYesProb);
                         const ladder = noConf >= 0.90 ? [50, 53, 56] : undefined;
@@ -409,8 +430,14 @@ export class OracleArbStrategy extends BaseStrategy {
             }
         }
 
-        if (decisions.length > 0) {
-            this.logger.info({ count: decisions.length }, 'Trade decisions generated');
+        // Log scan summary at info level every 6th tick (~60s) or when decisions found
+        if (decisions.length > 0 || this.tickCount % 6 === 0) {
+            this.logger.info({
+                tick: this.tickCount,
+                decisions: decisions.length,
+                positions: this.positions.size,
+                traded: this.tradedMarkets.size,
+            }, decisions.length > 0 ? 'Trade decisions generated' : 'Scan complete — no opportunities');
         }
         
         return decisions;
