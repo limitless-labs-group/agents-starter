@@ -109,7 +109,8 @@ export abstract class BaseStrategy {
                         marketSlug: decision.marketSlug,
                         side: decision.side,
                         limitPriceCents: decision.priceLimit,
-                        usdAmount: decision.amountUsd
+                        usdAmount: decision.amountUsd,
+                        orderType: 'FOK',
                     });
                 }
             } catch (error: any) {
