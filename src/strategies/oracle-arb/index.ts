@@ -418,7 +418,6 @@ export class OracleArbStrategy extends BaseStrategy {
                             oracleNoProb: (noConf * 100).toFixed(1) + '%',
                         }, 'ORACLE EDGE: BUY NO');
 
-                        const noConf = (1 - oracleYesProb);
                         const ladder = noConf >= 0.90 ? [50, 53, 56] : undefined;
 
                         decisions.push({
