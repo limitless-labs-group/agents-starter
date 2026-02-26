@@ -6,55 +6,73 @@
 
 ## 🚀 OpenClaw Quickstart (For AI Agents)
 
-### Example Prompts for Claude/Cursor/Other Agents
+### Demo Flow: Fresh Agent → Live Trading
 
-```markdown
-# Example 1: Full Setup and First Trade
-"I want to set up the Limitless prediction market trading bot. 
-Please:
-1. Clone the agents-starter repo to ~/limitless-trader
-2. Install dependencies and configure environment
-3. Check my wallet has USDC on Base and ETH for gas
-4. Start the dashboard on port 3456
-5. Run the oracle-arb strategy in dry-run mode first
-6. Once confirmed working, enable live trading with $2 bets"
+Feed this SKILL.md to a fresh OpenClaw/Clawdbot instance, then use these ready-to-go prompts:
 
-# Example 2: Monitor and Optimize
-"Check on my Limitless trading bot:
-1. What's the current P&L and win rate?
-2. How many positions are open?
-3. Are there any claimable winnings?
-4. Run the iterator to analyze performance
-5. Suggest parameter adjustments based on the data"
+#### Prompt 1: Setup & First Trade
+```
+Set up the Limitless prediction market trading bot:
+1. Clone https://github.com/limitless-labs-group/agents-starter.git to ~/limitless-trader
+2. Run npm install
+3. Create .env from .env.example — I'll provide PRIVATE_KEY and LIMITLESS_API_KEY
+4. Check my wallet balance (USDC on Base + ETH for gas)
+5. Start the dashboard: npm run dashboard (port 3456)
+6. Run oracle-arb in dry-run mode: DRY_RUN=true npm run oracle-arb
+7. Show me the dashboard URL and confirm it's scanning markets
+```
 
-# Example 3: Emergency Stop
-"Stop all Limitless trading activity immediately:
-1. Stop the oracle-arb strategy
+#### Prompt 2: Strategy Research
+```
+Research the current Limitless market landscape:
+1. Query the Limitless MCP docs (POST https://limitless.mintlify.app/mcp) for current market types
+2. Run npm run iterate:markets to scan all active CLOB markets
+3. Identify: which assets have the most markets? What expiry windows exist?
+4. Check the Hermes oracle feed — what's the latency vs on-chain prices?
+5. Summarize: what's the best strategy opportunity right now and why?
+```
+
+#### Prompt 3: Go Live
+```
+Enable live trading with conservative parameters:
+1. Set DRY_RUN=false in .env
+2. Set ORACLE_BET_SIZE=1 (start with $1 bets)
+3. Set ORACLE_ASSETS=BTC,ETH,SOL
+4. Start the strategy: pm2 start "npx tsx src/strategies/oracle-arb/run.ts" --name oracle-live
+5. Start the dashboard: pm2 start "npx tsx src/dashboard.ts" --name dashboard
+6. Watch the first few trades in the logs: pm2 logs oracle-live --lines 50
+7. Confirm the dashboard shows live data
+```
+
+#### Prompt 4: Strategy Iteration
+```
+Analyze and iterate on the oracle-arb strategy:
+1. Read data/oracle-arb-trades.jsonl — how many trades, what's the fill rate?
+2. Check data/pnl-tracker.json — what's the realized P&L?
+3. Break down win rate by asset (BTC vs ETH vs SOL)
+4. Check if we're hitting the edge threshold too aggressively or conservatively
+5. Query the Limitless MCP for any new market types or API changes
+6. Suggest ONE specific parameter change, implement it, and restart
+7. Log the change in data/iteration-log.jsonl
+```
+
+#### Prompt 5: Emergency Stop
+```
+Stop all trading immediately:
+1. pm2 stop oracle-live
 2. Cancel any open orders
-3. Claim all redeemable winnings
-4. Show me the final P&L summary"
-
-# Example 4: Strategy Iteration
-"Analyze my oracle-arb strategy performance:
-1. Read the trade logs from data/oracle-arb-trades.jsonl
-2. Calculate actual win rate and average edge
-3. Compare oracle predictions vs actual outcomes
-4. Suggest improvements to confidence thresholds
-5. Implement the top suggestion and restart"
+3. Claim all redeemable winnings: npx tsx src/core/limitless/redeem.ts claim-all
+4. Show final P&L summary from dashboard
 ```
 
-### Agent Workflow Pattern
+### Agent Workflow
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Setup/Config   │────▶│  Dry Run Test    │────▶│  Live Trading   │
-│  (One-time)     │     │  (Validate)      │     │  (Autonomous)   │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-   Clone repo              Check logs              Iterate &
-   Set env vars            Verify signals          optimize
-   Fund wallet             No real trades          Claim winnings
+Setup → Dry Run → Research → Go Live → Monitor → Iterate → Scale
+  │                  │                     │          │
+  └── .env config    └── MCP docs query    └── dashboard + logs
+                                                      │
+                                              Adjust params → restart
 ```
 
 ### Key Files for Agents
@@ -63,8 +81,9 @@ Please:
 |------|---------|---------------|
 | `data/oracle-arb-positions.json` | Tracked positions | Verify what markets we're in |
 | `data/oracle-arb-trades.jsonl` | Trade execution log | Analyze performance |
-| `logs/oracle-arb-out.log` | Runtime logs | Debug issues |
-| `.env` | Configuration | Before any changes |
+| `data/pnl-tracker.json` | Realized P&L from claims | Check actual profitability |
+| `.env` | Strategy configuration | Before any parameter changes |
+| `SKILL.md` | This file — full SDK reference | When implementing new features |
 
 ---
 
