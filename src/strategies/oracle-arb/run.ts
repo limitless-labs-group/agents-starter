@@ -1,4 +1,14 @@
 #!/usr/bin/env node
+
+// Prevent SSE/network errors from crashing the process
+process.on('uncaughtException', (err) => {
+    console.error('[UNCAUGHT]', err.message);
+    // Don't exit — let the strategy reconnect
+});
+process.on('unhandledRejection', (err: any) => {
+    console.error('[UNHANDLED]', err?.message || err);
+});
+
 /**
  * Oracle Arb Strategy Runner
  * 
