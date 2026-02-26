@@ -227,11 +227,19 @@ async function fetchWalletBalance(walletAddress: string): Promise<number> {
  * Compute per-market asset breakdown from trade history for the bar charts.
  * Groups by market title, counting buys as "pending" and sells as resolved.
  */
+function extractAsset(slug: string): string {
+    // Extract asset ticker from slug like "dollarbtc-above-..." or market title like "$BTC above ..."
+    const m = slug.match(/\$(BTC|ETH|SOL|DOGE|BNB|XRP|ADA|AVAX|DOT|MATIC)/i)
+           || slug.match(/dollar(btc|eth|sol|doge|bnb|xrp|ada|avax|dot|matic)/i);
+    return m ? m[1].toUpperCase() : slug.slice(0, 20);
+}
+
 function buildByAsset(trades: any[]): Record<string, { wins: number; losses: number; pending: number; pnl: number }> {
     const map: Record<string, { wins: number; losses: number; pending: number; pnl: number }> = {};
 
     for (const t of trades) {
-        const key = t.marketTitle || t.market?.title || t.marketId || 'Unknown';
+        const raw = t.marketTitle || t.marketSlug || t.market?.title || t.marketId || 'Unknown';
+        const key = extractAsset(raw);
         if (!map[key]) map[key] = { wins: 0, losses: 0, pending: 0, pnl: 0 };
         const a = map[key];
         const amt = parseFloat(t.tradeAmountUSD ?? t.tradeAmount ?? '0') || 0;
@@ -268,6 +276,9 @@ async function fetchDashboardData(): Promise<object> {
         balance:   null,
         totalPnl:  0,
         winRate:   null,
+        wins:      0,
+        losses:    0,
+        pnlSource: '',
         cumPnl:    [],
         byAsset:   {},
         positions: [],
@@ -275,6 +286,19 @@ async function fetchDashboardData(): Promise<object> {
         trades:    [],
         claimable: [],
         overview:  {},
+        strategyConfig: {},
+    };
+
+    // ── Strategy Config (from env) ───────────────────────────────────────────
+    results.strategyConfig = {
+        mode: process.env.DRY_RUN === 'false' ? 'LIVE' : 'DRY RUN',
+        assets: process.env.ORACLE_ASSETS || 'BTC,ETH,SOL',
+        betSize: '$' + (process.env.ORACLE_BET_SIZE || '2'),
+        minEdge: (parseFloat(process.env.ORACLE_MIN_EDGE || '0.15') * 100).toFixed(0) + '%',
+        maxPrice: (parseFloat(process.env.ORACLE_MAX_PRICE || '0.70') * 100).toFixed(0) + '¢',
+        confidence: (parseFloat(process.env.ORACLE_MIN_CONFIDENCE || '0.75') * 100).toFixed(0) + '%',
+        maxPositions: process.env.ORACLE_MAX_POSITIONS || '10',
+        expiry: (process.env.ORACLE_MIN_MINUTES || '0') + '-' + (process.env.ORACLE_MAX_MINUTES || '90') + 'min',
     };
 
     // ── Positions ────────────────────────────────────────────────────────────
@@ -376,12 +400,14 @@ async function fetchDashboardData(): Promise<object> {
             results.trades = oracleTrades.map((t: any) => ({
                 marketId: t.marketSlug,
                 marketTitle: t.marketSlug,
+                marketSlug: t.marketSlug,
                 strategy: 'oracle-arb',
                 side: t.side,
                 tradeAmountUSD: t.amountUsd,
+                amountUsd: t.amountUsd,
+                edgePercent: t.edgePercent ?? t.edge ?? null,
                 timestamp: new Date(t.timestamp).toISOString(),
                 success: t.success,
-                // FOK orders: success means filled immediately
                 filled: t.success === true,
                 filledAmount: t.success ? t.amountUsd : 0,
                 status: 'FOK',
@@ -449,6 +475,19 @@ async function fetchDashboardData(): Promise<object> {
         } else {
             results.winRate = 0;
         }
+    }
+
+    // Populate wins/losses for frontend
+    if (pnlEvents.length > 0) {
+        results.wins = pnlEvents.filter((e: any) => (e.pnl || 0) > 0).length;
+        results.losses = pnlEvents.filter((e: any) => (e.pnl || 0) <= 0).length;
+        results.pnlSource = 'from claimed positions';
+    } else {
+        // Fallback: count from trades
+        const filled = results.trades.filter((t: any) => t.filled || t.success);
+        results.wins = filled.length;
+        results.losses = results.trades.length - filled.length;
+        results.pnlSource = results.trades.length ? 'from trade log' : '';
     }
 
     // Per-asset breakdown

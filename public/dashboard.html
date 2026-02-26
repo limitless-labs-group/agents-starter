@@ -3,442 +3,387 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>⚡ Limitless Agent Dashboard</title>
+<title>Limitless Agent Dashboard</title>
 <style>
   :root {
-    --bg: #08080d; --bg1: #0e0e16; --bg2: #14141e; --border: #1a1a26;
-    --text: #c8c8d0; --dim: #555; --dim2: #333;
-    --green: #00ff88; --green-bg: #002a1a; --red: #ff4466; --red-bg: #2a0010;
-    --amber: #ffaa00; --amber-bg: #2a2200; --blue: #4488ff; --purple: #aa66ff;
+    --bg: #0a0a0f; --bg1: #111118; --bg2: #16161f; --border: #1e1e2a;
+    --text: #c8c8d4; --dim: #666; --dim2: #444;
+    --green: #00e87b; --green-dim: #003d22; --red: #ff4466; --red-dim: #3a0015;
+    --amber: #ffaa00; --amber-dim: #332200; --blue: #4488ff; --purple: #9966ff;
+    --cyan: #00cccc;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
-    font-family: 'SF Mono','Fira Code','JetBrains Mono',monospace;
-    background:var(--bg); color:var(--text);
-    padding:20px; max-width:1300px; margin:0 auto; font-size:14px;
+    font-family: 'SF Mono','Fira Code','JetBrains Mono','Cascadia Code',monospace;
+    background: var(--bg); color: var(--text);
+    padding: 24px; max-width: 1400px; margin: 0 auto; font-size: 13px;
+    line-height: 1.5;
   }
 
-  /* ── Header ─────────────────────────────────────────────────────────────── */
-  .header { display:flex; align-items:center; gap:10px; margin-bottom:4px; }
-  .header h1 { color:var(--green); font-size:1.15em; }
-  @keyframes pulse { 0%,100% { opacity:1; box-shadow:0 0 8px #00ff8866; } 50% { opacity:0.5; box-shadow:0 0 3px #00ff8833; } }
-  .live-dot { width:8px; height:8px; border-radius:50%; background:var(--green); display:inline-block; animation:pulse 2s ease-in-out infinite; }
-  .sub { color:var(--dim2); font-size:0.7em; margin-bottom:18px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
-  h2 { color:var(--dim); font-size:0.63em; text-transform:uppercase; letter-spacing:2px; margin-bottom:8px; }
+  /* Header */
+  .header { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
+  .header h1 { font-size:1.1em; font-weight:700; color:var(--green); letter-spacing:-0.5px; }
+  @keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 6px var(--green)}50%{opacity:.4;box-shadow:none} }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--green); animation:pulse 2s ease infinite; flex-shrink:0; }
+  .dot.dead { background:var(--red); animation:none; }
+  .meta { font-size:.7em; color:var(--dim2); margin-bottom:20px; display:flex; gap:14px; flex-wrap:wrap; }
+  .meta a { color:var(--dim); text-decoration:none; }
+  .meta a:hover { color:var(--green); }
 
-  /* ── Section ─────────────────────────────────────────────────────────────── */
-  .section { margin-bottom:24px; }
-  .section-header { display:flex; align-items:center; gap:10px; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid var(--border); }
-  .section-title { font-size:1em; font-weight:700; }
-  .section-badge { font-size:0.6em; padding:3px 10px; border-radius:10px; font-weight:600; }
-  .sb-live { background:var(--green-bg); color:var(--green); border:1px solid #00ff8833; }
-  .section-meta { margin-left:auto; font-size:0.68em; color:var(--dim); }
+  /* Section headers */
+  .sh { font-size:.6em; text-transform:uppercase; letter-spacing:2px; color:var(--dim2); font-weight:700; margin-bottom:8px; }
 
-  /* ── Hero KPIs ──────────────────────────────────────────────────────────── */
-  .hero { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:18px; }
-  .hc { background:var(--bg1); border:1px solid var(--border); border-radius:8px; padding:14px; text-align:center; position:relative; overflow:hidden; }
-  .hc::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent, var(--dim), transparent); opacity:0.3; }
-  .hc.positive { border-color:rgba(0,255,136,0.3); background:linear-gradient(180deg, rgba(0,255,136,0.05), var(--bg1)); }
-  .hc.positive::before { background:linear-gradient(90deg, transparent, var(--green), transparent); opacity:0.5; }
-  .hc.negative { border-color:rgba(255,68,102,0.3); background:linear-gradient(180deg, rgba(255,68,102,0.05), var(--bg1)); }
-  .hc.negative::before { background:linear-gradient(90deg, transparent, var(--red), transparent); opacity:0.5; }
-  .hv { font-size:1.85em; font-weight:800; }
-  .hl { font-size:0.58em; color:#3a3a4a; text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
+  /* Grid layouts */
+  .kpi-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:20px; }
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
+  .three-col { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:16px; }
 
-  /* ── Stats highlight ─────────────────────────────────────────────────────── */
-  .stat-highlight { animation:glow 2s ease-in-out infinite; }
-  @keyframes glow { 0%,100% { text-shadow:0 0 10px currentColor; } 50% { text-shadow:0 0 20px currentColor, 0 0 30px currentColor; } }
+  /* KPI cards */
+  .kpi { background:var(--bg1); border:1px solid var(--border); border-radius:6px; padding:14px 12px; text-align:center; }
+  .kpi-val { font-size:1.8em; font-weight:800; line-height:1.2; }
+  .kpi-label { font-size:.55em; color:var(--dim2); text-transform:uppercase; letter-spacing:1.5px; margin-top:4px; }
+  .kpi-sub { font-size:.65em; color:var(--dim); margin-top:2px; }
+  .kpi.glow-green { border-color:rgba(0,232,123,.25); background:linear-gradient(180deg,rgba(0,232,123,.04),var(--bg1)); }
+  .kpi.glow-red { border-color:rgba(255,68,102,.25); background:linear-gradient(180deg,rgba(255,68,102,.04),var(--bg1)); }
 
-  /* ── Panels ─────────────────────────────────────────────────────────────── */
-  .panels { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
-  .panel { background:var(--bg1); border:1px solid var(--border); border-radius:8px; padding:14px; overflow-x:auto; }
-  .panel-full { background:var(--bg1); border:1px solid var(--border); border-radius:8px; padding:14px; overflow-x:auto; margin-bottom:14px; }
+  /* Panels */
+  .panel { background:var(--bg1); border:1px solid var(--border); border-radius:6px; padding:14px; overflow:hidden; }
+  .panel-title { font-size:.65em; text-transform:uppercase; letter-spacing:1.5px; color:var(--dim2); font-weight:700; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+  .panel-title .count { color:var(--dim); font-weight:400; }
 
-  /* ── Bar charts ──────────────────────────────────────────────────────────── */
-  .bar-row { display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:0.76em; }
-  .bar-label { width:80px; text-align:right; color:#777; flex-shrink:0; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .bar-track { flex:1; height:20px; background:#0a0a12; border-radius:3px; overflow:hidden; display:flex; }
-  .bar-fill { height:100%; display:flex; align-items:center; padding-left:6px; font-size:0.7em; font-weight:600; min-width:4px; }
-  .bf-w { background:linear-gradient(90deg,#003820,#007744aa); color:var(--green); }
-  .bf-l { background:linear-gradient(90deg,#380015,#773344aa); color:var(--red); }
-  .bar-stat { width:120px; text-align:right; flex-shrink:0; font-size:0.7em; }
-
-  /* ── Tables ──────────────────────────────────────────────────────────────── */
-  table { width:100%; border-collapse:collapse; font-size:0.74em; }
-  th { text-align:left; color:#3a3a4a; padding:5px 4px; border-bottom:2px solid var(--border); font-size:0.66em; text-transform:uppercase; letter-spacing:1px; }
-  td { padding:5px 4px; border-bottom:1px solid #121218; }
+  /* Tables */
+  table { width:100%; border-collapse:collapse; font-size:.75em; }
+  th { text-align:left; color:var(--dim2); padding:4px 6px; border-bottom:1px solid var(--border); font-size:.65em; text-transform:uppercase; letter-spacing:1px; font-weight:600; }
+  td { padding:5px 6px; border-bottom:1px solid rgba(30,30,42,.5); }
   tr:hover td { background:var(--bg2); }
-  .badge { display:inline-block; padding:1px 6px; border-radius:3px; font-size:0.7em; font-weight:700; }
-  .b-w  { background:var(--green-bg); color:var(--green); }
-  .b-l  { background:var(--red-bg);   color:var(--red); }
-  .b-p  { background:var(--amber-bg); color:var(--amber); }
-  .b-blue   { background:rgba(68,136,255,0.15); color:var(--blue); }
-  .b-purple { background:rgba(170,102,255,0.18); color:var(--purple); }
+  .empty-msg { text-align:center; padding:20px; color:var(--dim2); font-size:.8em; }
 
-  /* ── Utility colours ─────────────────────────────────────────────────────── */
-  .g  { color:var(--green); }  .r  { color:var(--red); }   .a  { color:var(--amber); }
-  .bl { color:var(--blue); }   .p  { color:var(--purple); } .d  { color:var(--dim); }
-  a { color:var(--blue); text-decoration:none; }
-  a:hover { color:var(--green); }
+  /* Badges */
+  .badge { display:inline-block; padding:1px 7px; border-radius:3px; font-size:.7em; font-weight:700; }
+  .b-yes { background:var(--green-dim); color:var(--green); }
+  .b-no { background:var(--red-dim); color:var(--red); }
+  .b-pending { background:var(--amber-dim); color:var(--amber); }
+  .b-blue { background:rgba(68,136,255,.12); color:var(--blue); }
+  .b-purple { background:rgba(153,102,255,.12); color:var(--purple); }
+  .b-ok { background:var(--green-dim); color:var(--green); }
+  .b-err { background:var(--red-dim); color:var(--red); }
 
-  .empty { text-align:center; padding:16px; color:var(--dim); font-size:.8em; }
+  /* Colors */
+  .g { color:var(--green); } .r { color:var(--red); } .a { color:var(--amber); }
+  .bl { color:var(--blue); } .p { color:var(--purple); } .d { color:var(--dim); }
+  .cy { color:var(--cyan); }
+  a { color:var(--blue); text-decoration:none; } a:hover { color:var(--green); }
 
-  /* ── P&L chart container ─────────────────────────────────────────────────── */
-  #pnl-chart { height:180px; position:relative; min-height:140px; }
+  /* Chart */
+  #pnl-chart { height:160px; position:relative; }
 
-  /* ── Responsive ──────────────────────────────────────────────────────────── */
-  @media (max-width:768px) {
-    .hero    { grid-template-columns:repeat(3,1fr); }
-    .panels  { grid-template-columns:1fr; }
-    .hv      { font-size:1.4em; }
-  }
-  @media (max-width:480px) {
-    .hero { grid-template-columns:repeat(2,1fr); }
-    .hv   { font-size:1.2em; }
-    table { font-size:0.65em; }
-  }
+  /* Strategy config */
+  .config-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px,1fr)); gap:6px; }
+  .config-item { display:flex; justify-content:space-between; padding:4px 8px; background:var(--bg2); border-radius:3px; font-size:.75em; }
+  .config-key { color:var(--dim); }
+  .config-val { color:var(--cyan); font-weight:600; }
+
+  /* Bar charts */
+  .bar-row { display:flex; align-items:center; gap:6px; margin-bottom:4px; font-size:.75em; }
+  .bar-label { width:50px; text-align:right; color:var(--dim); font-weight:600; flex-shrink:0; }
+  .bar-track { flex:1; height:18px; background:var(--bg); border-radius:2px; overflow:hidden; display:flex; }
+  .bar-w { height:100%; background:linear-gradient(90deg,var(--green-dim),rgba(0,232,123,.35)); display:flex; align-items:center; padding-left:4px; font-size:.7em; color:var(--green); font-weight:600; min-width:2px; }
+  .bar-l { height:100%; background:linear-gradient(90deg,var(--red-dim),rgba(255,68,102,.35)); display:flex; align-items:center; padding-left:4px; font-size:.7em; color:var(--red); font-weight:600; min-width:2px; }
+  .bar-stat { width:110px; text-align:right; flex-shrink:0; font-size:.7em; color:var(--dim); }
+
+  /* Scrollable table wrapper */
+  .scroll-wrap { max-height:280px; overflow-y:auto; }
+  .scroll-wrap::-webkit-scrollbar { width:4px; }
+  .scroll-wrap::-webkit-scrollbar-track { background:var(--bg1); }
+  .scroll-wrap::-webkit-scrollbar-thumb { background:var(--dim2); border-radius:2px; }
+
+  /* Responsive */
+  @media(max-width:900px) { .kpi-grid{grid-template-columns:repeat(3,1fr)} .two-col,.three-col{grid-template-columns:1fr} }
+  @media(max-width:500px) { .kpi-grid{grid-template-columns:repeat(2,1fr)} .kpi-val{font-size:1.3em} }
 </style>
 </head>
 <body>
 
-<!-- ── Header ────────────────────────────────────────────────────────────── -->
 <div class="header">
-  <span class="live-dot" id="dot"></span>
-  <h1>⚡ Limitless Agent Dashboard</h1>
+  <span class="dot" id="dot"></span>
+  <h1>Limitless Agent Dashboard</h1>
 </div>
-<div class="sub">
-  <span id="wallet" class="d"></span>
-  <span id="ts" class="d"></span>
+<div class="meta">
+  <span id="wallet"></span>
+  <span id="ts"></span>
+  <a href="https://limitless.exchange" target="_blank">limitless.exchange ↗</a>
 </div>
 
-<!-- ── Hero KPIs ─────────────────────────────────────────────────────────── -->
-<div class="section">
-  <div class="section-header">
-    <span class="section-title g">Portfolio</span>
-    <span class="section-badge sb-live">LIVE</span>
-    <span class="section-meta">
-      <a href="https://limitless.exchange" target="_blank" style="color:var(--green)">Limitless Exchange ↗</a>
-    </span>
+<!-- KPIs -->
+<div class="kpi-grid">
+  <div class="kpi" id="kpi-balance">
+    <div class="kpi-val a" id="v-balance">--</div>
+    <div class="kpi-label">Balance</div>
+    <div class="kpi-sub" id="v-balance-sub"></div>
   </div>
+  <div class="kpi" id="kpi-pnl">
+    <div class="kpi-val" id="v-pnl">--</div>
+    <div class="kpi-label">Realized P&L</div>
+    <div class="kpi-sub" id="v-pnl-sub"></div>
+  </div>
+  <div class="kpi" id="kpi-wr">
+    <div class="kpi-val" id="v-wr">--</div>
+    <div class="kpi-label">Win Rate</div>
+    <div class="kpi-sub" id="v-wr-sub"></div>
+  </div>
+  <div class="kpi" id="kpi-pos">
+    <div class="kpi-val a" id="v-pos">--</div>
+    <div class="kpi-label">Open Positions</div>
+    <div class="kpi-sub" id="v-pos-sub"></div>
+  </div>
+  <div class="kpi" id="kpi-claim">
+    <div class="kpi-val p" id="v-claim">--</div>
+    <div class="kpi-label">Claimable</div>
+    <div class="kpi-sub" id="v-claim-sub"></div>
+  </div>
+</div>
 
-  <div class="hero">
-    <div class="hc">
-      <div class="hv a" id="h-balance">--</div>
-      <div class="hl">USDC Balance</div>
-    </div>
-    <div class="hc">
-      <div class="hv" id="h-pnl">--</div>
-      <div class="hl">Total P&amp;L</div>
-    </div>
-    <div class="hc">
-      <div class="hv g" id="h-wr">--</div>
-      <div class="hl">Win Rate</div>
-    </div>
-    <div class="hc">
-      <div class="hv a" id="h-pos">--</div>
-      <div class="hl">Open Positions</div>
-    </div>
-    <div class="hc">
-      <div class="hv p" id="h-claim">--</div>
-      <div class="hl">Claimable</div>
+<!-- Row 1: Chart + Strategy Config -->
+<div class="two-col">
+  <div class="panel">
+    <div class="panel-title">Cumulative P&L</div>
+    <div id="pnl-chart"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Strategy Config</div>
+    <div id="config-grid" class="config-grid">
+      <div class="empty-msg">Loading...</div>
     </div>
   </div>
+</div>
 
-  <!-- ── P&L Chart + Open Positions ───────────────────────────────────── -->
-  <div class="panels">
-    <div class="panel">
-      <h2>📈 Cumulative P&amp;L</h2>
-      <div id="pnl-chart"></div>
-    </div>
-    <div class="panel">
-      <h2>Open Positions <span class="a" id="pos-n"></span></h2>
+<!-- Row 2: Per-Asset Performance + Positions -->
+<div class="two-col">
+  <div class="panel">
+    <div class="panel-title">Performance by Asset <span class="count" id="asset-count"></span></div>
+    <div id="asset-bars"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Open Positions <span class="count" id="pos-count"></span></div>
+    <div class="scroll-wrap">
       <table>
-        <thead><tr>
-          <th>Market</th><th>Side</th><th>Size</th><th>Mark</th><th>uPnL</th>
-        </tr></thead>
-        <tbody id="tbl-positions"></tbody>
+        <thead><tr><th>Market</th><th>Side</th><th>Size</th><th>Entry</th></tr></thead>
+        <tbody id="tbl-pos"></tbody>
       </table>
-      <div id="pos-empty" class="empty">Loading…</div>
     </div>
+    <div id="pos-empty" class="empty-msg">No open positions</div>
   </div>
+</div>
 
-  <!-- ── Open Orders + Trade History ──────────────────────────────────── -->
-  <div class="panels">
-    <div class="panel">
-      <h2>📋 Open Orders <span class="bl" id="orders-n"></span></h2>
+<!-- Row 3: Recent Trades + Claimable -->
+<div class="two-col">
+  <div class="panel">
+    <div class="panel-title">Recent Trades <span class="count" id="trade-count"></span></div>
+    <div class="scroll-wrap">
       <table>
-        <thead><tr>
-          <th>Market</th><th>Side</th><th>Price</th><th>Size</th><th>Status</th>
-        </tr></thead>
-        <tbody id="tbl-orders"></tbody>
-      </table>
-      <div id="orders-empty" class="empty">Loading…</div>
-    </div>
-    <div class="panel">
-      <h2>📜 FOK Fills <span style="font-size:0.6em;color:var(--dim)">(instant fill or fail)</span></h2>
-      <table>
-        <thead><tr>
-          <th>Time</th><th>Market</th><th>Side</th><th>Amount</th><th>Fill</th>
-        </tr></thead>
+        <thead><tr><th>Time</th><th>Market</th><th>Side</th><th>$</th><th>Edge</th><th>Status</th></tr></thead>
         <tbody id="tbl-trades"></tbody>
       </table>
-      <div id="trades-empty" class="empty">No fills yet</div>
     </div>
+    <div id="trades-empty" class="empty-msg">No trades yet</div>
   </div>
-
-  <!-- ── Claimable Winnings ────────────────────────────────────────────── -->
-  <div class="panel-full">
-    <h2>🏆 Claimable Winnings <span class="p" id="claim-n"></span> <span style="font-size:0.6em;color:var(--dim)">(auto-claimed by bot)</span></h2>
-    <table>
-      <thead><tr>
-        <th>Market</th><th>Side</th><th>Expected Payout</th>
-      </tr></thead>
-      <tbody id="tbl-claimable"></tbody>
-    </table>
-    <div id="claimable-empty" class="empty">No claimable winnings (bot auto-claims)</div>
+  <div class="panel">
+    <div class="panel-title">Claimable Winnings <span class="count" id="claim-count"></span></div>
+    <div class="scroll-wrap">
+      <table>
+        <thead><tr><th>Market</th><th>Side</th><th>Payout</th></tr></thead>
+        <tbody id="tbl-claim"></tbody>
+      </table>
+    </div>
+    <div id="claim-empty" class="empty-msg">No claimable winnings</div>
   </div>
 </div>
 
 <script>
-/* ── Helpers ─────────────────────────────────────────────────────────────── */
-const ps  = v => (v >= 0 ? '+' : '') + '$' + Math.abs(parseFloat(v) || 0).toFixed(2);
-const pc  = v => parseFloat(v) >= 0 ? 'g' : 'r';
-const trunc = (s, n) => (!s || typeof s !== 'string') ? '—' : s.length > n ? s.slice(0, n - 1) + '…' : s;
+const $ = id => document.getElementById(id);
+const trunc = (s,n) => !s||typeof s!=='string'?'—':s.length>n?s.slice(0,n-1)+'…':s;
+const fmtUsd = v => { const n=parseFloat(v)||0; return (n>=0?'+':'')+n.toFixed(2); };
+const pnlCls = v => parseFloat(v)>=0?'g':'r';
 
-/* ── P&L SVG chart (ported from private dashboard) ───────────────────────── */
-function drawPnl(el, data) {
-  if (!data || !data.length) {
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim)">No resolved trades yet</div>';
+function drawChart(el, data) {
+  if(!data||!data.length) {
+    el.innerHTML='<div class="empty-msg">No resolved trades yet</div>';
     return;
   }
-  const vals  = data.map(d => d.pnl);
-  const min   = Math.min(0, ...vals);
-  const max   = Math.max(0.1, ...vals);
-  const range = max - min || 1;
-  const pts   = data.map((d, i) => {
-    const x = (i / (data.length - 1 || 1)) * 100;
-    const y = 100 - ((d.pnl - min) / range) * 100;
+  const vals=data.map(d=>d.pnl);
+  const mn=Math.min(0,...vals), mx=Math.max(.01,...vals), rng=mx-mn||1;
+  const pts=data.map((d,i)=>{
+    const x=(i/(data.length-1||1))*100;
+    const y=100-((d.pnl-mn)/rng)*100;
     return `${x},${y}`;
   }).join(' ');
-  const last  = data[data.length - 1].pnl;
-  const zeroY = 100 - ((0 - min) / range) * 100;
-  const col   = last >= 0 ? 'var(--green)' : 'var(--red)';
-  const fill  = last >= 0 ? 'rgba(0,255,136,0.08)' : 'rgba(255,68,102,0.08)';
-  const dotX  = data.length > 1 ? 100 : 50;
-  const dotY  = 100 - ((last - min) / range) * 100;
-  el.innerHTML = `
+  const last=vals[vals.length-1];
+  const zy=100-((0-mn)/rng)*100;
+  const col=last>=0?'var(--green)':'var(--red)';
+  const fill=last>=0?'rgba(0,232,123,.06)':'rgba(255,68,102,.06)';
+  el.innerHTML=`
 <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:100%">
-  <line x1="0" y1="${zeroY}" x2="100" y2="${zeroY}" stroke="var(--border)" stroke-width="0.3" stroke-dasharray="1,1"/>
-  <polygon points="0,${zeroY} ${pts} 100,${zeroY}" fill="${fill}"/>
-  <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
-  <circle cx="${dotX}" cy="${dotY}" r="1.5" fill="${col}"/>
+  <line x1="0" y1="${zy}" x2="100" y2="${zy}" stroke="var(--border)" stroke-width=".3" stroke-dasharray="1,1"/>
+  <polygon points="0,${zy} ${pts} 100,${zy}" fill="${fill}"/>
+  <polyline points="${pts}" fill="none" stroke="${col}" stroke-width=".8" vector-effect="non-scaling-stroke"/>
+  <circle cx="${data.length>1?100:50}" cy="${100-((last-mn)/rng)*100}" r="1.5" fill="${col}"/>
 </svg>
-<div style="position:absolute;top:6px;left:10px;font-size:1.4em;font-weight:800;color:${col}">${(last >= 0 ? '+' : '') + '$' + last.toFixed(2)}</div>
-<div style="position:absolute;top:10px;right:10px;font-size:0.6em;color:var(--dim2)">${data.length} trades</div>`;
+<div style="position:absolute;top:8px;left:12px;font-size:1.3em;font-weight:800;color:${col}">${fmtUsd(last)}</div>
+<div style="position:absolute;top:10px;right:12px;font-size:.6em;color:var(--dim2)">${data.length} trades</div>`;
 }
 
-/* ── Bar chart (ported from private dashboard) ───────────────────────────── */
-function bar(w, l, tot) {
-  const wp = tot ? (w / tot * 100) : 0;
-  const lp = tot ? (l / tot * 100) : 0;
-  return `<div class="bar-track">
-    <div class="bar-fill bf-w" style="width:${wp}%">${w > 0 ? w + 'W' : ''}</div>
-    <div class="bar-fill bf-l" style="width:${lp}%">${l > 0 ? l + 'L' : ''}</div>
-  </div>`;
-}
-
-function renderBars(el, data) {
-  if (!data || !data.length) { el.innerHTML = '<div class="empty">No data</div>'; return; }
-  el.innerHTML = data.map(b => {
-    const w   = b.wins   || 0;
-    const l   = b.losses || 0;
-    const tot = w + l;
-    const wr  = tot ? Math.round(w / tot * 100) : 0;
-    const pending = b.pending ? ` <span class="a">${b.pending}⏳</span>` : '';
-    const pnl = b.pnl || 0;
+function renderBars(el, assets) {
+  if(!assets||!Object.keys(assets).length) { el.innerHTML='<div class="empty-msg">No data yet</div>'; return; }
+  const sorted=Object.entries(assets).sort((a,b)=>(b[1].wins+b[1].losses)-(a[1].wins+a[1].losses));
+  el.innerHTML=sorted.map(([name,d])=>{
+    const w=d.wins||0, l=d.losses||0, tot=w+l;
+    const wr=tot?Math.round(w/tot*100):0;
+    const wp=tot?(w/tot*100):0, lp=tot?(l/tot*100):0;
+    const pnl=d.pnl||0;
     return `<div class="bar-row">
-      <span class="bar-label" title="${b.label || b.name || ''}">${trunc(b.label || b.name || '?', 12)}</span>
-      ${bar(w, l, tot)}
-      <span class="bar-stat">${wr}%${pending} · <span class="${pc(pnl)}">${ps(pnl)}</span></span>
+      <span class="bar-label">${name}</span>
+      <div class="bar-track">
+        <div class="bar-w" style="width:${wp}%">${w?w+'W':''}</div>
+        <div class="bar-l" style="width:${lp}%">${l?l+'L':''}</div>
+      </div>
+      <span class="bar-stat">${wr}% &middot; <span class="${pnlCls(pnl)}">${fmtUsd(pnl)}</span></span>
     </div>`;
   }).join('');
 }
 
-/* ── Main data loader ─────────────────────────────────────────────────────── */
 async function load() {
   try {
-    const r = await fetch('/api/dashboard');
-    if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
-    const d = await r.json();
-    const now = new Date();
+    const r=await fetch('/api/dashboard');
+    if(!r.ok) throw new Error(r.status);
+    const d=await r.json();
+    const now=new Date();
 
-    // Header / meta
-    document.getElementById('ts').textContent =
-      '⏱ ' + now.toLocaleTimeString() + ' · ' + now.toLocaleDateString('en-US', { month:'short', day:'numeric' });
-    const wallet = d.overview?.wallet || d.wallet || '';
-    if (wallet) {
-      document.getElementById('wallet').textContent = wallet.slice(0,6) + '…' + wallet.slice(-4);
-    }
+    // Meta
+    $('ts').textContent=now.toLocaleTimeString()+' · '+now.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const w=d.wallet||'';
+    if(w) $('wallet').textContent=w.slice(0,6)+'…'+w.slice(-4);
 
-    /* Helper: set hero card */
-    const setHero = (id, txt, cls, highlight = false) => {
-      const e = document.getElementById(id);
-      if (!e) return;
-      e.textContent = txt;
-      if (cls) e.className = 'hv ' + cls + (highlight ? ' stat-highlight' : '');
-      // Add positive/negative class to parent card
-      const card = e.closest('.hc');
-      if (card) {
-        card.classList.remove('positive', 'negative');
-        if (cls === 'g') card.classList.add('positive');
-        if (cls === 'r') card.classList.add('negative');
-      }
-    };
+    // KPI: Balance
+    const wb=parseFloat(d.walletBalance)||0, pv=parseFloat(d.positionValue)||0, bal=wb+pv;
+    $('v-balance').textContent='$'+bal.toFixed(2);
+    $('v-balance-sub').textContent='wallet $'+wb.toFixed(2)+' · positions $'+pv.toFixed(2);
 
-    // ── Hero KPIs ──────────────────────────────────────────────────────────
-    const walletBal = parseFloat(d.walletBalance ?? '0') || 0;
-    const posValue = parseFloat(d.positionValue ?? '0') || 0;
-    const totalBal = parseFloat(d.overview?.balance ?? d.balance ?? '0') || 0;
-    
-    // Show total as main balance, with breakdown on sub-label
-    setHero('h-balance', '$' + totalBal.toFixed(2), 'a');
-    document.querySelector('#h-balance + .hl').innerHTML = 
-      `Wallet: $${walletBal.toFixed(2)} · Positions: $${posValue.toFixed(2)}`;
+    // KPI: P&L
+    const pnl=parseFloat(d.totalPnl)||0;
+    $('v-pnl').textContent=fmtUsd(pnl);
+    $('v-pnl').className='kpi-val '+(pnl>=0?'g':'r');
+    $('kpi-pnl').className='kpi '+(pnl>=0?'glow-green':'glow-red');
+    $('v-pnl-sub').textContent=d.pnlSource||'';
 
-    const pnlN = parseFloat(d.overview?.pnl ?? d.totalPnl ?? '0') || 0;
-    const pnlHighlight = Math.abs(pnlN) > 1; // Highlight if P&L > $1
-    setHero('h-pnl', (pnlN >= 0 ? '+' : '') + '$' + Math.abs(pnlN).toFixed(2), pc(pnlN), pnlHighlight);
+    // KPI: Win Rate
+    const wr=parseFloat(d.winRate)||0;
+    const wins=d.wins||0, losses=d.losses||0;
+    $('v-wr').textContent=wr.toFixed(1)+'%';
+    $('v-wr').className='kpi-val '+(wr>=55?'g':wr>=45?'a':'r');
+    $('v-wr-sub').textContent=wins+'W / '+losses+'L';
 
-    const wrN  = parseFloat(d.overview?.winRate ?? d.winRate ?? '0') || 0;
-    const wrHighlight = wrN >= 60; // Highlight if win rate >= 60%
-    setHero('h-wr', wrN.toFixed(1) + '%', wrN >= 55 ? 'g' : wrN >= 45 ? 'a' : 'r', wrHighlight);
+    // KPI: Positions
+    const pos=d.positions||[];
+    const activePos=pos.filter(p=>parseFloat(p.size||0)>0);
+    $('v-pos').textContent=activePos.length;
+    $('v-pos-sub').textContent=pos.length+' total tracked';
 
-    const posArr = d.positions || [];
-    const activePosCount = posArr.filter(p => parseFloat(p.size || 0) > 0).length;
-    setHero('h-pos', String(activePosCount), activePosCount > 0 ? 'a' : 'd');
-
-    const claimArr = d.claimable || [];
-    if (claimArr.length) {
-      const total = claimArr.reduce((s, c) => s + (parseFloat(c.expectedPayout) || 0), 0);
-      setHero('h-claim', '$' + total.toFixed(2), 'p', true);
+    // KPI: Claimable
+    const cl=d.claimable||[];
+    if(cl.length) {
+      const tot=cl.reduce((s,c)=>s+(parseFloat(c.expectedPayout)||0),0);
+      $('v-claim').textContent='$'+tot.toFixed(2);
+      $('v-claim-sub').textContent=cl.length+' positions';
     } else {
-      setHero('h-claim', '—', 'd');
+      $('v-claim').textContent='—';
+      $('v-claim-sub').textContent='auto-claimed by bot';
     }
 
-    // ── P&L Chart ──────────────────────────────────────────────────────────
-    drawPnl(document.getElementById('pnl-chart'), d.cumPnl || []);
+    // Chart
+    drawChart($('pnl-chart'), d.cumPnl||[]);
 
-    // ── Open Positions ──────────────────────────────────────────────────────
-    // Filter out positions with size <= 0 (they're closed/resolved)
-    const activePos = posArr.filter(p => parseFloat(p.size || 0) > 0);
-    const posN = document.getElementById('pos-n');
-    posN.textContent = activePos.length ? '(' + activePos.length + ')' : '';
-    const posEmpty = document.getElementById('pos-empty');
-    posEmpty.style.display  = activePos.length ? 'none' : 'block';
-    posEmpty.textContent    = 'No open positions';
-    document.getElementById('tbl-positions').innerHTML = activePos.map(p => {
-      const side    = p.side || '—';
-      const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
-      // Price is already in cents from API
-      const mark    = p.currentPrice != null ? p.currentPrice + '¢' : '—';
-      const upnl    = p.unrealizedPnl != null
-        ? `<span class="${pc(p.unrealizedPnl)}">${ps(p.unrealizedPnl)}</span>` : '<span class="d">—</span>';
-      const marketUrl = p.marketSlug ? `https://limitless.exchange/markets/${p.marketSlug}` : null;
-      const marketLink = marketUrl ? `<a href="${marketUrl}" target="_blank" style="color:var(--text)">${trunc(p.marketTitle, 28)} ↗</a>` : trunc(p.marketTitle, 32);
+    // Strategy Config
+    const cfg=d.strategyConfig||{};
+    const cfgKeys=Object.keys(cfg);
+    if(cfgKeys.length) {
+      $('config-grid').innerHTML=cfgKeys.map(k=>
+        `<div class="config-item"><span class="config-key">${k}</span><span class="config-val">${cfg[k]}</span></div>`
+      ).join('');
+    } else {
+      $('config-grid').innerHTML='<div class="empty-msg">No strategy running</div>';
+    }
+
+    // Asset bars
+    const assets=d.byAsset||{};
+    $('asset-count').textContent=Object.keys(assets).length?'('+Object.keys(assets).length+')':'';
+    renderBars($('asset-bars'), assets);
+
+    // Positions table
+    $('pos-count').textContent=activePos.length?'('+activePos.length+')':'';
+    $('pos-empty').style.display=activePos.length?'none':'block';
+    $('tbl-pos').innerHTML=activePos.map(p=>{
+      const side=p.side||'—';
+      const url=p.marketSlug?'https://limitless.exchange/markets/'+p.marketSlug:null;
+      const link=url?`<a href="${url}" target="_blank">${trunc(p.marketTitle||p.marketSlug,30)} ↗</a>`:trunc(p.marketTitle,30);
       return `<tr>
-        <td title="${p.marketSlug || ''}">${marketLink}</td>
-        <td><span class="badge ${badgeCls}">${side}</span></td>
-        <td>${p.size != null ? '$' + parseFloat(p.size).toFixed(2) : '—'}</td>
-        <td class="d">${mark}</td>
-        <td>${upnl}</td>
+        <td>${link}</td>
+        <td><span class="badge ${side==='YES'?'b-yes':'b-no'}">${side}</span></td>
+        <td>${p.size!=null?'$'+parseFloat(p.size).toFixed(2):'—'}</td>
+        <td class="d">${p.fillPrice!=null?p.fillPrice+'¢':'—'}</td>
       </tr>`;
     }).join('');
 
-    // ── Open Orders ────────────────────────────────────────────────────────
-    const ordArr = d.orders || [];
-    document.getElementById('orders-n').textContent = ordArr.length ? '(' + ordArr.length + ')' : '';
-    const ordEmpty = document.getElementById('orders-empty');
-    ordEmpty.style.display = ordArr.length ? 'none' : 'block';
-    ordEmpty.textContent   = 'No open orders';
-    document.getElementById('tbl-orders').innerHTML = ordArr.map(o => {
-      const side    = o.side || '—';
-      const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
-      // Price is already in cents from API
-      const price   = o.price != null ? o.price + '¢' : '—';
-      return `<tr>
-        <td>${trunc(o.marketTitle || o.marketSlug, 28)}</td>
-        <td><span class="badge ${badgeCls}">${side}</span></td>
-        <td class="d">${price}</td>
-        <td>${o.size != null ? '$' + parseFloat(o.size).toFixed(2) : '—'}</td>
-        <td><span class="badge b-blue">${o.status || 'LIVE'}</span></td>
-      </tr>`;
-    }).join('');
-
-    // ── Trade History ──────────────────────────────────────────────────────
-    const tradeArr = d.trades || [];
-    const tradesEmpty = document.getElementById('trades-empty');
-    tradesEmpty.style.display = tradeArr.length ? 'none' : 'block';
-    tradesEmpty.textContent   = 'No trade history';
-    document.getElementById('tbl-trades').innerHTML = tradeArr.slice(0, 30).map(t => {
-      const ts   = t.timestamp ? new Date(t.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '?';
-      const side = t.side || t.outcome || '—';
-      const badgeCls = side === 'YES' ? 'b-w' : side === 'NO' ? 'b-l' : 'b-p';
-      const title = t.marketTitle || (t.market?.title) || t.marketId || '—';
-      const amt   = t.tradeAmountUSD || t.tradeAmount || 0;
-      // FOK: success means filled immediately
-      const statusBadge = t.status === 'FOK' ? (t.filled ? '<span class="badge b-w">✓</span>' : '<span class="badge b-l">✗</span>') :
-                         t.filled ? '<span class="badge b-w">✓</span>' : 
-                         t.success ? '<span class="badge b-p">⏳</span>' : 
-                         '<span class="badge b-l">✗</span>';
+    // Trades table
+    const trades=d.trades||[];
+    $('trade-count').textContent=trades.length?'('+trades.length+')':'';
+    $('trades-empty').style.display=trades.length?'none':'block';
+    $('tbl-trades').innerHTML=trades.slice(0,50).map(t=>{
+      const ts=t.timestamp?new Date(t.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'?';
+      const side=t.side||'—';
+      const title=typeof t.marketTitle==='string'?t.marketTitle:t.marketSlug||'—';
+      const amt=parseFloat(t.tradeAmountUSD||t.amountUsd||0);
+      const edge=t.edgePercent!=null?(parseFloat(t.edgePercent).toFixed(0)+'%'):'—';
+      const filled=t.filled||t.success;
+      const statusBadge=filled?'<span class="badge b-ok">filled</span>':'<span class="badge b-err">miss</span>';
       return `<tr>
         <td class="d">${ts}</td>
-        <td>${trunc(typeof title === 'string' ? title : String(title), 28)}</td>
-        <td><span class="badge ${badgeCls}">${side}</span></td>
-        <td>${amt != null ? '$' + parseFloat(amt).toFixed(2) : '—'}</td>
+        <td>${trunc(title,24)}</td>
+        <td><span class="badge ${side==='YES'?'b-yes':'b-no'}">${side}</span></td>
+        <td>$${amt.toFixed(2)}</td>
+        <td class="d">${edge}</td>
         <td>${statusBadge}</td>
       </tr>`;
     }).join('');
 
-    // ── Claimable ──────────────────────────────────────────────────────────
-    document.getElementById('claim-n').textContent = claimArr.length ? '(' + claimArr.length + ')' : '';
-    const claimEmpty = document.getElementById('claimable-empty');
-    claimEmpty.style.display = claimArr.length ? 'none' : 'block';
-    claimEmpty.textContent   = 'No claimable winnings (bot auto-claims)';
-    document.getElementById('tbl-claimable').innerHTML = claimArr.map(c => {
-      const claimUrl = c.marketSlug ? `https://limitless.exchange/markets/${c.marketSlug}` : null;
-      const claimLink = claimUrl ? `<a href="${claimUrl}" target="_blank" style="color:var(--text)">${trunc(c.marketTitle || c.marketSlug, 45)} ↗</a>` : trunc(c.marketTitle || c.marketSlug, 50);
+    // Claimable table
+    $('claim-count').textContent=cl.length?'('+cl.length+')':'';
+    $('claim-empty').style.display=cl.length?'none':'block';
+    $('tbl-claim').innerHTML=cl.map(c=>{
+      const url=c.marketSlug?'https://limitless.exchange/markets/'+c.marketSlug:null;
+      const link=url?`<a href="${url}" target="_blank">${trunc(c.marketTitle||c.marketSlug,35)} ↗</a>`:trunc(c.marketTitle,35);
       return `<tr>
-        <td>${claimLink}</td>
-        <td><span class="badge b-w">${c.side || '—'}</span></td>
-        <td><span class="badge b-purple">${c.expectedPayout || '—'}</span></td>
+        <td>${link}</td>
+        <td><span class="badge b-yes">${c.side||'—'}</span></td>
+        <td class="g">${c.expectedPayout||'—'}</td>
       </tr>`;
     }).join('');
 
-    // Dot back to green on success
-    document.getElementById('dot').style.animation = 'pulse 2s ease-in-out infinite';
-    document.getElementById('dot').style.background = 'var(--green)';
-
+    // Dot green
+    $('dot').className='dot';
   } catch(e) {
-    document.getElementById('ts').textContent  = 'ERROR: ' + e.message;
-    document.getElementById('dot').style.background  = 'var(--red)';
-    document.getElementById('dot').style.animation   = 'none';
+    $('ts').textContent='ERROR: '+e.message;
+    $('dot').className='dot dead';
   }
 }
 
-/* ── SSE for live dot + triggered refreshes ───────────────────────────────── */
-const es = new EventSource('/api/events');
-es.onmessage = ev => {
-  try {
-    const d = JSON.parse(ev.data);
-    if (d.type === 'update') load();
-  } catch {}
-};
-es.onerror  = () => { document.getElementById('dot').style.background = 'var(--red)'; document.getElementById('dot').style.animation = 'none'; };
-es.onopen   = () => { document.getElementById('dot').style.background = 'var(--green)'; document.getElementById('dot').style.animation = 'pulse 2s ease-in-out infinite'; };
+// SSE
+const es=new EventSource('/api/events');
+es.onmessage=ev=>{try{const d=JSON.parse(ev.data);if(d.type==='update')load();}catch{}};
+es.onerror=()=>{$('dot').className='dot dead'};
+es.onopen=()=>{$('dot').className='dot'};
 
-/* ── Initial load + 30 s poll fallback ───────────────────────────────────── */
 load();
-setInterval(load, 30_000);
+setInterval(load,30000);
 </script>
 </body>
 </html>
