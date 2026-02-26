@@ -1,4 +1,5 @@
 import fetch from 'cross-fetch';
+import crypto from 'crypto';
 import { LimitlessClient } from './markets.js';
 import { OrderSigner } from './sign.js';
 import { Market, SignedOrder } from './types.js';
@@ -271,10 +272,11 @@ export class TradingClient {
             orderType,
             marketSlug,
             ownerId: userId,
+            clientOrderId: `${marketSlug}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
         };
 
         const url = `${this.baseUrl}/orders`;
-        logger.info({ slug: marketSlug, side, price, usdAmount, orderType }, 'Submitting order');
+        logger.info({ slug: marketSlug, side, price, usdAmount, orderType, clientOrderId: orderBody.clientOrderId }, 'Submitting order');
 
         if (process.env.DRY_RUN === 'true') {
             logger.info({ slug: marketSlug, body: orderBody }, 'DRY RUN: Order execution skipped');
