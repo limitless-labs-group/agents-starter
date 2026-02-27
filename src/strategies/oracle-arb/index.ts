@@ -318,6 +318,11 @@ export class OracleArbStrategy extends BaseStrategy {
                         let askPrice = yesPrice;
                         try {
                             const book = await this.limitless.getOrderbook(market.slug);
+                            if (!book.asks?.length) {
+                                // No liquidity on book — FOK would crash with "null order_id"
+                                this.logger.debug({ market: market.slug }, 'YES: empty orderbook, skipping');
+                                continue;
+                            }
                             if (book.asks?.[0]?.price) {
                                 askPrice = parseFloat(book.asks[0].price);
                             }
@@ -386,7 +391,13 @@ export class OracleArbStrategy extends BaseStrategy {
                         let noAskPrice = noPrice;
                         try {
                             const book = await this.limitless.getOrderbook(market.slug);
-                            // NO side asks — need to look at YES bids (complement)
+                            // NO side asks = complement of YES bids
+                            if (!book.bids?.length) {
+                                // No YES bids = no NO asks = empty book for our side
+                                // FOK into empty book → server "null order_id" crash
+                                this.logger.debug({ market: market.slug }, 'NO: empty orderbook (no YES bids), skipping');
+                                continue;
+                            }
                             if (book.bids?.[0]?.price) {
                                 noAskPrice = 1 - parseFloat(book.bids[0].price);
                             }
