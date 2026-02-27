@@ -14,7 +14,8 @@
     "iterate": "npx tsx src/strategies/iterate.ts",
     "iterate:analyze": "npx tsx src/strategies/iterate.ts analyze",
     "iterate:markets": "npx tsx src/strategies/iterate.ts markets",
-    "redeem": "npx tsx src/core/limitless/redeem.ts"
+    "redeem": "npx tsx src/core/limitless/redeem.ts",
+    "conviction-sniper": "tsx src/strategies/conviction-sniper/run.ts"
   },
   "keywords": [
     "prediction-markets",
