@@ -4,6 +4,8 @@ Autonomous trading agents for [Limitless Exchange](https://limitless.exchange), 
 
 Built as an [OpenClaw](https://github.com/openclaw/openclaw) skill. Feed `SKILL.md` to your agent and it handles the rest — setup, trading, iteration.
 
+**Docs:** [docs.limitless.exchange](https://docs.limitless.exchange) — API reference, market structure, and guides. Also available as a live MCP server at `https://docs.limitless.exchange/mcp` for AI agents that need up-to-date context.
+
 ## For AI Agents
 
 This repo is designed to be operated by AI agents, not just read by humans.

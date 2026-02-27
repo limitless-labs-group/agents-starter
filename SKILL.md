@@ -208,7 +208,7 @@ Limitless Exchange provides a live documentation search endpoint via the **Model
 ### MCP Endpoint
 
 ```
-POST https://limitless.mintlify.app/mcp
+POST https://docs.limitless.exchange/mcp
 ```
 
 ### Protocol
@@ -231,7 +231,7 @@ Accept: text/event-stream, application/json
 ### How to Call It
 
 ```bash
-curl -s -X POST "https://limitless.mintlify.app/mcp" \
+curl -s -X POST "https://docs.limitless.exchange/mcp" \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream, application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"SearchLimitlessExchange","arguments":{"query":"how to place an order"}}}'
@@ -279,7 +279,7 @@ Parse the `data` field as JSON, then extract `result.content[0].text` for the do
 
 ```typescript
 async function queryLimitlessDocs(query: string): Promise<string> {
-  const res = await fetch('https://limitless.mintlify.app/mcp', {
+  const res = await fetch('https://docs.limitless.exchange/mcp', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -2155,7 +2155,7 @@ This approves both USDC and CTF for the market's venue contracts.
 ### Limitless Exchange
 - **App:** [limitless.exchange](https://limitless.exchange)
 - **API Docs:** [docs.limitless.exchange](https://docs.limitless.exchange)
-- **Docs MCP:** `POST https://limitless.mintlify.app/mcp` — search docs programmatically
+- **Docs MCP:** `POST https://docs.limitless.exchange/mcp` — search docs programmatically
 - **Python SDK:** [pypi.org/project/limitless-py](https://pypi.org/project/limitless-py/)
 - **TypeScript SDK:** [npmjs.com/package/@limitless-exchange/sdk](https://www.npmjs.com/package/@limitless-exchange/sdk)
 
