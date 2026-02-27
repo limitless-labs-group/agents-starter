@@ -17,7 +17,7 @@ Then ask me for two things:
 → PRIVATE_KEY — Base chain private key (dedicated trading wallet, never your main)
 → LIMITLESS_API_KEY — from limitless.exchange → Profile → API Keys
 
-Once I give you those: dry run first to confirm Hermes is streaming and markets are scanning. Then go live with the conviction sniper at $0.50/trade. Start the dashboard so I can monitor performance. Set up hourly auto-claim to collect winnings from resolved markets automatically.
+Once I give you those: dry run first, then go live with the conviction sniper at $0.50/trade. Start the dashboard so I can monitor performance. Set up hourly auto-claim to collect winnings from resolved markets automatically.
 
 Keep me posted. Fix problems quietly.
 ```
@@ -75,7 +75,7 @@ If USDC is 0, the user needs to fund the wallet before proceeding.
 DRY_RUN=true npm run conviction-sniper
 ```
 
-Confirm: Hermes SSE connects, oracle prices stream, markets are scanned, no orders placed. If this works, the setup is correct.
+Confirm: markets are scanned, no orders placed. If this works, the setup is correct.
 
 ### Step 5: Go Live
 
