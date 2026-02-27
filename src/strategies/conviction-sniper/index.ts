@@ -297,6 +297,62 @@ export class ConvictionSniperStrategy extends BaseStrategy {
         return decisions;
     }
 
+    /**
+     * Override executeDecisions to add auto-approval.
+     * On first trade with a new venue, USDC allowance is 0 — approve and retry.
+     */
+    protected async executeDecisions(decisions: TradeDecision[]): Promise<void> {
+        for (const decision of decisions) {
+            if (decision.action === 'SKIP') continue;
+
+            try {
+                this.logger.info({ decision }, 'Executing trade decision');
+
+                if (decision.action === 'BUY') {
+                    try {
+                        await this.trading.createOrder({
+                            marketSlug: decision.marketSlug,
+                            side: decision.side,
+                            limitPriceCents: decision.priceLimit,
+                            usdAmount: decision.amountUsd,
+                            orderType: 'FOK',
+                        });
+                        this.logger.info({ marketSlug: decision.marketSlug }, '✅ Order submitted');
+                    } catch (error: any) {
+                        const errMsg = error?.message || String(error);
+
+                        if (errMsg.includes('not approved') || errMsg.includes('allowance') || errMsg.includes('Insufficient collateral')) {
+                            this.logger.info({ marketSlug: decision.marketSlug }, 'Market not approved — auto-approving and retrying...');
+                            try {
+                                await this.approveMarket(decision.marketSlug);
+                                await this.trading.createOrder({
+                                    marketSlug: decision.marketSlug,
+                                    side: decision.side,
+                                    limitPriceCents: decision.priceLimit,
+                                    usdAmount: decision.amountUsd,
+                                    orderType: 'FOK',
+                                });
+                                this.logger.info({ marketSlug: decision.marketSlug }, '✅ Order submitted after approval');
+                            } catch (approvalError: any) {
+                                this.logger.error({ err: approvalError?.message, marketSlug: decision.marketSlug }, 'Auto-approval failed');
+                            }
+                        } else {
+                            throw error;
+                        }
+                    }
+                }
+            } catch (error: any) {
+                this.logger.error({ err: error?.message || error, decision }, 'Failed to execute decision');
+            }
+        }
+    }
+
+    private async approveMarket(marketSlug: string): Promise<void> {
+        const { approveMarketVenue } = await import('../../core/limitless/approve.js');
+        await approveMarketVenue(marketSlug);
+        this.logger.info({ marketSlug }, 'Market approval complete');
+    }
+
     async shutdown(): Promise<void> {
         this.hermes.disconnect?.();
         this.logger.info({ positions: this.positions.size }, 'Conviction Sniper shutting down');
@@ -336,9 +392,10 @@ export class ConvictionSniperStrategy extends BaseStrategy {
 
     private parseStrike(title: string): number | null {
         // e.g. "$BTC above $67,369.89 on Feb 27, 11:00 UTC?"
+        // Note: $BTC doesn't match (no digits), only the price dollar-amount matches
         const m = title.match(/\$\s*([\d,]+(?:\.\d+)?)/g);
-        if (!m || m.length < 2) return null;
-        const val = parseFloat(m[1].replace(/[$,]/g, ''));
+        if (!m || m.length < 1) return null;
+        const val = parseFloat(m[0].replace(/[$,]/g, ''));
         return isNaN(val) ? null : val;
     }
 

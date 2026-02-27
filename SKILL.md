@@ -77,6 +77,30 @@ DRY_RUN=true npm run conviction-sniper
 
 Confirm: markets are scanned, no orders placed. If this works, the setup is correct.
 
+### Step 4b: Token Approvals (CRITICAL — do this before going live)
+
+Limitless uses the Conditional Tokens Framework (CTF). Before any order can fill, the exchange contract must be approved to spend your USDC. Without this, every order will be rejected with `"Insufficient collateral allowance"`.
+
+**The conviction-sniper handles this automatically** — on first trade with a new venue it will detect the approval error, approve, and retry. No manual step needed.
+
+If you want to pre-approve before the first live tick (recommended for clean demos):
+
+```bash
+# Approve any one active market slug — approves the shared venue for all markets
+npx tsx src/index.ts approve <any-active-market-slug>
+```
+
+Example:
+```bash
+npx tsx src/index.ts approve dollarbtc-above-dollar6736989-on-feb-28-1000-utc-1772186402293
+```
+
+This sends two on-chain transactions (~$0.01 gas each):
+1. **USDC → Exchange** (required for all BUY orders)
+2. **CTF → Exchange** (required for SELL orders)
+
+All markets sharing the same exchange venue address are covered by a single approval. You only need to do this once per wallet.
+
 ### Step 5: Go Live
 
 Edit `.env`:
