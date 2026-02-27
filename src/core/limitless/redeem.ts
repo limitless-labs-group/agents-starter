@@ -126,7 +126,7 @@ export class RedeemClient {
      * // Claim both (in case you held both sides)
      * await client.redeemPositions('0xabc...', [1, 2]);
      */
-    async redeemPositions(conditionId: `0x${string}`, indexSets: number[]): Promise<string | null> {
+    async redeemPositions(conditionId: `0x${string}`, indexSets: number[], nonce?: number): Promise<string | null> {
         if (process.env.DRY_RUN === 'true') {
             logger.info({ conditionId, indexSets }, 'DRY RUN: Would redeem positions');
             return 'dry-run-tx';
@@ -145,17 +145,29 @@ export class RedeemClient {
                     conditionId,
                     indexSets.map(i => BigInt(i)),
                 ],
+                ...(nonce !== undefined ? { nonce } : {}),
             });
 
             logger.info({ conditionId, hash }, 'SUCCESS: Redemption submitted');
-
-            const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
-            logger.info({ hash, status: receipt.status }, 'Redemption confirmed');
-
             return hash;
         } catch (e: any) {
             logger.error({ conditionId, error: e.message }, 'ERROR: Redemption failed');
             return null;
+        }
+    }
+
+    /** Wait for a tx receipt, with timeout */
+    private async waitForReceipt(hash: string, timeoutMs = 30_000): Promise<boolean> {
+        try {
+            const receipt = await this.publicClient.waitForTransactionReceipt({
+                hash: hash as `0x${string}`,
+                timeout: timeoutMs,
+            });
+            logger.info({ hash, status: receipt.status }, 'Redemption confirmed');
+            return receipt.status === 'success';
+        } catch (e: any) {
+            logger.warn({ hash, error: e.message }, 'Waiting for receipt timed out — tx may still confirm');
+            return false;
         }
     }
 
@@ -226,7 +238,9 @@ export class RedeemClient {
 
         // Index set: 1 for YES (2^0), 2 for NO (2^1)
         const indexSet = winningIndex === 0 ? 1 : 2;
-        return this.redeemPositions(conditionId, [indexSet]);
+        const hash = await this.redeemPositions(conditionId, [indexSet]);
+        if (hash) await this.waitForReceipt(hash);
+        return hash;
     }
 
     /**
@@ -318,28 +332,36 @@ export class RedeemClient {
 
         logger.info({ count: claimable.length }, 'Found claimable positions');
 
+        // Get nonce once — increment manually so concurrent claims don't collide
+        let nonce = await this.publicClient.getTransactionCount({ address: this.account.address });
+        logger.info({ nonce, count: claimable.length }, 'Firing claims with sequential nonces');
+
         const txHashes: string[] = [];
         let totalValue = 0n;
 
+        // Fire all txs back-to-back (no waiting for receipts between them)
         for (const position of claimable) {
             logger.info({
                 market: position.marketTitle,
                 side: position.side,
                 payout: position.expectedPayout,
-            }, 'Claiming position...');
+                nonce,
+            }, 'Submitting claim...');
 
-            // Index set: 1 for YES (2^0), 2 for NO (2^1)
             const indexSet = position.winningOutcomeIndex === 0 ? 1 : 2;
-            const hash = await this.redeemPositions(position.conditionId, [indexSet]);
+            const hash = await this.redeemPositions(position.conditionId, [indexSet], nonce);
 
             if (hash) {
                 txHashes.push(hash);
                 totalValue += position.balance;
-                // Wait 2s between claims to avoid nonce conflicts
-                if (claimable.indexOf(position) < claimable.length - 1) {
-                    await new Promise(r => setTimeout(r, 2000));
-                }
+                nonce++; // next tx uses next nonce
             }
+        }
+
+        // Now wait for all receipts in parallel
+        if (txHashes.length > 0) {
+            logger.info({ count: txHashes.length }, 'Waiting for all receipts...');
+            await Promise.all(txHashes.map(h => this.waitForReceipt(h)));
         }
 
         return {
