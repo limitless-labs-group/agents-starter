@@ -105,7 +105,9 @@ export class HermesClient extends EventEmitter {
 
         this.eventSource.onerror = (err) => {
             logger.error({ err }, 'Hermes SSE error');
-            this.emit('error', err);
+            this.connected = false;
+            // Do NOT emit('error') — unhandled EventEmitter 'error' events kill the process.
+            // scheduleReconnect handles recovery.
             this.scheduleReconnect(assets);
         };
     }
