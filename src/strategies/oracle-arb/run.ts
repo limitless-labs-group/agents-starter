@@ -72,6 +72,9 @@ async function main() {
         minConfidencePercent: parseFloat(process.env.ORACLE_MIN_CONFIDENCE || '0.82'),
         // Minimum edge between oracle and market (0-1)
         minEdgePercent: parseFloat(process.env.ORACLE_MIN_EDGE || '0.20'),
+        // Min price floor — skip if market prices our side below this (market knows something we don't)
+        // 0.30 = don't buy if the market thinks there's <30% chance we win
+        minMarketPrice: parseFloat(process.env.ORACLE_MIN_PRICE || '0.30'),
         // Max price to pay per contract (0-1)
         maxMarketPrice: parseFloat(process.env.ORACLE_MAX_PRICE || '0.65'),
         // Bet size per trade in USD
@@ -88,6 +91,7 @@ async function main() {
         assets: strategyConfig.assets,
         minConfidence: strategyConfig.minConfidencePercent,
         minEdge: strategyConfig.minEdgePercent,
+        minPrice: strategyConfig.minMarketPrice,
         maxPrice: strategyConfig.maxMarketPrice,
         betSize: strategyConfig.betSizeUsd,
     }, 'Strategy config');

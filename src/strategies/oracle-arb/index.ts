@@ -29,6 +29,7 @@ export interface OracleArbConfig extends StrategyConfig {
     assets: string[]; // e.g., ['BTC', 'ETH', 'SOL']
     minConfidencePercent: number; // Min oracle confidence (0-1)
     minEdgePercent: number; // Min edge between oracle and market price (0-1)
+    minMarketPrice: number; // Min price floor — if market prices us below this, it knows something we don't (0-1)
     maxMarketPrice: number; // Max market price to pay (e.g., 0.70 for 70¢)
     betSizeUsd: number; // Per-trade size
     maxPositions: number; // Max concurrent positions
@@ -328,7 +329,13 @@ export class OracleArbStrategy extends BaseStrategy {
                             }
                         } catch { /* use fallback */ }
 
-                        // CRITICAL: check ask price against max AND recalculate edge vs actual fill price
+                        // CRITICAL: check ask price against min AND max — recalculate edge vs actual fill price
+                        if (askPrice < config.minMarketPrice) {
+                            // Market is pricing YES very cheap = strong conviction it won't happen
+                            // Our oracle doesn't have that alpha — skip
+                            this.logger.debug({ market: market.slug, askPrice: (askPrice*100).toFixed(0)+'¢', min: (config.minMarketPrice*100)+'¢' }, 'YES ask below min price floor, skipping');
+                            continue;
+                        }
                         if (askPrice > config.maxMarketPrice) {
                             this.logger.debug({ market: market.slug, askPrice: (askPrice*100).toFixed(0)+'¢', max: (config.maxMarketPrice*100)+'¢' }, 'Ask too expensive, skipping');
                             continue;
@@ -403,7 +410,14 @@ export class OracleArbStrategy extends BaseStrategy {
                             }
                         } catch { /* use fallback */ }
 
-                        // CRITICAL: check actual ask price, not just displayed price
+                        // CRITICAL: check actual ask price against min AND max
+                        if (noAskPrice < config.minMarketPrice) {
+                            // Market is pricing NO very cheap = strong conviction it WILL happen
+                            // e.g., NO at 6¢ means market is 94% sure asset goes above strike
+                            // Our point-estimate oracle can't outpredict that momentum signal — skip
+                            this.logger.debug({ market: market.slug, noAskPrice: (noAskPrice*100).toFixed(0)+'¢', min: (config.minMarketPrice*100)+'¢' }, 'NO ask below min price floor (market has strong conviction), skipping');
+                            continue;
+                        }
                         if (noAskPrice > config.maxMarketPrice) {
                             this.logger.debug({ market: market.slug, noAskPrice: (noAskPrice*100).toFixed(0)+'¢', max: (config.maxMarketPrice*100)+'¢' }, 'NO ask too expensive, skipping');
                             continue;
