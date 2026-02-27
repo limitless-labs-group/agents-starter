@@ -6,6 +6,24 @@ This file is the operating manual. An agent with shell access and this file can 
 
 ---
 
+## Quick Start Prompt
+
+Paste this into your Clawbot (or any coding agent with shell access) to go from zero to live trading in one shot. The agent clones the repo, reads this file, and handles the rest.
+
+```
+Clone https://github.com/limitless-labs-group/agents-starter.git — your operating manual is SKILL.md, read it before doing anything else.
+
+Then ask me for two things:
+→ PRIVATE_KEY — Base chain private key (dedicated trading wallet, never your main)
+→ LIMITLESS_API_KEY — from limitless.exchange → Profile → API Keys
+
+Once I give you those: dry run first to confirm Hermes is streaming and markets are scanning. Then go live with the conviction sniper at $0.50/trade. Start the dashboard so I can monitor performance. Set up hourly auto-claim to collect winnings from resolved markets automatically.
+
+Keep me posted. Fix problems quietly.
+```
+
+---
+
 ## Agent Setup Wizard
 
 Follow these steps in order. Each step builds on the previous one.
@@ -54,27 +72,30 @@ If USDC is 0, the user needs to fund the wallet before proceeding.
 ### Step 4: Dry Run
 
 ```bash
-DRY_RUN=true npm run oracle-arb
+DRY_RUN=true npm run conviction-sniper
 ```
 
-Confirm: Hermes SSE connects, markets are scanned, no orders placed. If this works, the setup is correct.
+Confirm: Hermes SSE connects, oracle prices stream, markets are scanned, no orders placed. If this works, the setup is correct.
 
 ### Step 5: Go Live
 
 Edit `.env`:
 ```
 DRY_RUN=false
-ORACLE_BET_SIZE=1
-ORACLE_ASSETS=BTC,ETH,SOL
-ORACLE_MAX_PRICE=0.75
-ORACLE_MIN_EDGE=0.10
+SNIPER_BET_SIZE=0.50
+SNIPER_ASSETS=BTC,ETH,SOL
+SNIPER_MIN_LEAD=0.65
+SNIPER_MAX_LEAD=0.93
+SNIPER_MIN_CONVICTION=3.0
+SNIPER_MIN_MINUTES=3
+SNIPER_MAX_MINUTES=25
 ```
 
 Start with PM2 for persistence:
 ```bash
-pm2 start "npx tsx src/strategies/oracle-arb/run.ts" --name oracle-live --max-restarts 999 --restart-delay 5000
+pm2 start "npx tsx src/strategies/conviction-sniper/run.ts" --name conviction-sniper --max-restarts 999 --restart-delay 5000
 pm2 start "npx tsx src/dashboard.ts" --name dashboard
-pm2 logs oracle-live --lines 20
+pm2 logs conviction-sniper --lines 20
 ```
 
 ### Step 6: Monitor
