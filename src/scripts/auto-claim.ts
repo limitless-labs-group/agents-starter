@@ -69,9 +69,13 @@ async function main() {
     let totalClaimed = 0;
     const txHashes: string[] = [];
 
+    // Fetch nonce once and increment manually — prevents collisions when
+    // multiple positions resolve simultaneously and txs fire back-to-back
+    let nonce = await client.getCurrentNonce();
+
     for (const position of claimable) {
         const indexSet = position.winningOutcomeIndex === 0 ? 1 : 2;
-        const hash = await client.redeemPositions(position.conditionId, [indexSet]);
+        const hash = await client.redeemPositions(position.conditionId, [indexSet], nonce++);
         if (hash) {
             txHashes.push(hash);
             const claimedUsd = parseFloat(position.expectedPayout.replace(' USDC', '')) || 0;
@@ -96,6 +100,9 @@ async function main() {
     }
 
     fs.writeFileSync(pnlFile, JSON.stringify(pnlData, null, 2));
+
+    // Wait for all receipts in parallel after all txs submitted
+    if (txHashes.length > 0) await client.waitForReceipts(txHashes);
 
     if (txHashes.length > 0) {
         log(`✅ Claimed ${txHashes.length} positions, total value: ${totalClaimed.toFixed(3)} USDC`);

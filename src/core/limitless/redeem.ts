@@ -126,6 +126,15 @@ export class RedeemClient {
      * // Claim both (in case you held both sides)
      * await client.redeemPositions('0xabc...', [1, 2]);
      */
+    async getCurrentNonce(): Promise<number> {
+        return this.publicClient.getTransactionCount({ address: this.account.address });
+    }
+
+    async waitForReceipts(hashes: string[]): Promise<void> {
+        if (!hashes.length) return;
+        await Promise.all(hashes.map(h => this.waitForReceipt(h)));
+    }
+
     async redeemPositions(conditionId: `0x${string}`, indexSets: number[], nonce?: number): Promise<string | null> {
         if (process.env.DRY_RUN === 'true') {
             logger.info({ conditionId, indexSets }, 'DRY RUN: Would redeem positions');
