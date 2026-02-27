@@ -457,21 +457,30 @@ async function fetchDashboardData(): Promise<object> {
         results.cumPnl = buildCumPnl(chartRaw, results.trades);
     }
 
-    // Calculate win rate from actual claimed positions only
-    // GTC orders at 55¢ don't count until claimed
+    // Calculate win rate from pnl-tracker events (claimed positions) when available.
+    // profitable claims / total claims — honest within the scope of resolved positions.
+    // Falls back to deduplicated trade log (unique markets) if pnl-tracker is empty.
     if (results.winRate === null || results.winRate === 100) {
-        const totalAttempted = results.trades.length;
-        if (winningPositions > 0 && totalAttempted > 0) {
-            results.winRate = Math.round((winningPositions / totalAttempted) * 1000) / 10;
+        if (pnlEvents.length > 0) {
+            const profitableClaims = pnlEvents.filter((e: any) => (e.pnl || 0) > 0.01).length;
+            results.winRate = Math.round((profitableClaims / pnlEvents.length) * 1000) / 10;
         } else {
-            results.winRate = 0;
+            const uniqueMarketsAttempted = new Set(
+                results.trades.map((t: any) => t.marketSlug || t.marketId).filter(Boolean)
+            ).size;
+            const totalAttempted = uniqueMarketsAttempted || results.trades.length;
+            if (winningPositions > 0 && totalAttempted > 0) {
+                results.winRate = Math.round((winningPositions / totalAttempted) * 1000) / 10;
+            } else {
+                results.winRate = 0;
+            }
         }
     }
 
     // Populate wins/losses for frontend
     if (pnlEvents.length > 0) {
-        results.wins = pnlEvents.filter((e: any) => (e.pnl || 0) > 0).length;
-        results.losses = pnlEvents.filter((e: any) => (e.pnl || 0) <= 0).length;
+        results.wins = pnlEvents.filter((e: any) => (e.pnl || 0) > 0.01).length;
+        results.losses = pnlEvents.filter((e: any) => (e.pnl || 0) <= 0.01).length;
         results.pnlSource = 'from claimed positions';
     } else {
         // Fallback: count from trades
