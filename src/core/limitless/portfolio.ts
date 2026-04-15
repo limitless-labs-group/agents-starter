@@ -1,5 +1,6 @@
 import fetch from 'cross-fetch';
 import { pino } from 'pino';
+import { RedeemParams, WithdrawParams } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -122,6 +123,94 @@ export class PortfolioClient {
             return await res.json();
         } catch (error) {
             logger.error({ error }, 'Error fetching points');
+            throw error;
+        }
+    }
+
+    // ─── Server Wallet Redemption & Withdrawal ────────────────────────────
+    // These methods call the API endpoints for partner server-wallet sub-accounts.
+    // They require scoped API token auth (not legacy X-API-Key).
+    // For on-chain CTF redemption (self-signed wallets), see redeem.ts instead.
+
+    /**
+     * Redeem resolved positions via the API.
+     *
+     * Submits `redeemPositions` for a resolved CTF condition. Works for both
+     * self-trading accounts and server-wallet sub-accounts (with `onBehalfOf`).
+     *
+     * **Auth:** Requires `apiToken` auth with `trading` scope. Legacy API keys
+     * are NOT supported for server-wallet operations.
+     *
+     * **Preconditions:**
+     * - Market must be resolved
+     * - On-chain payout must be posted (`payoutDenominator(conditionId) > 0`)
+     * - Position must have redeemable balance
+     *
+     * @example
+     * ```ts
+     * const result = await portfolio.redeem({
+     *   conditionId: '0xabc123...',
+     *   onBehalfOf: subAccountProfileId,
+     * });
+     * ```
+     */
+    async redeem(params: RedeemParams): Promise<any> {
+        try {
+            const url = `${this.baseUrl}/portfolio/redeem`;
+            logger.info({ conditionId: params.conditionId, onBehalfOf: params.onBehalfOf }, 'Redeeming resolved position via API');
+
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(params),
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Failed to redeem: ${res.status} ${errText}`);
+            }
+            return await res.json();
+        } catch (error) {
+            logger.error({ error, params }, 'Error redeeming position');
+            throw error;
+        }
+    }
+
+    /**
+     * Withdraw ERC20 funds from a managed server-wallet sub-account.
+     *
+     * Transfers funds from the sub-account's server wallet to the partner's
+     * own account or smart wallet.
+     *
+     * **Auth:** Requires `apiToken` auth with `withdrawal` scope.
+     *
+     * @example
+     * ```ts
+     * const result = await portfolio.withdraw({
+     *   amount: '50',
+     *   token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC on Base
+     *   onBehalfOf: subAccountProfileId,
+     * });
+     * ```
+     */
+    async withdraw(params: WithdrawParams): Promise<any> {
+        try {
+            const url = `${this.baseUrl}/portfolio/withdraw`;
+            logger.info({ amount: params.amount, token: params.token, onBehalfOf: params.onBehalfOf }, 'Withdrawing funds via API');
+
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(params),
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Failed to withdraw: ${res.status} ${errText}`);
+            }
+            return await res.json();
+        } catch (error) {
+            logger.error({ error, params }, 'Error withdrawing funds');
             throw error;
         }
     }

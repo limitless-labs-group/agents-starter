@@ -193,17 +193,24 @@ What works: targeting balanced markets (30-70% odds) where the orderbook has rea
 6. [Market Structure](#3-market-structure)
 7. [Architecture](#4-architecture)
 8. [Setup Guide](#5-setup-guide)
-9. [Core SDK Reference](#6-core-sdk-reference)
-10. [EIP-712 Signing Deep Dive](#7-eip-712-signing-deep-dive)
-11. [Contract Addresses](#8-contract-addresses)
-12. [Strategies Reference](#9-strategies-reference)
-13. [Building Your Own Strategy](#10-building-your-own-strategy)
-14. [Autonomous Iteration](#11-autonomous-iteration)
-15. [Safety and Risk Management](#12-safety--risk-management)
-16. [Common Patterns and Recipes](#13-common-patterns--recipes)
-17. [Agent Integration Patterns](#14-agent-integration-patterns)
-18. [Troubleshooting](#15-troubleshooting)
-19. [Links and Resources](#15-links--resources)
+9. [Core SDK Reference](#6-core-sdk-reference) — hand-rolled client in this repo
+10. [Official SDK Quick Reference](#7-official-sdk-quick-reference) — TypeScript, Python, Go
+11. [Programmatic API & Partner Integration](#8-programmatic-api--partner-integration)
+12. [Delegated Orders](#9-delegated-orders) — GTC, FAK, FOK via server-signed orders
+13. [Server Wallet Redemption & Withdrawal](#10-server-wallet-redemption--withdrawal)
+14. [Market Pages & Navigation](#11-market-pages--navigation) — browsing, filtering, pagination
+15. [WebSocket Streaming](#12-websocket-streaming) — public and authenticated channels
+16. [Error Handling & Retry](#13-error-handling--retry) — typed errors, retry patterns
+17. [EIP-712 Signing Deep Dive](#14-eip-712-signing-deep-dive)
+18. [Contract Addresses](#15-contract-addresses)
+19. [Strategies Reference](#16-strategies-reference)
+20. [Building Your Own Strategy](#17-building-your-own-strategy)
+21. [Autonomous Iteration](#18-autonomous-iteration)
+22. [Safety and Risk Management](#19-safety--risk-management)
+23. [Common Patterns and Recipes](#20-common-patterns--recipes)
+24. [Agent Integration Patterns](#21-agent-integration-patterns)
+25. [Troubleshooting](#22-troubleshooting)
+26. [Links and Resources](#23-links--resources)
 
 ---
 
@@ -1300,9 +1307,1251 @@ const { client, account } = getWallet();
 
 ---
 
-## 7. EIP-712 Signing Deep Dive
+## 7. Official SDK Quick Reference
+
+The hand-rolled clients in this repo (section 6) work well for the included strategies. For new integrations — especially partner/programmatic flows, delegated signing, or multi-language projects — use the **official Limitless SDKs**. They handle HMAC signing, venue caching, EIP-712 signing, retry logic, and profile lookups automatically.
+
+### Installation
+
+```bash
+# TypeScript
+npm install @limitless-exchange/sdk
+
+# Python
+pip install limitless-sdk
+
+# Go
+go get github.com/limitless-labs-group/limitless-exchange-go-sdk@v1.0.6
+```
+
+### Client Initialization
+
+All three SDKs expose a root `Client` class that composes every domain service (markets, orders, portfolio, API tokens, partner accounts, delegated orders).
+
+**Personal trading (API key):**
+
+```typescript
+// TypeScript
+import { Client } from '@limitless-exchange/sdk';
+
+const client = new Client({
+  baseURL: 'https://api.limitless.exchange',
+  apiKey: process.env.LIMITLESS_API_KEY,
+});
+```
+
+```python
+# Python
+from limitless_sdk import Client
+
+client = Client(
+    base_url="https://api.limitless.exchange",
+    api_key="lmts_...",
+)
+```
+
+```go
+// Go
+import limitless "github.com/limitless-labs-group/limitless-exchange-go-sdk/limitless"
+
+client := limitless.NewClient(
+    limitless.WithAPIKey("lmts_..."),
+)
+```
+
+**Partner / programmatic (HMAC scoped token):**
+
+```typescript
+// TypeScript
+const client = new Client({
+  baseURL: 'https://api.limitless.exchange',
+  hmacCredentials: {
+    tokenId: process.env.LMTS_TOKEN_ID!,
+    secret: process.env.LMTS_TOKEN_SECRET!,
+  },
+});
+```
+
+```python
+# Python
+from limitless_sdk import Client, HMACCredentials
+
+client = Client(
+    base_url="https://api.limitless.exchange",
+    hmac_credentials=HMACCredentials(
+        token_id="your-token-id",
+        secret="your-base64-secret",
+    ),
+)
+```
+
+```go
+// Go
+client := limitless.NewClient(
+    limitless.WithHMACCredentials(limitless.HMACCredentials{
+        TokenID: "your-token-id",
+        Secret:  "your-base64-secret",
+    }),
+)
+```
+
+With `hmacCredentials` set, the SDK automatically generates and sends `lmts-api-key`, `lmts-timestamp`, and `lmts-signature` on every request. Do not manually build HMAC headers.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `LIMITLESS_API_KEY` | Legacy auth only | API key, auto-loaded by all SDKs |
+| `LMTS_TOKEN_ID` | Partner/programmatic | Scoped token ID for HMAC signing |
+| `LMTS_TOKEN_SECRET` | Partner/programmatic | Base64 secret for HMAC signing |
+| `PRIVATE_KEY` | For self-signed orders | Ethereum private key for EIP-712 signatures |
+
+### Fetching Markets (all SDKs)
+
+```typescript
+// TypeScript
+import { MarketFetcher } from '@limitless-exchange/sdk';
+
+const marketFetcher = new MarketFetcher(httpClient);
+const markets = await marketFetcher.getActiveMarkets({ limit: 10, sortBy: 'newest' });
+for (const market of markets) {
+  console.log(market.slug, market.title);
+}
+```
+
+```python
+# Python
+from limitless_sdk.markets import MarketFetcher
+
+market_fetcher = MarketFetcher(http_client)
+markets = await market_fetcher.get_active_markets()
+for market in markets["data"]:
+    print(market["title"], market["slug"])
+```
+
+```go
+// Go
+marketFetcher := limitless.NewMarketFetcher(httpClient)
+result, err := marketFetcher.GetActiveMarkets(ctx, &limitless.ActiveMarketsParams{
+    Limit: 10,
+    Page:  1,
+})
+for _, m := range result.Data {
+    fmt.Println(m.Title, m.Slug)
+}
+```
+
+### Creating Self-Signed Orders (all SDKs)
+
+**GTC (limit order):**
+
+```typescript
+// TypeScript
+import { OrderClient, MarketFetcher } from '@limitless-exchange/sdk';
+import { ethers } from 'ethers';
+
+const wallet = new ethers.Wallet(process.env.PRIVATE_KEY!);
+const orderClient = new OrderClient(httpClient, wallet, new MarketFetcher(httpClient));
+
+const result = await orderClient.createOrder({
+  marketSlug: 'btc-100k',
+  tokenId: market.tokens.yes,
+  side: 'BUY',
+  price: 0.55,
+  size: 10,
+  orderType: 'GTC',
+});
+```
+
+```python
+# Python
+from limitless_sdk.orders import OrderClient
+from eth_account import Account
+
+account = Account.from_key(private_key)
+order_client = OrderClient(http_client, account, market_fetcher)
+
+result = await order_client.create_order(
+    market_slug="btc-100k",
+    token_id=str(market.tokens.yes),
+    side="BUY",
+    price=0.55,
+    size=10.0,
+    order_type="GTC",
+)
+```
+
+```go
+// Go
+orderClient := limitless.NewOrderClient(httpClient, privateKey, marketFetcher)
+
+result, err := orderClient.CreateOrder(ctx, limitless.CreateOrderParams{
+    MarketSlug: "btc-100k",
+    TokenID:    market.Tokens.Yes,
+    Side:       limitless.SideBuy,
+    OrderType:  limitless.OrderTypeGTC,
+    Args: limitless.GTCOrderArgs{
+        Price: 0.55,
+        Size:  10.0,
+    },
+})
+```
+
+**FOK (market order):**
+
+```typescript
+// TypeScript
+const result = await orderClient.createOrder({
+  marketSlug: 'btc-100k',
+  tokenId: market.tokens.yes,
+  side: 'BUY',
+  makerAmount: 10, // spend 10 USDC
+  orderType: 'FOK',
+});
+```
+
+```python
+# Python
+result = await order_client.create_order(
+    market_slug="btc-100k",
+    token_id=str(market.tokens.yes),
+    side="BUY",
+    maker_amount=10.0,
+    order_type="FOK",
+)
+```
+
+```go
+// Go
+result, err := orderClient.CreateOrder(ctx, limitless.CreateOrderParams{
+    MarketSlug: "btc-100k",
+    TokenID:    market.Tokens.Yes,
+    Side:       limitless.SideBuy,
+    OrderType:  limitless.OrderTypeFOK,
+    Args: limitless.FOKOrderArgs{
+        MakerAmount: 10.0,
+    },
+})
+```
+
+### Portfolio (all SDKs)
+
+```typescript
+// TypeScript
+import { PortfolioFetcher } from '@limitless-exchange/sdk';
+
+const portfolio = new PortfolioFetcher(httpClient);
+const positions = await portfolio.getPositions();
+// positions.clob, positions.amm, positions.accumulativePoints
+```
+
+```python
+# Python
+from limitless_sdk.portfolio import PortfolioFetcher
+
+portfolio = PortfolioFetcher(http_client)
+positions = await portfolio.get_positions()
+for pos in positions.get("clob", []):
+    print(pos["market"]["title"], pos["size"])
+```
+
+```go
+// Go
+portfolio := limitless.NewPortfolioFetcher(httpClient)
+positions, err := portfolio.GetPositions(ctx)
+for _, pos := range positions.CLOB {
+    fmt.Println(pos.Market.Title)
+}
+```
+
+### SDK Services Overview
+
+| Service | TypeScript | Python | Go |
+|---------|-----------|--------|-----|
+| Markets & orderbook | `MarketFetcher` | `MarketFetcher` | `MarketFetcher` |
+| Market pages & navigation | `PagesFetcher` | `PagesFetcher` | `PagesFetcher` |
+| Self-signed orders | `OrderClient` | `OrderClient` | `OrderClient` |
+| Portfolio & positions | `PortfolioFetcher` | `PortfolioFetcher` | `PortfolioFetcher` |
+| API tokens | `ApiTokenService` | `api_tokens` | `ApiTokens` |
+| Partner accounts | `PartnerAccountService` | `partner_accounts` | `PartnerAccounts` |
+| Delegated orders | `DelegatedOrderService` | `delegated_orders` | `DelegatedOrders` |
+| WebSocket streaming | `WebSocketClient` | `WebSocketClient` | `WebSocketClient` |
+
+> 📖 **Full SDK docs:** [TypeScript](https://docs.limitless.exchange/developers/sdk/typescript/getting-started) · [Python](https://docs.limitless.exchange/developers/sdk/python/getting-started) · [Go](https://docs.limitless.exchange/developers/sdk/go/getting-started)
+
+---
+
+## 8. Programmatic API & Partner Integration
+
+The Programmatic API enables **partners and platforms** to build integrations that create and manage user accounts, place orders on behalf of users, and operate with fine-grained access control — all through HMAC-authenticated API tokens with scoped permissions.
+
+> **Building a bot for yourself?** You do not need the Programmatic API. Derive a scoped API token with the `trading` scope and start trading immediately. The Programmatic API is for **platforms and partners** that need to create and manage sub-accounts on behalf of their users.
+
+> **Legacy API keys (`X-API-Key`) are deprecated** and no longer available for new users. All new integrations should use scoped API tokens with HMAC authentication. Existing API keys continue to work but should be migrated to scoped tokens. The hand-rolled client in this repo (`src/core/limitless/`) still uses `X-API-Key` — production partner integrations should use the official SDKs with `hmacCredentials` instead.
+
+### Partner Lifecycle
+
+1. **Bootstrap** — Create a standard Limitless account at [limitless.exchange](https://limitless.exchange). This gives you a `profileId` and wallet address.
+2. **Apply** — Submit the [partner application form](https://docs.google.com/forms/d/e/1FAIpQLSd1P4UB1yDcdcxJzRrM7EiwuJKTFpKtqgFGA_ftYbNOLg7lsQ/viewform) with your wallet address. The team enables token management and allowed scopes.
+3. **Check capabilities** — Call `GET /auth/api-tokens/capabilities` (Privy auth) to verify which scopes are enabled for your account. Returns `tokenManagementEnabled` and `allowedScopes`.
+4. **Derive a scoped token** — Authenticate with Privy and call `POST /auth/api-tokens/derive`.
+5. **Create sub-accounts** — Use the token to create server-wallet or EOA sub-accounts.
+6. **Trade** — Place orders on behalf of sub-accounts using delegated signing or EOA-signed orders.
+
+### Deriving a Scoped API Token
+
+```typescript
+// TypeScript
+import { Client } from '@limitless-exchange/sdk';
+
+const client = new Client({ baseURL: 'https://api.limitless.exchange' });
+
+const derived = await client.apiTokens.deriveToken(identityToken, {
+  label: 'my-trading-bot',
+  scopes: ['trading', 'account_creation', 'delegated_signing'],
+});
+
+const scopedClient = new Client({
+  baseURL: 'https://api.limitless.exchange',
+  hmacCredentials: {
+    tokenId: derived.tokenId,
+    secret: derived.secret,
+  },
+});
+```
+
+```python
+# Python
+from limitless_sdk import Client, HMACCredentials, DeriveApiTokenInput
+
+client = Client(base_url="https://api.limitless.exchange")
+
+derived = await client.api_tokens.derive_token(
+    identity_token,
+    DeriveApiTokenInput(
+        label="my-trading-bot",
+        scopes=["trading", "account_creation", "delegated_signing"],
+    ),
+)
+
+scoped_client = Client(
+    base_url="https://api.limitless.exchange",
+    hmac_credentials=HMACCredentials(
+        token_id=derived.token_id,
+        secret=derived.secret,
+    ),
+)
+```
+
+```go
+// Go
+client := limitless.NewClient()
+
+derived, err := client.ApiTokens.DeriveToken(ctx, identityToken, limitless.DeriveApiTokenInput{
+    Label:  "my-trading-bot",
+    Scopes: []string{"trading", "account_creation", "delegated_signing"},
+})
+
+scopedClient := limitless.NewClient(
+    limitless.WithHMACCredentials(limitless.HMACCredentials{
+        TokenID: derived.TokenID,
+        Secret:  derived.Secret,
+    }),
+)
+```
+
+### Scopes
+
+| Scope | Description | Self-service |
+|-------|-------------|--------------|
+| `trading` | Place and cancel orders. Default scope. Required base for `delegated_signing`. | Yes |
+| `account_creation` | Create sub-account profiles linked to the partner. | Yes |
+| `delegated_signing` | Server signs orders on behalf of sub-accounts via managed wallets. Must be paired with `trading`. | Yes |
+| `withdrawal` | Transfer ERC20 balances from managed server-wallet sub-accounts. | Yes |
+| `admin` | Access admin-protected endpoints. | No (admin-provisioned only) |
+
+### Scope Requirements by Operation
+
+| Operation | Required scopes |
+|-----------|----------------|
+| Place or cancel orders (`POST /orders`) | `trading` |
+| Create sub-accounts (`POST /profiles/partner-accounts`) | `account_creation` |
+| Create sub-accounts with server wallets | `account_creation` + `delegated_signing` |
+| Submit unsigned orders (server signs) | `trading` + `delegated_signing` |
+| Redeem resolved positions (`POST /portfolio/redeem`) | `trading` |
+| Withdraw funds (`POST /portfolio/withdraw`) | `withdrawal` |
+
+### Creating Sub-Accounts
+
+**Server wallet mode (Web2 partners)** — The server provisions a managed Privy wallet. The partner submits unsigned orders and the server signs them.
+
+```typescript
+// TypeScript
+const account = await scopedClient.partnerAccounts.createAccount({
+  displayName: 'user-alice',
+  createServerWallet: true,
+});
+// account.profileId, account.account (wallet address)
+```
+
+```python
+# Python
+from limitless_sdk import CreatePartnerAccountInput
+
+account = await scoped_client.partner_accounts.create_account(
+    CreatePartnerAccountInput(
+        display_name="user-alice",
+        create_server_wallet=True,
+    )
+)
+```
+
+```go
+// Go
+createServerWallet := true
+account, err := scopedClient.PartnerAccounts.CreateAccount(ctx, limitless.CreatePartnerAccountInput{
+    DisplayName:        "user-alice",
+    CreateServerWallet: &createServerWallet,
+}, nil) // nil = no EOA headers (server wallet mode)
+```
+
+**EOA mode (Web3 partners)** — The end user keeps their private key. They sign each order themselves via EIP-712.
+
+```typescript
+// TypeScript — EOA registration with wallet ownership proof
+const account = await scopedClient.partnerAccounts.createAccount(
+  { displayName: 'user-bob' },
+  {
+    account: userWalletAddress,
+    signingMessage: hexEncodedMessage,
+    signature: walletSignature,
+  },
+);
+```
+
+### API Token Management
+
+```typescript
+// TypeScript — list and revoke tokens
+const tokens = await scopedClient.apiTokens.listTokens();
+for (const t of tokens) {
+  console.log(t.tokenId, t.label, t.scopes, t.lastUsedAt);
+}
+
+await scopedClient.apiTokens.revokeToken('token-id-to-revoke');
+```
+
+### HMAC Signing Protocol
+
+If you're implementing HMAC auth without the SDK (e.g. in a language without an official SDK), every request must include three headers:
+
+| Header | Value |
+|--------|-------|
+| `lmts-api-key` | Your `tokenId` |
+| `lmts-timestamp` | ISO-8601 timestamp (e.g. `2025-03-15T10:30:00.000Z`) |
+| `lmts-signature` | HMAC-SHA256 of the canonical message, base64-encoded |
+
+**Canonical message format:**
+
+```
+{ISO-8601 timestamp}\n{HTTP METHOD}\n{request path with query string}\n{request body}
+```
+
+- Path must include the **full request path AND query string** (e.g. `/orders/all/btc-100k?onBehalfOf=42`)
+- For GET requests, the body component is an empty string
+- The secret is base64-decoded before use as the HMAC key
+
+**If using an official SDK:** The SDK handles all of this automatically when you set `hmacCredentials`. Do not manually build HMAC headers.
+
+### Recommended Architecture
+
+- **Store HMAC credentials on your backend.** The `tokenId` and `secret` should never leave your server.
+- **Use the SDK server-side** for all trading, account creation, and delegated signing calls.
+- **Expose only your own endpoints to the frontend.** Your frontend talks to your backend — your backend talks to the Limitless API.
+- **Keep public reads in the browser.** Unauthenticated endpoints (market data, orderbooks) can be called directly.
+
+---
+
+## 9. Delegated Orders
+
+Delegated orders let partners submit **unsigned** orders on behalf of server-wallet sub-accounts. The server signs them automatically using the managed Privy wallet. This requires the `trading` + `delegated_signing` scopes.
+
+**Key detail:** With delegated signing, you omit the `signature` and `signatureType` fields from the order payload entirely — the server populates them using the sub-account's managed wallet. You still provide all other order fields (`tokenId`, `side`, `price`/`size`/`makerAmount`, etc.) but the cryptographic signing is handled server-side.
+
+Three execution strategies are supported:
+
+### GTC (Good-Til-Cancelled)
+
+Limit orders that rest on the orderbook until filled or cancelled.
+
+| Parameter | Description |
+|-----------|-------------|
+| `price` | Price between 0 and 1 |
+| `size` | Number of contracts |
+| `postOnly` | Optional. When `true`, rejected if it would immediately match. Default `false`. |
+
+```typescript
+// TypeScript
+import { OrderType, Side } from '@limitless-exchange/sdk';
+
+const order = await scopedClient.delegatedOrders.createOrder({
+  marketSlug: 'btc-100k',
+  orderType: OrderType.GTC,
+  onBehalfOf: account.profileId,
+  args: {
+    tokenId: market.tokens.yes,
+    side: Side.BUY,
+    price: 0.55,
+    size: 10,
+    postOnly: true,
+  },
+});
+```
+
+```python
+# Python
+order = await scoped_client.delegated_orders.create_order(
+    token_id=str(market.tokens.yes),
+    side=Side.BUY,
+    order_type=OrderType.GTC,
+    market_slug="btc-100k",
+    on_behalf_of=account.profile_id,
+    price=0.55,
+    size=10.0,
+)
+```
+
+```go
+// Go
+order, err := scopedClient.DelegatedOrders.CreateOrder(ctx, limitless.CreateDelegatedOrderParams{
+    MarketSlug: "btc-100k",
+    OrderType:  limitless.OrderTypeGTC,
+    OnBehalfOf: account.ProfileID,
+    Args: limitless.GTCOrderArgs{
+        TokenID:  market.Tokens.Yes,
+        Side:     limitless.SideBuy,
+        Price:    0.55,
+        Size:     10.0,
+        PostOnly: true,
+    },
+})
+```
+
+### FAK (Fill-And-Kill)
+
+Limit orders that match immediately available liquidity. Any unmatched remainder is cancelled — nothing rests on the book.
+
+| Parameter | Description |
+|-----------|-------------|
+| `price` | Price between 0 and 1 |
+| `size` | Number of contracts |
+
+```typescript
+// TypeScript
+const order = await scopedClient.delegatedOrders.createOrder({
+  marketSlug: 'btc-100k',
+  orderType: OrderType.FAK,
+  onBehalfOf: account.profileId,
+  args: {
+    tokenId: market.tokens.yes,
+    side: Side.BUY,
+    price: 0.45,
+    size: 10,
+  },
+});
+
+if (order.makerMatches?.length) {
+  console.log(`Matched immediately with ${order.makerMatches.length} fill(s)`);
+} else {
+  console.log('No immediate fill. Remainder was cancelled.');
+}
+```
+
+```python
+# Python
+order = await scoped_client.delegated_orders.create_order(
+    token_id=str(market.tokens.yes),
+    side=Side.BUY,
+    order_type=OrderType.FAK,
+    market_slug="btc-100k",
+    on_behalf_of=account.profile_id,
+    price=0.45,
+    size=10.0,
+)
+
+if order.maker_matches:
+    print(f"Matched immediately with {len(order.maker_matches)} fill(s)")
+else:
+    print("No immediate fill. Remainder was cancelled.")
+```
+
+```go
+// Go
+order, err := scopedClient.DelegatedOrders.CreateOrder(ctx, limitless.CreateDelegatedOrderParams{
+    MarketSlug: "btc-100k",
+    OrderType:  limitless.OrderTypeFAK,
+    OnBehalfOf: account.ProfileID,
+    Args: limitless.FAKOrderArgs{
+        TokenID: market.Tokens.Yes,
+        Side:    limitless.SideBuy,
+        Price:   0.45,
+        Size:    10.0,
+    },
+})
+
+if len(order.MakerMatches) > 0 {
+    fmt.Printf("Matched immediately with %d fill(s)\n", len(order.MakerMatches))
+} else {
+    fmt.Println("No immediate fill. Remainder was cancelled.")
+}
+```
+
+### FOK (Fill-Or-Kill)
+
+Market orders that execute immediately at the best available price or are cancelled entirely — no partial fills. Uses `makerAmount` instead of `price` + `size`.
+
+| Parameter | Description |
+|-----------|-------------|
+| `makerAmount` | **BUY**: USDC amount to spend. **SELL**: number of shares to sell. |
+
+```typescript
+// TypeScript
+const order = await scopedClient.delegatedOrders.createOrder({
+  marketSlug: 'btc-100k',
+  orderType: OrderType.FOK,
+  onBehalfOf: account.profileId,
+  args: {
+    tokenId: market.tokens.yes,
+    side: Side.BUY,
+    makerAmount: 10, // spend 10 USDC
+  },
+});
+```
+
+```python
+# Python
+order = await scoped_client.delegated_orders.create_order(
+    token_id=str(market.tokens.yes),
+    side=Side.BUY,
+    order_type=OrderType.FOK,
+    market_slug="btc-100k",
+    on_behalf_of=account.profile_id,
+    maker_amount=10.0,
+)
+```
+
+```go
+// Go
+order, err := scopedClient.DelegatedOrders.CreateOrder(ctx, limitless.CreateDelegatedOrderParams{
+    MarketSlug: "btc-100k",
+    OrderType:  limitless.OrderTypeFOK,
+    OnBehalfOf: account.ProfileID,
+    Args: limitless.FOKOrderArgs{
+        TokenID:     market.Tokens.Yes,
+        Side:        limitless.SideBuy,
+        MakerAmount: 10.0,
+    },
+})
+```
+
+### Cancelling Delegated Orders
+
+```typescript
+// TypeScript — cancel single order on behalf of sub-account
+await scopedClient.delegatedOrders.cancelOnBehalfOf(orderId, account.profileId);
+
+// Cancel all orders in a market on behalf of sub-account
+await scopedClient.delegatedOrders.cancelAllOnBehalfOf('btc-100k', account.profileId);
+```
+
+```python
+# Python
+await scoped_client.delegated_orders.cancel_on_behalf_of(order_id, account.profile_id)
+await scoped_client.delegated_orders.cancel_all_on_behalf_of("btc-100k", account.profile_id)
+```
+
+```go
+// Go
+err = scopedClient.DelegatedOrders.CancelOnBehalfOf(ctx, orderId, account.ProfileID)
+err = scopedClient.DelegatedOrders.CancelAllOnBehalfOf(ctx, "btc-100k", account.ProfileID)
+```
+
+---
+
+## 10. Server Wallet Redemption & Withdrawal
+
+For server-wallet sub-accounts, **trading**, **market resolution**, and **redemption** are separate stages:
+
+1. **Order execution** — Place and cancel orders through `POST /orders` or the `DelegatedOrderService`.
+2. **Portfolio resolution state** — Portfolio endpoints may show `status: RESOLVED` and `winningOutcomeIndex` once the winning side is known.
+3. **On-chain payout settlement** — Winning positions become redeemable only after the conditional token payout has been reported on-chain.
+
+> **Important:** `status: RESOLVED` in the portfolio does **not** guarantee that the position is redeemable on-chain. The CTF condition must be settled first (`payoutDenominator(conditionId) > 0`).
+
+### Redeem Resolved Positions
+
+`POST /portfolio/redeem` — Submit `redeemPositions` for a resolved condition.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `conditionId` | Yes | CTF condition ID (bytes32 hex string) |
+| `onBehalfOf` | No | Managed sub-account profile ID (partner flow) |
+
+**Auth:** `apiToken` (scope: `trading`), Privy, or session. Legacy API keys are **not** supported for server-wallet operations.
+
+```typescript
+// TypeScript
+const result = await scopedClient.portfolio.redeem({
+  conditionId: '0xabc123...',
+  onBehalfOf: account.profileId,
+});
+```
+
+```python
+# Python
+result = await scoped_client.portfolio.redeem(
+    condition_id="0xabc123...",
+    on_behalf_of=account.profile_id,
+)
+```
+
+```go
+// Go
+result, err := scopedClient.Portfolio.Redeem(ctx, limitless.RedeemParams{
+    ConditionID: "0xabc123...",
+    OnBehalfOf:  account.ProfileID,
+})
+```
+
+### Withdraw Funds
+
+`POST /portfolio/withdraw` — Transfer ERC20 funds from a managed sub-account server wallet to the partner's own account.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `amount` | Yes | Amount to withdraw (human-readable, e.g., `"50"` for 50 USDC) |
+| `token` | Yes | Token address (USDC: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) |
+| `onBehalfOf` | No | Managed sub-account profile ID |
+
+**Auth:** `apiToken` (scope: `withdrawal`), Privy, or session.
+
+```typescript
+// TypeScript
+const result = await scopedClient.portfolio.withdraw({
+  amount: '50',
+  token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  onBehalfOf: account.profileId,
+});
+```
+
+```python
+# Python
+result = await scoped_client.portfolio.withdraw(
+    amount="50",
+    token="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    on_behalf_of=account.profile_id,
+)
+```
+
+```go
+// Go
+result, err := scopedClient.Portfolio.Withdraw(ctx, limitless.WithdrawParams{
+    Amount:     "50",
+    Token:      "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    OnBehalfOf: account.ProfileID,
+})
+```
+
+### API Endpoints Summary
+
+| Endpoint | Auth | Scope | Description |
+|----------|------|-------|-------------|
+| `GET /auth/api-tokens/capabilities` | Privy | — | Check partner capability configuration |
+| `POST /auth/api-tokens/derive` | Privy | — | Create a scoped API token |
+| `GET /auth/api-tokens` | Any | — | List active tokens |
+| `DELETE /auth/api-tokens/{tokenId}` | Any | — | Revoke a token |
+| `POST /profiles/partner-accounts` | HMAC | `account_creation` | Create a sub-account |
+| `POST /orders` | HMAC | `trading` | Place orders (with optional delegated signing) |
+| `POST /portfolio/redeem` | apiToken / Privy / session | `trading` | Redeem resolved positions |
+| `POST /portfolio/withdraw` | apiToken / Privy / session | `withdrawal` | Withdraw ERC20 funds |
+
+---
+
+## 11. Market Pages & Navigation
+
+The Market Pages API provides structured browsing of markets by category, with navigation trees, filtering, and pagination. Useful for building UIs or scanning specific market segments programmatically.
+
+### Navigation Tree
+
+```typescript
+// TypeScript
+import { MarketPageFetcher } from '@limitless-exchange/sdk';
+
+const pageFetcher = new MarketPageFetcher(httpClient);
+const navigation = await pageFetcher.getNavigation();
+
+for (const node of navigation) {
+  console.log(`${node.name} → ${node.path}`);
+  for (const child of node.children) {
+    console.log(`  ${child.name} → ${child.path}`);
+  }
+}
+```
+
+```python
+# Python
+from limitless_sdk.market_pages import MarketPageFetcher
+
+page_fetcher = MarketPageFetcher(http_client)
+navigation = await page_fetcher.get_navigation()
+
+for node in navigation:
+    print(f"{node.name} → {node.path}")
+    for child in node.children:
+        print(f"  {child.name} → {child.path}")
+```
+
+```go
+// Go
+pageFetcher := limitless.NewMarketPageFetcher(httpClient)
+navigation, err := pageFetcher.GetNavigation(ctx)
+
+for _, node := range navigation {
+    fmt.Printf("%s → %s\n", node.Name, node.Path)
+}
+```
+
+### Browsing Markets by Page
+
+```typescript
+// TypeScript — resolve a page by URL path, then fetch its markets
+const page = await pageFetcher.getMarketPageByPath('/crypto');
+
+const result = await pageFetcher.getMarkets(page.id, {
+  page: 1,
+  limit: 20,
+  sort: '-updatedAt', // newest first
+});
+
+for (const market of result.data) {
+  console.log(`${market.slug} — ${market.title}`);
+}
+```
+
+```python
+# Python
+page = await page_fetcher.get_market_page_by_path("/crypto")
+
+result = await page_fetcher.get_markets(page.id, {
+    "page": 1,
+    "limit": 20,
+    "sort": "-updatedAt",
+})
+
+for market in result.data:
+    print(f"{market.slug} — {market.title}")
+```
+
+```go
+// Go
+page, err := pageFetcher.GetMarketPageByPath(ctx, "/crypto")
+
+result, err := pageFetcher.GetMarkets(ctx, page.ID, &limitless.MarketPageMarketsParams{
+    Page:  intPtr(1),
+    Limit: intPtr(20),
+    Sort:  limitless.MarketPageSortNewest,
+})
+
+for _, market := range result.Data {
+    fmt.Printf("%s — %s\n", market.Slug, market.Title)
+}
+```
+
+### Filtering Markets
+
+```typescript
+// TypeScript — filter by ticker and duration
+const result = await pageFetcher.getMarkets(page.id, {
+  limit: 10,
+  sort: '-updatedAt',
+  filters: {
+    ticker: ['btc', 'eth'],
+    duration: 'hourly',
+  },
+});
+```
+
+```python
+# Python
+result = await page_fetcher.get_markets(page.id, {
+    "limit": 10,
+    "sort": "-updatedAt",
+    "filters": {
+        "ticker": ["btc", "eth"],
+        "duration": "hourly",
+    },
+})
+```
+
+```go
+// Go
+result, err := pageFetcher.GetMarkets(ctx, page.ID, &limitless.MarketPageMarketsParams{
+    Limit: intPtr(10),
+    Sort:  limitless.MarketPageSortNewest,
+    Filters: map[string]any{
+        "ticker":   []string{"btc", "eth"},
+        "duration": "hourly",
+    },
+})
+```
+
+### Sort Options
+
+| Sort key | Description |
+|----------|-------------|
+| `createdAt` / `-createdAt` | Creation date (asc/desc) |
+| `updatedAt` / `-updatedAt` | Last update |
+| `deadline` / `-deadline` | Expiration |
+| `id` / `-id` | Market ID |
+
+Prefix with `-` for descending order.
+
+### Cursor Pagination
+
+For large result sets, use cursor-based pagination instead of offset:
+
+```typescript
+// TypeScript
+const firstPage = await pageFetcher.getMarkets(page.id, { cursor: '', limit: 20 });
+
+if (firstPage.cursor?.nextCursor) {
+  const nextPage = await pageFetcher.getMarkets(page.id, {
+    cursor: firstPage.cursor.nextCursor,
+    limit: 20,
+  });
+}
+```
+
+### Property Keys (Dynamic Filters)
+
+Discover available filter keys and their options:
+
+```typescript
+// TypeScript
+const keys = await pageFetcher.getPropertyKeys();
+for (const key of keys) {
+  console.log(`${key.name} (${key.type})`); // e.g. "Ticker (select)"
+}
+
+const options = await pageFetcher.getPropertyOptions(keyId);
+// options: [{ label: "BTC", value: "btc" }, { label: "ETH", value: "eth" }, ...]
+```
+
+---
+
+## 12. WebSocket Streaming
+
+Real-time updates via Socket.IO. Supports both public channels (orderbook, prices) and authenticated channels (your orders, fills, positions).
+
+### Connection
+
+```typescript
+// TypeScript
+import { WebSocketClient } from '@limitless-exchange/sdk';
+
+const ws = new WebSocketClient({
+  url: 'wss://ws.limitless.exchange',
+  autoReconnect: true,
+  apiKey: process.env.LIMITLESS_API_KEY, // Required for authenticated channels
+});
+
+ws.connect();
+```
+
+```python
+# Python
+from limitless_sdk.websocket import WebSocketClient, WebSocketConfig
+
+config = WebSocketConfig(
+    url="wss://ws.limitless.exchange",
+    auto_reconnect=True,
+    reconnect_delay=5,
+)
+
+ws_client = WebSocketClient(config)
+```
+
+```go
+// Go
+ws := limitless.NewWebSocketClient(
+    limitless.WithWebSocketAPIKey("lmts_your_key_here"),
+    limitless.WithAutoReconnect(true),
+    limitless.WithReconnectDelay(1 * time.Second),
+)
+
+err := ws.Connect(ctx)
+defer ws.Disconnect()
+```
+
+### Public Channels
+
+Available without authentication:
+
+| Channel | Data | Use case |
+|---------|------|----------|
+| Orderbook | Bids/asks per market slug | Strategy tick input, spread monitoring |
+| Prices | YES/NO prices per market address | AMM price tracking |
+| Trades | Trade events | Volume monitoring |
+| Markets | Market-level updates | New market detection |
+
+```typescript
+// TypeScript — subscribe to orderbook updates
+ws.subscribe('subscribe_market_prices', {
+  marketSlugs: ['btc-100k-weekly', 'eth-5k-daily'],
+});
+
+ws.on('orderbookUpdate', (data) => {
+  console.log(data.marketSlug, data.orderbook.bids.length, 'bids');
+});
+
+ws.on('newPriceData', (data) => {
+  console.log(data.marketAddress, data.updatedPrices);
+});
+```
+
+```python
+# Python
+@ws_client.on("connect")
+async def on_connect():
+    await ws_client.subscribe(
+        "subscribe_market_prices",
+        {"marketSlugs": ["btc-100k-weekly"]},
+    )
+
+@ws_client.on("orderbookUpdate")
+async def on_orderbook(data):
+    slug = data.get("marketSlug", "unknown")
+    print(f"[{slug}] {len(data.get('bids', []))} bids, {len(data.get('asks', []))} asks")
+```
+
+```go
+// Go — typed event handlers
+err := ws.Subscribe(ctx, limitless.ChannelOrderbook, limitless.SubscriptionOptions{
+    MarketSlugs: []string{"btc-100k-weekly"},
+})
+
+ws.OnOrderbookUpdate(func(update limitless.OrderbookUpdate) {
+    fmt.Printf("%s: %d bids\n", update.MarketSlug, len(update.Orderbook.Bids))
+})
+
+ws.OnNewPriceData(func(price limitless.NewPriceData) {
+    fmt.Printf("%s: YES=%s NO=%s\n", price.MarketAddress, price.UpdatedPrices.Yes, price.UpdatedPrices.No)
+})
+```
+
+### Authenticated Channels
+
+Require an API key. Track your own activity in real time:
+
+| Channel | Data | Use case |
+|---------|------|----------|
+| Orders | Your order status updates | Order lifecycle tracking |
+| Fills | Your order fill events | Position entry confirmation |
+| Positions | Your position updates | Live P&L |
+| Transactions | Your transaction updates | On-chain activity |
+
+```typescript
+// TypeScript
+ws.subscribe('subscribe_positions');   // Your live positions
+ws.subscribe('subscribe_transactions'); // Your on-chain txs
+
+ws.on('positions', (data) => {
+  for (const pos of data.clob) {
+    console.log(pos.market.slug, pos.positions.yes?.size);
+  }
+});
+```
+
+```go
+// Go — authenticated channel subscriptions
+err := ws.Subscribe(ctx, limitless.ChannelOrders, limitless.SubscriptionOptions{})
+err = ws.Subscribe(ctx, limitless.ChannelFills, limitless.SubscriptionOptions{})
+err = ws.Subscribe(ctx, limitless.ChannelSubscribePositions, limitless.SubscriptionOptions{})
+
+ws.OnOrder(func(order limitless.OrderUpdate) {
+    fmt.Printf("Order %s: %s\n", order.ID, order.Status)
+})
+
+ws.OnFill(func(fill limitless.FillEvent) {
+    fmt.Printf("Fill: %s %s @ %s\n", fill.Side, fill.Size, fill.Price)
+})
+```
+
+### Auto-Reconnect
+
+All SDKs support automatic reconnection with exponential backoff:
+- TypeScript/Python: configurable delay, auto-resubscribe
+- Go: exponential backoff with jitter (capped at 60s), must re-subscribe after reconnect
+
+---
+
+## 13. Error Handling & Retry
+
+### Error Types
+
+All three SDKs provide typed error classes for structured error handling:
+
+**TypeScript:**
+```typescript
+import { ApiError } from '@limitless-exchange/sdk';
+
+try {
+  await orderClient.createOrder({ /* ... */ });
+} catch (error) {
+  if (error instanceof ApiError) {
+    console.log(error.status, error.message, error.data);
+  }
+}
+```
+
+**Python:**
+```python
+from limitless_sdk.api import APIError
+
+try:
+    result = await order_client.create_order(...)
+except APIError as e:
+    print(f"Status: {e.status_code}, Message: {e.message}")
+```
+
+**Go:**
+```go
+import "errors"
+
+_, err := marketFetcher.GetMarket(ctx, "invalid-slug")
+if err != nil {
+    var apiErr *limitless.APIError
+    if errors.As(err, &apiErr) {
+        fmt.Printf("Status: %d, Message: %s\n", apiErr.Status, apiErr.Message)
+        fmt.Printf("URL: %s %s\n", apiErr.Method, apiErr.URL)
+    }
+}
+```
+
+Go also provides specialized error types:
+- `*limitless.ValidationError` (400) — invalid parameters, has `.Field` and `.Message`
+- `*limitless.AuthenticationError` (401, 403) — missing/invalid API key
+- `*limitless.RateLimitError` (429) — rate limit exceeded
+- `*limitless.OrderValidationError` — client-side validation before API call
+
+### Common HTTP Status Codes
+
+| Code | Meaning | Action |
+|------|---------|--------|
+| `400` | Bad request (invalid parameters) | Check order params |
+| `401` | Unauthorized (invalid/missing API key) | Check credentials |
+| `403` | Forbidden (insufficient scopes) | Check token scopes |
+| `404` | Not found (invalid slug) | Verify market exists |
+| `429` | Rate limited | Back off and retry |
+| `500-504` | Server errors | Retry with backoff |
+
+### Retry Patterns
+
+**TypeScript — `withRetry` wrapper:**
+```typescript
+import { withRetry } from '@limitless-exchange/sdk';
+
+const result = await withRetry(
+  () => orderClient.createOrder({ /* ... */ }),
+  {
+    statusCodes: [429, 500, 502, 503, 504],
+    maxRetries: 3,
+    delays: [1000, 2000, 4000], // ms
+    onRetry: (error, attempt) => console.log(`Retry ${attempt}:`, error.message),
+  }
+);
+```
+
+**Python — `@retry_on_errors` decorator:**
+```python
+from limitless_sdk.api import retry_on_errors
+
+@retry_on_errors(
+    status_codes={500, 429},
+    max_retries=3,
+    delays=[1, 2, 4],  # seconds
+    on_retry=lambda attempt, error: print(f"Retry {attempt}: {error}"),
+)
+async def place_order_with_retry():
+    return await order_client.create_order(...)
+```
+
+**Go — generic `WithRetry`:**
+```go
+market, err := limitless.WithRetry(ctx, func() (*limitless.Market, error) {
+    return marketFetcher.GetMarket(ctx, "btc-100k")
+}, limitless.RetryConfig{
+    StatusCodes:     []int{429, 500, 502, 503, 504},
+    MaxRetries:      3,
+    ExponentialBase: 2.0,
+    MaxDelay:        60 * time.Second,
+    OnRetry: func(attempt int, err error, delay time.Duration) {
+        fmt.Printf("Retry %d after %s: %v\n", attempt, delay, err)
+    },
+})
+```
+
+### RetryableClient (wraps all SDK calls)
+
+For automatic retries on every SDK call:
+
+```python
+# Python
+from limitless_sdk.api import HttpClient, RetryableClient
+
+http_client = HttpClient()
+retryable_client = RetryableClient(
+    client=http_client,
+    status_codes={500, 502, 503, 429},
+    max_retries=3,
+    delays=[1, 2, 4],
+)
+
+market_fetcher = MarketFetcher(retryable_client)
+order_client = OrderClient(retryable_client, account)
+```
+
+```go
+// Go
+retryable := limitless.NewRetryableClient(httpClient, limitless.RetryConfig{
+    StatusCodes:     []int{429, 500, 502, 503, 504},
+    MaxRetries:      3,
+    ExponentialBase: 2.0,
+})
+
+marketFetcher := limitless.NewMarketFetcher(retryable.Client)
+```
+
+### Order Queue (rate-limit safe submissions)
+
+```typescript
+// TypeScript — serialize order submissions with minimum delay
+class OrderQueue {
+  constructor(minDelayMs = 200) { /* ... */ }
+  async enqueue<T>(fn: () => Promise<T>): Promise<T> { /* ... */ }
+}
+
+const orderQueue = new OrderQueue(250); // 250ms between requests
+await orderQueue.enqueue(() => orderClient.createOrder({ /* ... */ }));
+```
+
+---
+
+## 14. EIP-712 Signing Deep Dive
 
 Every CLOB order on Limitless requires an EIP-712 signature. This is how the exchange verifies that you authorized the trade without requiring an on-chain transaction for every order.
+
+> **Checksummed addresses (EIP-55):** All address fields — `maker`, `signer`, `taker`, and `x-account` header — must use EIP-55 mixed-case checksummed format (e.g. `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed`). Lowercase addresses will be rejected. The `getAddress()` function in viem automatically produces checksummed addresses.
 
 ### The Domain
 
@@ -1404,7 +2653,7 @@ const makerAmount = (takerAmount * priceScaled) / SCALE;
 
 ---
 
-## 8. Contract Addresses
+## 15. Contract Addresses
 
 All contracts are on **Base chain** (chainId: `8453`).
 
@@ -1421,7 +2670,7 @@ All contracts are on **Base chain** (chainId: `8453`).
 
 ---
 
-## 9. Strategies Reference
+## 16. Strategies Reference
 
 ### Signal Sniper (`signal-sniper`)
 
@@ -1480,7 +2729,7 @@ All contracts are on **Base chain** (chainId: `8453`).
 
 ---
 
-## 10. Building Your Own Strategy
+## 17. Building Your Own Strategy
 
 ### Step 1: Extend BaseStrategy
 
@@ -1669,7 +2918,7 @@ Then use it in your strategy's `tick()` method alongside or instead of CoinGecko
 
 ---
 
-## 11. Autonomous Iteration
+## 18. Autonomous Iteration
 
 This is where AI agents shine. The `iterate.ts` module provides commands designed to be called by an AI agent on a schedule, creating a continuous improvement loop.
 
@@ -1806,7 +3055,7 @@ Add to your `HEARTBEAT.md`:
 
 ---
 
-## 12. Safety & Risk Management
+## 19. Safety & Risk Management
 
 ### Rule #1: DRY_RUN First, Always
 
@@ -1840,7 +3089,7 @@ Prediction markets are inherently risky. Even with an edge, variance is real. Fu
 
 ---
 
-## 13. Common Patterns & Recipes
+## 20. Common Patterns & Recipes
 
 ### Scan All Markets and Find the Best Opportunity
 
@@ -1972,7 +3221,7 @@ console.log('Midpoint:', book.midpoint);
 
 ---
 
-## 14. Agent Integration Patterns
+## 21. Agent Integration Patterns
 
 This skill is designed for AI agents operating through OpenClaw. Here are specific patterns for autonomous operation:
 
@@ -2115,7 +3364,7 @@ setInterval(async () => {
 
 ---
 
-## 15. Troubleshooting
+## 22. Troubleshooting
 
 ### Order Rejected: Insufficient Balance
 
@@ -2195,14 +3444,19 @@ This approves both USDC and CTF for the market's venue contracts.
 
 ---
 
-## 15. Links and Resources
+## 23. Links and Resources
 
 ### Limitless Exchange
 - **App:** [limitless.exchange](https://limitless.exchange)
 - **API Docs:** [docs.limitless.exchange](https://docs.limitless.exchange)
 - **Docs MCP:** `POST https://docs.limitless.exchange/mcp` — search docs programmatically
-- **Python SDK:** [pypi.org/project/limitless-py](https://pypi.org/project/limitless-py/)
-- **TypeScript SDK:** [npmjs.com/package/@limitless-exchange/sdk](https://www.npmjs.com/package/@limitless-exchange/sdk)
+- **Programmatic API:** [docs.limitless.exchange/developers/programmatic-api](https://docs.limitless.exchange/developers/programmatic-api)
+- **Partner Application:** [Application Form](https://docs.google.com/forms/d/e/1FAIpQLSd1P4UB1yDcdcxJzRrM7EiwuJKTFpKtqgFGA_ftYbNOLg7lsQ/viewform)
+
+### Official SDKs
+- **TypeScript SDK:** [npmjs.com/package/@limitless-exchange/sdk](https://www.npmjs.com/package/@limitless-exchange/sdk) · [GitHub](https://github.com/limitless-labs-group/limitless-exchange-ts-sdk) · [Docs](https://docs.limitless.exchange/developers/sdk/typescript/getting-started)
+- **Python SDK:** [pypi.org/project/limitless-sdk](https://pypi.org/project/limitless-sdk/) · [GitHub](https://github.com/limitless-labs-group/limitless-sdk) · [Docs](https://docs.limitless.exchange/developers/sdk/python/getting-started)
+- **Go SDK:** [github.com/limitless-labs-group/limitless-exchange-go-sdk](https://github.com/limitless-labs-group/limitless-exchange-go-sdk) · [Docs](https://docs.limitless.exchange/developers/sdk/go/getting-started)
 
 ### Infrastructure
 - **Base Chain Explorer:** [basescan.org](https://basescan.org)

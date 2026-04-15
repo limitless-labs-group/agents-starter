@@ -1,5 +1,6 @@
 import { LimitlessClient } from '../core/limitless/markets.js';
 import { TradingClient } from '../core/limitless/trading.js';
+import { OrderType } from '../core/limitless/types.js';
 import { pino, Logger } from 'pino';
 
 export interface StrategyConfig {
@@ -17,6 +18,10 @@ export interface TradeDecision {
     amountUsd: number;
     priceLimit: number;
     reason: string;
+    /** Order type: GTC (resting limit), FOK (fill-or-kill market), FAK (fill-and-kill). Defaults to FOK. */
+    orderType?: OrderType;
+    /** GTC only. When true, rejected if it would immediately match. */
+    postOnly?: boolean;
     // Optional: confidence from oracle and ladder tiers (cents)
     confidence?: number;
     ladder?: number[];
@@ -104,13 +109,14 @@ export abstract class BaseStrategy {
             try {
                 this.logger.info({ decision }, 'Executing trade decision');
 
-                if (decision.action === 'BUY') { // Or SELL if implemented
+                if (decision.action === 'BUY' || decision.action === 'SELL') {
                     await this.trading.createOrder({
                         marketSlug: decision.marketSlug,
                         side: decision.side,
                         limitPriceCents: decision.priceLimit,
                         usdAmount: decision.amountUsd,
-                        orderType: 'FOK',
+                        orderType: decision.orderType ?? 'FOK',
+                        postOnly: decision.postOnly,
                     });
                 }
             } catch (error: any) {

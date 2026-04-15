@@ -54,6 +54,9 @@ export interface Orderbook {
     midpoint?: number;
 }
 
+/** Supported order execution strategies */
+export type OrderType = 'GTC' | 'FOK' | 'FAK';
+
 export interface Order {
     id: string;
     marketSlug: string;
@@ -63,6 +66,43 @@ export interface Order {
     filledSize: number;
     status: 'OPEN' | 'FILLED' | 'CANCELLED' | 'EXPIRED';
     timestamp: number;
+    /** Matches returned when an FAK or FOK order fills immediately */
+    makerMatches?: any[];
+}
+
+/** Parameters for creating a self-signed order */
+export interface CreateOrderParams {
+    marketSlug: string;
+    side: 'YES' | 'NO';
+    /** Limit price in cents, 1–99. E.g. 50 means 50¢ per contract. */
+    limitPriceCents: number;
+    /** Amount in USD to spend. E.g. 10 means $10. */
+    usdAmount: number;
+    /** Order type. Defaults to 'FOK'. */
+    orderType?: OrderType;
+    /**
+     * GTC only. When true, the order is rejected if it would immediately match
+     * against existing orders. Guarantees maker-only execution.
+     */
+    postOnly?: boolean;
+}
+
+/** Parameters for redeeming resolved positions via the API */
+export interface RedeemParams {
+    /** CTF condition ID (bytes32 hex string) */
+    conditionId: string;
+    /** Managed sub-account profile ID (partner flow only) */
+    onBehalfOf?: number;
+}
+
+/** Parameters for withdrawing funds from a managed server wallet */
+export interface WithdrawParams {
+    /** Amount to withdraw (human-readable, e.g. "50" for 50 USDC) */
+    amount: string;
+    /** Token contract address */
+    token: string;
+    /** Managed sub-account profile ID (partner flow only) */
+    onBehalfOf?: number;
 }
 
 // EIP-712 Types

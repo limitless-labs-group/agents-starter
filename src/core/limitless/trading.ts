@@ -2,7 +2,7 @@ import fetch from 'cross-fetch';
 import crypto from 'crypto';
 import { LimitlessClient } from './markets.js';
 import { OrderSigner } from './sign.js';
-import { Market, SignedOrder } from './types.js';
+import { Market, SignedOrder, OrderType, CreateOrderParams } from './types.js';
 import { pino } from 'pino';
 import { Hex } from 'viem';
 
@@ -120,10 +120,11 @@ export class TradingClient {
      *
      * ## Order types
      *
-     * ### GTC (Good-Till-Cancelled) — default
+     * ### GTC (Good-Till-Cancelled)
      * - Standard resting limit order that sits in the orderbook until filled or cancelled.
      * - Amount is tick-aligned to the nearest 1000 contracts.
      * - Requires a `price` field in the API body.
+     * - Supports `postOnly`: when true, the order is rejected if it would immediately match.
      *
      * ### FOK (Fill-Or-Kill)
      * - Executes immediately against the best available liquidity or is fully rejected.
@@ -131,6 +132,11 @@ export class TradingClient {
      *   - `takerAmount` MUST be exactly `1n` — not the number of contracts.
      *   - `makerAmount` = the USD amount you want to spend, in micro-units (e.g. $2 → 2_000_000n).
      *   - Do NOT include a `price` field in the body — the API rejects it.
+     *
+     * ### FAK (Fill-And-Kill)
+     * - Matches immediately available liquidity at the specified price, cancels any remainder.
+     * - Uses the same `price` + `size` semantics as GTC but nothing rests on the book.
+     * - Response includes `makerMatches` array showing immediate fills.
      *
      * ## Rate limiting
      * - Built-in 300 ms minimum gap between submissions.
@@ -147,6 +153,18 @@ export class TradingClient {
      * });
      * ```
      *
+     * @example GTC postOnly (maker-only, rejected if it would immediately match)
+     * ```ts
+     * await trading.createOrder({
+     *   marketSlug: 'btc-above-100k',
+     *   side: 'YES',
+     *   limitPriceCents: 45,
+     *   usdAmount: 5,
+     *   orderType: 'GTC',
+     *   postOnly: true,
+     * });
+     * ```
+     *
      * @example FOK order ($2 market buy)
      * ```ts
      * await trading.createOrder({
@@ -157,18 +175,20 @@ export class TradingClient {
      *   orderType: 'FOK',
      * });
      * ```
+     *
+     * @example FAK order (fill up to 10 contracts at 45¢, cancel remainder)
+     * ```ts
+     * await trading.createOrder({
+     *   marketSlug: 'btc-above-100k',
+     *   side: 'YES',
+     *   limitPriceCents: 45,
+     *   usdAmount: 4.50,
+     *   orderType: 'FAK',
+     * });
+     * ```
      */
-    async createOrder(params: {
-        marketSlug: string;
-        side: 'YES' | 'NO';
-        /** Limit price in cents, 1–99. E.g. 50 means 50¢ per contract. */
-        limitPriceCents: number;
-        /** Amount in USD to spend. E.g. 10 means $10. */
-        usdAmount: number;
-        /** Order type. Defaults to 'GTC'. */
-        orderType?: 'GTC' | 'FOK';
-    }): Promise<any> {
-        const { marketSlug, side, limitPriceCents, usdAmount, orderType = 'FOK' } = params;
+    async createOrder(params: CreateOrderParams): Promise<any> {
+        const { marketSlug, side, limitPriceCents, usdAmount, orderType = 'FOK', postOnly } = params;
 
         // --- Rate limit: enforce 300 ms gap between order submissions ---
         await this.orderSemaphore.acquire();
@@ -178,7 +198,7 @@ export class TradingClient {
                 logger.debug({ waitMs }, 'Rate limiting: sleeping before order submission');
                 await sleep(waitMs);
             }
-            return await this._submitOrder({ marketSlug, side, limitPriceCents, usdAmount, orderType });
+            return await this._submitOrder({ marketSlug, side, limitPriceCents, usdAmount, orderType, postOnly });
         } finally {
             this.lastOrderTime = Date.now();
             this.orderSemaphore.release();
@@ -186,14 +206,8 @@ export class TradingClient {
     }
 
     /** Internal: build and submit the order after rate-limit gate */
-    private async _submitOrder(params: {
-        marketSlug: string;
-        side: 'YES' | 'NO';
-        limitPriceCents: number;
-        usdAmount: number;
-        orderType: 'GTC' | 'FOK';
-    }): Promise<any> {
-        const { marketSlug, side, limitPriceCents, usdAmount, orderType } = params;
+    private async _submitOrder(params: CreateOrderParams & { orderType: OrderType }): Promise<any> {
+        const { marketSlug, side, limitPriceCents, usdAmount, orderType, postOnly } = params;
 
         // Fetch market details (cached)
         const cached = this.marketDetailCache.get(marketSlug);
@@ -224,7 +238,9 @@ export class TradingClient {
             takerAmount = 1n;
             logger.debug({ usdAmount, makerAmount, takerAmount }, 'FOK order amounts (takerAmount fixed at 1)');
         } else {
-            // GTC: standard tick-aligned contract calculation
+            // GTC and FAK: standard tick-aligned contract calculation
+            // FAK uses the same price + size semantics as GTC but matches immediately
+            // and cancels any unmatched remainder instead of resting on the book.
             // Price tick = 0.001 (3 decimals), so contracts must be multiples of 1000
             const TICK_SIZE = 1000n;
             const SCALE = 1_000_000n;
@@ -237,7 +253,7 @@ export class TradingClient {
             const priceScaled = BigInt(Math.floor(price * 1_000_000));
             makerAmount = (takerAmount * priceScaled) / SCALE;
 
-            logger.debug({ price, rawContracts, takerAmount, makerAmount }, 'GTC tick-aligned order amounts');
+            logger.debug({ price, rawContracts, takerAmount, makerAmount, orderType }, `${orderType} tick-aligned order amounts`);
         }
 
         // Get user ID and sign the order
@@ -250,7 +266,7 @@ export class TradingClient {
             side: 'BUY',
         });
 
-        // Build request body — FOK must NOT include price
+        // Build request body — FOK must NOT include price; GTC and FAK require it
         const orderBody: Record<string, any> = {
             order: {
                 salt: Number(signedOrder.salt),
@@ -266,14 +282,19 @@ export class TradingClient {
                 side: signedOrder.side,
                 signatureType: signedOrder.signatureType,
                 signature: signedOrder.signature,
-                // GTC includes price; FOK must NOT
-                ...(orderType === 'GTC' ? { price } : {}),
+                // GTC and FAK include price; FOK must NOT
+                ...(orderType !== 'FOK' ? { price } : {}),
             },
             orderType,
             marketSlug,
             ownerId: userId,
             clientOrderId: `${marketSlug}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
         };
+
+        // postOnly is only valid for GTC orders — guarantees maker-only execution
+        if (orderType === 'GTC' && postOnly) {
+            orderBody.order.postOnly = true;
+        }
 
         const url = `${this.baseUrl}/orders`;
         logger.info({ slug: marketSlug, side, price, usdAmount, orderType, clientOrderId: orderBody.clientOrderId }, 'Submitting order');
