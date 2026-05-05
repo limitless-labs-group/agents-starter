@@ -274,11 +274,14 @@ Content-Type: application/json
 Accept: text/event-stream, application/json
 ```
 
-### Available Tool
+### Available Tools
 
 | Tool Name | Parameter | Description |
 |-----------|-----------|-------------|
-| `SearchLimitlessExchange` | `query` (string) | Searches the Limitless Exchange documentation |
+| `search_limitless_exchange` | `query` (string) | Semantic search across the Limitless Exchange documentation. Returns matched snippets with titles and links. Use for broad or conceptual questions ("how to authenticate", "rate limits"). |
+| `query_docs_filesystem_limitless_exchange` | `command` (string) | Read-only shell-style query against a virtualized in-memory filesystem of the docs (`.mdx` pages and OpenAPI specs). Supports `rg`, `grep`, `find`, `tree`, `ls`, `cat`, `head`, `tail`, `jq`, etc. Use for exact keyword matching, structural exploration, or reading the full content of a specific page (e.g. `head -200 /api-reference/create-customer.mdx`). |
+
+**When to pick which:** start with `search_limitless_exchange` for broad questions; switch to `query_docs_filesystem_limitless_exchange` when you need an exact keyword match, want to walk the docs tree (`tree / -L 2`), or need to read a full page by path. The filesystem tool is stateless across calls — pass absolute paths or chain commands with `&&`.
 
 ### How to Call It
 
@@ -286,7 +289,7 @@ Accept: text/event-stream, application/json
 curl -s -X POST "https://docs.limitless.exchange/mcp" \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream, application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"SearchLimitlessExchange","arguments":{"query":"how to place an order"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_limitless_exchange","arguments":{"query":"how to place an order"}}}'
 ```
 
 ### Response Format
@@ -306,16 +309,16 @@ Parse the `data` field as JSON, then extract `result.content[0].text` for the do
 
 | Situation | Example Query |
 |-----------|---------------|
-| Implementing an API call | `SearchLimitlessExchange("GET /markets/active parameters")` |
-| Encountering an error | `SearchLimitlessExchange("order rejected error codes")` |
-| Building a new strategy | `SearchLimitlessExchange("available market types and venues")` |
-| Unsure about signing | `SearchLimitlessExchange("EIP-712 order signing format")` |
-| Checking order format | `SearchLimitlessExchange("POST /orders request body")` |
-| Understanding token IDs | `SearchLimitlessExchange("position IDs token IDs conditional tokens")` |
-| Exploring new endpoints | `SearchLimitlessExchange("portfolio API endpoints")` |
-| Debugging approvals | `SearchLimitlessExchange("USDC approval CTF approval")` |
-| Understanding venues | `SearchLimitlessExchange("venue exchange adapter negrisk")` |
-| Fee structure | `SearchLimitlessExchange("fee rate bps tiers")` |
+| Implementing an API call | `search_limitless_exchange("GET /markets/active parameters")` |
+| Encountering an error | `search_limitless_exchange("order rejected error codes")` |
+| Building a new strategy | `search_limitless_exchange("available market types and venues")` |
+| Unsure about signing | `search_limitless_exchange("EIP-712 order signing format")` |
+| Checking order format | `search_limitless_exchange("POST /orders request body")` |
+| Understanding token IDs | `search_limitless_exchange("position IDs token IDs conditional tokens")` |
+| Exploring new endpoints | `search_limitless_exchange("portfolio API endpoints")` |
+| Debugging approvals | `search_limitless_exchange("USDC approval CTF approval")` |
+| Understanding venues | `search_limitless_exchange("venue exchange adapter negrisk")` |
+| Fee structure | `search_limitless_exchange("fee rate bps tiers")` |
 
 ### Integration Pattern for Agents
 
@@ -342,7 +345,7 @@ async function queryLimitlessDocs(query: string): Promise<string> {
       id: 1,
       method: 'tools/call',
       params: {
-        name: 'SearchLimitlessExchange',
+        name: 'search_limitless_exchange',
         arguments: { query },
       },
     }),
@@ -453,7 +456,7 @@ The `prices` field on a market object is an array: `[YES_price, NO_price]`.
 - Example: `[42.8, 57.2]` means YES is 42.8¢, NO is 57.2¢
 - For CLOB markets, these reflect the last traded or mid price
 
-> 📖 **MCP checkpoint:** For the latest on market data fields and price format, query: `SearchLimitlessExchange("market object fields prices format")`
+> 📖 **MCP checkpoint:** For the latest on market data fields and price format, query: `search_limitless_exchange("market object fields prices format")`
 
 ---
 
@@ -711,7 +714,7 @@ npm run signal-sniper
 
 Market discovery and data. No authentication required for most endpoints, but the API key enables higher rate limits.
 
-> 📖 **MCP checkpoint:** For the latest endpoint specs, query: `SearchLimitlessExchange("GET /markets/active parameters and response")`
+> 📖 **MCP checkpoint:** For the latest endpoint specs, query: `search_limitless_exchange("GET /markets/active parameters and response")`
 
 #### Constructor
 
@@ -788,7 +791,7 @@ const orderbook = await client.getOrderbook('btc-above-97000-feb-13');
 // OrderbookLevel: { price: string, size: string }
 ```
 
-> 📖 **MCP checkpoint:** For orderbook format details, query: `SearchLimitlessExchange("orderbook endpoint response format")`
+> 📖 **MCP checkpoint:** For orderbook format details, query: `search_limitless_exchange("orderbook endpoint response format")`
 
 #### `getSlugs()`
 
@@ -832,7 +835,7 @@ const venue = await client.getVenue('btc-above-97000-feb-13');
 
 Order creation and management. Requires `LIMITLESS_API_KEY`.
 
-> 📖 **MCP checkpoint:** For the latest order submission format, query: `SearchLimitlessExchange("POST /orders request body format")`
+> 📖 **MCP checkpoint:** For the latest order submission format, query: `search_limitless_exchange("POST /orders request body format")`
 
 #### Constructor
 
@@ -1024,7 +1027,7 @@ await approveMarketVenue('btc-above-97000-feb-13');
 
 **Important:** Approvals are on-chain transactions that cost gas (ETH on Base). Each approval only needs to be done once per venue address.
 
-> 📖 **MCP checkpoint:** For approval requirements, query: `SearchLimitlessExchange("token approvals USDC CTF required")`
+> 📖 **MCP checkpoint:** For approval requirements, query: `search_limitless_exchange("token approvals USDC CTF required")`
 
 ---
 
@@ -1108,7 +1111,7 @@ npx tsx src/core/limitless/redeem.ts claim-all
 
 Position tracking, trade history, and P&L analysis. Requires `LIMITLESS_API_KEY`.
 
-> 📖 **MCP checkpoint:** For the latest portfolio endpoints, query: `SearchLimitlessExchange("portfolio API positions trades")`
+> 📖 **MCP checkpoint:** For the latest portfolio endpoints, query: `search_limitless_exchange("portfolio API positions trades")`
 
 #### Constructor
 
@@ -2566,7 +2569,7 @@ const domain = {
 
 **Critical:** The `verifyingContract` is the exchange address from the market's venue data. It varies between markets. Always fetch it from the market detail — never hardcode it.
 
-> 📖 **MCP checkpoint:** For the latest EIP-712 domain, query: `SearchLimitlessExchange("EIP-712 domain order signing")`
+> 📖 **MCP checkpoint:** For the latest EIP-712 domain, query: `search_limitless_exchange("EIP-712 domain order signing")`
 
 ### The Order Type Struct
 
@@ -2642,7 +2645,7 @@ const makerAmount = (takerAmount * priceScaled) / SCALE;
 |------|----------|-------------------|
 | Bronze | 3% | `300` |
 
-> 📖 **MCP checkpoint:** For the latest fee tiers, query: `SearchLimitlessExchange("fee rate bps tiers trading fees")`
+> 📖 **MCP checkpoint:** For the latest fee tiers, query: `search_limitless_exchange("fee rate bps tiers trading fees")`
 
 ### The Side Field
 
@@ -3396,7 +3399,7 @@ This approves both USDC and CTF for the market's venue contracts.
 3. Amount overflow — ensure `makerAmount` and `takerAmount` fit in uint256
 4. Tick alignment — `takerAmount` must be a multiple of 1000
 
-> 📖 **MCP checkpoint:** Query: `SearchLimitlessExchange("invalid signature order signing troubleshoot")`
+> 📖 **MCP checkpoint:** Query: `search_limitless_exchange("invalid signature order signing troubleshoot")`
 
 ### Market Not Found
 
