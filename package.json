@@ -17,6 +17,7 @@
     "iterate:markets": "npx tsx src/strategies/iterate.ts markets",
     "redeem": "npx tsx src/core/limitless/redeem.ts",
     "conviction-sniper": "tsx src/strategies/conviction-sniper/run.ts",
+    "replicator": "tsx src/strategies/replicator/run.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -31,11 +32,13 @@
   "license": "MIT",
   "dependencies": {
     "@limitless-exchange/sdk": "^1.0.9",
+    "@polymarket/clob-client": "^5.8.1",
     "@types/node": "^22.0.0",
     "cross-fetch": "^4.1.0",
     "dotenv": "^16.4.0",
     "ethers": "^6.16.0",
     "eventsource": "^4.1.0",
+    "js-yaml": "^4.1.1",
     "pino": "^9.0.0",
     "pino-pretty": "^11.0.0",
     "socket.io-client": "^4.8.0",
@@ -44,6 +47,7 @@
     "viem": "^2.20.0"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "vitest": "^2.1.9"
   }
 }
