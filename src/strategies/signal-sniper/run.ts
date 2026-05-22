@@ -6,10 +6,7 @@
 
 import { SignalSniperStrategy } from './index.js';
 import { LimitlessClient } from '../../core/limitless/markets.js';
-import { TradingClient } from '../../core/limitless/trading.js';
-import { OrderSigner } from '../../core/limitless/sign.js';
-import { getWallet } from '../../core/wallet.js';
-import { appendFileSync } from 'fs';
+import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -44,32 +41,14 @@ async function main() {
 `);
 
   const limitless = new LimitlessClient();
-  const { client, account } = getWallet();
-  const signer = new OrderSigner(client, account);
-  const trading = new TradingClient(limitless, signer);
-
-  // Wrap trading to support dry-run and event logging
-  const wrappedTrading = DRY_RUN ? new Proxy(trading, {
-    get(target, prop) {
-      if (prop === 'createOrder') {
-        return async (order: any) => {
-          console.log(`[DRY RUN] Would trade: ${order.side} ${order.marketSlug} @ ${order.limitPriceCents}¢, $${order.usdAmount}`);
-          appendFileSync('./trade-events.jsonl', JSON.stringify({
-            type: 'dry-run',
-            timestamp: new Date().toISOString(),
-            strategy: 'signal-sniper',
-            ...order,
-          }) + '\n');
-          return { status: 'dry-run' };
-        };
-      }
-      return (target as any)[prop];
-    }
-  }) : trading;
+  const trading = new SDKTradingClient({
+    privateKey: process.env.PRIVATE_KEY!,
+    apiKey: process.env.LIMITLESS_API_KEY!,
+  });
 
   const strategy = new SignalSniperStrategy(config, {
     limitless,
-    trading: wrappedTrading,
+    trading,
   });
 
   process.on('SIGINT', async () => {

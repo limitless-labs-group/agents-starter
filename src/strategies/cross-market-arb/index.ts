@@ -11,7 +11,7 @@
 
 import { BaseStrategy, StrategyConfig, TradeDecision } from '../base-strategy.js';
 import { LimitlessClient } from '../../core/limitless/markets.js';
-import { TradingClient } from '../../core/limitless/trading.js';
+import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
 import { pino } from 'pino';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'complement-arb' });
@@ -37,7 +37,7 @@ export class ComplementArbStrategy extends BaseStrategy {
 
     constructor(
         config: StrategyConfig,
-        deps: { limitless: LimitlessClient; trading: TradingClient }
+        deps: { limitless: LimitlessClient; trading: SDKTradingClient }
     ) {
         super(config, deps);
         this.tickIntervalMs = (config as ComplementArbConfig).scanIntervalMs || 30000;

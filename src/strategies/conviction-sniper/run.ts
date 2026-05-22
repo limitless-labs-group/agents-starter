@@ -22,10 +22,8 @@ process.on('unhandledRejection', (err: any) => {
 import { config } from 'dotenv';
 config();
 
-import { getWallet } from '../../core/wallet.js';
 import { LimitlessClient } from '../../core/limitless/markets.js';
-import { TradingClient } from '../../core/limitless/trading.js';
-import { OrderSigner } from '../../core/limitless/sign.js';
+import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
 import { ConvictionSniperStrategy, type ConvictionSniperConfig } from './index.js';
 import pino from 'pino';
 
@@ -42,17 +40,18 @@ async function main() {
     }
 
     const dryRun = process.env.DRY_RUN !== 'false';
+    process.env.DRY_RUN = dryRun ? 'true' : 'false';
     console.log('🎯 Conviction Sniper');
     console.log(`   Mode: ${dryRun ? 'DRY RUN (no trades)' : 'LIVE TRADING'}`);
     console.log(`   Agrees with market + Hermes conviction boost`);
     console.log();
 
-    const { client: walletClient, account } = getWallet();
-    logger.info({ address: account.address }, 'Wallet initialized');
-
     const limitless = new LimitlessClient();
-    const signer = new OrderSigner(walletClient, account);
-    const trading = new TradingClient(limitless, signer);
+    const trading = new SDKTradingClient({
+        privateKey: process.env.PRIVATE_KEY!,
+        apiKey: process.env.LIMITLESS_API_KEY!,
+    });
+    logger.info({ address: trading.getWalletAddress() }, 'Wallet initialized');
 
     const strategyConfig: ConvictionSniperConfig = {
         id: 'conviction-sniper-1',
@@ -97,7 +96,7 @@ async function main() {
     }, 'Strategy config');
 
     const strategy = new ConvictionSniperStrategy(strategyConfig, { limitless, trading });
-    strategy.setWalletAddress(account.address);
+    strategy.setWalletAddress(trading.getWalletAddress());
 
     const shutdown = async (signal: string) => {
         logger.info({ signal }, 'Shutting down...');
