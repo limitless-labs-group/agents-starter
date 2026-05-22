@@ -1,0 +1,34 @@
+# Replicator strategy config.
+#
+# Copy this to ./replicator.config.yaml (or set REPLICATOR_CONFIG_PATH) and
+# edit. Secrets (PRIVATE_KEY, LIMITLESS_API_KEY) live in .env, never here.
+#
+# Strategy: mirror Polymarket orderbook liquidity onto Limitless as
+# BUY-only YES + NO limit orders. Hedge accumulated exposure with FAK
+# orders on Polymarket. See src/strategies/replicator/README.md for the
+# full architecture + invariants.
+
+# --- Polymarket wallet ------------------------------------------------------
+# The address Polymarket's UI shows you as "your address".
+#   - Legacy accounts (created before CLOB V2): proxy/Safe address → set poly_signature_type: 2
+#   - New accounts (created after CLOB V2):    deposit-wallet address → set poly_signature_type: 3
+# If you see "maker address not allowed" at boot, you have the wrong sig type.
+poly_funder: "0xYourPolymarketFunderAddress"
+poly_signature_type: 2
+
+# --- Trading parameters -----------------------------------------------------
+order_size: 100        # shares per order (same N on YES and NO sides)
+margin_bps: 100        # how much *inside* the Poly price we quote (100 = 1%)
+hedge_threshold: 2.0   # hedge when |net exposure| in shares exceeds this
+hedge_interval: 5      # seconds between hedge ticks
+
+# --- Safety -----------------------------------------------------------------
+# Strongly recommended for your first run. Overridden by DRY_RUN env var.
+dry_run: true
+
+# --- Market pairs ----------------------------------------------------------
+# Each pair maps one Polymarket slug to one Limitless slug. We replicate
+# the Polymarket book as limit orders on the Limitless slug.
+market_pairs:
+  - polymarket_slug: "will-btc-hit-200k-in-2026"
+    limitless_slug: "will-btc-hit-200k-in-2026"
