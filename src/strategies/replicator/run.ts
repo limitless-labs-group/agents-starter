@@ -118,6 +118,17 @@ export async function main(): Promise<void> {
     await poly.resolveAssetIds(pair);
   }
 
+  // -- Boot clean: cancel any resting orders left by a prior run BEFORE
+  //    quoting. This is the real guarantee against orphan accumulation — a
+  //    shutdown can occasionally fail to cancel a just-placed order, but those
+  //    age out and cancel cleanly here, so every run starts from a flat book.
+  if (!settings.dryRun) {
+    for (const pair of settings.pairs) {
+      const res = await trading.cancelAllAndVerify(pair.limitlessSlug);
+      logger.info({ slug: pair.limitlessSlug, remaining: res.remaining }, 'boot: book clean');
+    }
+  }
+
   // -- Shared state for WS → replicator --
   const feed = new QuoteFeed();
   const assetToSlug = new Map<string, string>();

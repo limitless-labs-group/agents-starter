@@ -326,7 +326,7 @@ export class SDKTradingClient {
    */
   async cancelAllAndVerify(
     marketSlug: string,
-    attempts = 3,
+    attempts = 6,
   ): Promise<{ message: string; remaining: number }> {
     if (this.dryRun) {
       logger.info({ marketSlug }, '[DRY_RUN] would cancelAllAndVerify');
@@ -345,7 +345,9 @@ export class SDKTradingClient {
         { marketSlug, remaining, attempt: i },
         remaining < 0 ? 'cancelAll could not verify (read failed) — retrying' : 'cancelAll left orders — retrying',
       );
-      await new Promise((r) => setTimeout(r, 500));
+      // Escalating backoff — outlast backend place/cancel propagation lag,
+      // which is what was leaving orphans with a fixed short retry.
+      await new Promise((r) => setTimeout(r, 400 * i));
     }
     const remaining = await this.countLiveOrders(marketSlug);
     if (remaining !== 0) {

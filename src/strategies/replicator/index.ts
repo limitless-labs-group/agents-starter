@@ -144,7 +144,10 @@ export async function runReplicator(
     }
   } finally {
     // Clean shutdown: cancel everything on this slug AND verify it's gone —
-    // a single cancelAll has been seen to leave orders resting.
+    // a single cancelAll has been seen to leave orders resting. Settle briefly
+    // first so any order placed in the final tick has propagated onto the book
+    // before we cancel + verify (else it lands after and orphans).
+    await new Promise((r) => setTimeout(r, 800));
     try {
       const res = await trading.cancelAllAndVerify(pair.limitlessSlug);
       logger.info(

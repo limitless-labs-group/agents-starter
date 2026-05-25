@@ -217,20 +217,6 @@ async function readLimitlessPositions(sdk: Client): Promise<LimitlessPositions> 
   return out;
 }
 
-/** Sum Limitless collateral locked in resting CLOB orders (USD). Resilient. */
-async function readLimitlessLocked(sdk: Client): Promise<number> {
-  try {
-    const raw = (await sdk.portfolio.getCLOBPositions()) as unknown as Array<{
-      orders?: { totalCollateralLocked?: string | number };
-    }>;
-    let locked = 0;
-    for (const p of raw ?? []) locked += Number(p.orders?.totalCollateralLocked ?? 0) / 1e6;
-    return locked;
-  } catch {
-    return 0;
-  }
-}
-
 export interface HedgerHooks {
   recorder?: Recorder;
   risk?: RiskMonitor;
@@ -283,10 +269,9 @@ export async function runHedger(
 
       // -- Circuit breaker (live only): mark equity, trip on drawdown --
       if (!settings.dryRun && risk) {
-        const [pUSD, baseUsd, locked] = await Promise.all([
+        const [pUSD, baseUsd] = await Promise.all([
           poly.getCollateralBalance().catch(() => 0),
           walletAddress ? readBaseUsdc(walletAddress) : Promise.resolve(null),
-          readLimitlessLocked(sdk),
         ]);
         let posValue = 0;
         for (const pair of pairs) {
@@ -297,14 +282,11 @@ export async function runHedger(
             mid,
           );
         }
-        const equity =
-          baseUsd == null
-            ? null
-            : totalEquity({ pUSD, lmtsFreeUsd: baseUsd, lmtsLocked: locked, posValue });
+        const equity = baseUsd == null ? null : totalEquity({ pUSD, lmtsFreeUsd: baseUsd, posValue });
         const res = risk.update(equity);
         if (res.equity != null) {
           logger.info(
-            { pnl: (res.pnl ?? 0).toFixed(2), equity: res.equity.toFixed(2), pUSD: pUSD.toFixed(2), locked: locked.toFixed(2) },
+            { pnl: (res.pnl ?? 0).toFixed(2), equity: res.equity.toFixed(2), pUSD: pUSD.toFixed(2), posValue: posValue.toFixed(2) },
             'risk',
           );
           recorder?.record({
@@ -313,7 +295,6 @@ export async function runHedger(
             equity: res.equity,
             pUSD,
             lmtsFreeUsd: baseUsd ?? 0,
-            lmtsLocked: locked,
             posValue,
           });
         }

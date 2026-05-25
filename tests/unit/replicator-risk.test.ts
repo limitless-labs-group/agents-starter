@@ -7,8 +7,8 @@ import { describe, it, expect } from 'vitest';
 import { RiskMonitor, totalEquity, markPairValue } from '../../src/strategies/replicator/risk.js';
 
 describe('totalEquity', () => {
-  it('sums all four components', () => {
-    expect(totalEquity({ pUSD: 20, lmtsFreeUsd: 30, lmtsLocked: 5, posValue: 2 })).toBe(57);
+  it('sums pUSD + Base USDC + position value (locked is already in USDC)', () => {
+    expect(totalEquity({ pUSD: 20, lmtsFreeUsd: 30, posValue: 2 })).toBe(52);
   });
 });
 

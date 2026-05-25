@@ -3,10 +3,13 @@
  *
  * Tracks mark-to-market equity across both venues and trips (→ cancel-all +
  * halt) when drawdown from the run's starting equity crosses a kill threshold.
- * Equity = free pUSD (Polymarket) + free USDC (Base) + Limitless collateral
- * locked in resting orders + marked value of open positions on both venues.
- * Including locked collateral keeps equity stable as the bot cancel-replaces
- * (resting orders aren't a loss); marks capture acquired positions.
+ * Equity = free pUSD (Polymarket) + free USDC (Base) + marked value of open
+ * positions on both venues.
+ *
+ * Note we do NOT add Limitless "locked" collateral: empirically Limitless does
+ * not move on-chain USDC when an order rests (no escrow), so the locked amount
+ * is already in the USDC balance — adding it would double-count. A resting
+ * order is therefore equity-neutral; a fill shows up as USDC down + posValue up.
  *
  * Resilient by design: a tick whose reads fail (RPC hiccup, etc.) yields a
  * null equity and is SKIPPED — the breaker never trips on missing/garbage data.
@@ -23,13 +26,12 @@ const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
 export interface EquityInputs {
   pUSD: number; // Polymarket free collateral
-  lmtsFreeUsd: number; // Base USDC free in the trading wallet
-  lmtsLocked: number; // Limitless collateral reserved by resting orders
+  lmtsFreeUsd: number; // Base USDC in the trading wallet (already includes "locked")
   posValue: number; // marked value of open positions (both venues)
 }
 
 export function totalEquity(e: EquityInputs): number {
-  return e.pUSD + e.lmtsFreeUsd + e.lmtsLocked + e.posValue;
+  return e.pUSD + e.lmtsFreeUsd + e.posValue;
 }
 
 /**

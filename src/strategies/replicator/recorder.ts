@@ -46,7 +46,6 @@ export type ReplicatorEvent =
       equity: number;
       pUSD: number;
       lmtsFreeUsd: number;
-      lmtsLocked: number;
       posValue: number;
     };
 
