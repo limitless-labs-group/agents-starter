@@ -43,6 +43,8 @@ interface YamlConfig {
   hedgeThreshold?: number;
   hedge_interval?: number;
   hedgeIntervalSec?: number;
+  max_loss_usd?: number;
+  maxLossUsd?: number;
   dry_run?: boolean;
   dryRun?: boolean;
   market_pairs?: YamlPair[];
@@ -122,6 +124,9 @@ export function loadSettings(): ReplicatorSettings {
     marginBps: Number(raw.margin_bps ?? raw.marginBps ?? 100),
     hedgeThreshold: Number(raw.hedge_threshold ?? raw.hedgeThreshold ?? 2),
     hedgeIntervalSec: Number(raw.hedge_interval ?? raw.hedgeIntervalSec ?? 5),
+    maxLossUsd: Number(
+      process.env.REPLICATOR_MAX_LOSS_USD ?? raw.max_loss_usd ?? raw.maxLossUsd ?? 10,
+    ),
     dryRun,
     pairs,
   };

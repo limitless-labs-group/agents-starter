@@ -39,6 +39,15 @@ export type ReplicatorEvent =
       price: number;
       usdc: number;
       success: boolean;
+    }
+  | {
+      kind: 'equity';
+      pnl: number;
+      equity: number;
+      pUSD: number;
+      lmtsFreeUsd: number;
+      lmtsLocked: number;
+      posValue: number;
     };
 
 export class Recorder {

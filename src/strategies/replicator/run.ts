@@ -26,6 +26,7 @@ import { runReplicator } from './index.js';
 import { runHedger } from './hedger.js';
 import { loadSettings } from './config.js';
 import { Recorder } from './recorder.js';
+import { RiskMonitor } from './risk.js';
 import type { MarketPair } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'replicator-main' });
@@ -141,25 +142,46 @@ export async function main(): Promise<void> {
   });
   logger.info({ file: recorder.filePath }, 'recording run data (npm run replicator:analyze)');
 
-  // -- Spawn tasks under a shared AbortController --
+  // -- Loss circuit breaker (live only). Tripping aborts everything; the
+  //    replicator tasks cancel-all in their finally{} on abort. --
   const ac = new AbortController();
+  const risk = new RiskMonitor(settings.maxLossUsd);
+  let killed = false;
+  const onKill = () => {
+    killed = true;
+    ac.abort();
+  };
+  if (!settings.dryRun) {
+    logger.warn({ maxLossUsd: settings.maxLossUsd }, 'circuit breaker armed (equity drawdown kill)');
+  }
+
+  // -- Spawn tasks under a shared AbortController --
   const tasks: Promise<void>[] = [
     runPolyWs(feed, assetToSlug, yesAssets, ac.signal),
-    runHedger(settings.pairs, feed, sdk, poly, settings, ac.signal, recorder),
+    runHedger(settings.pairs, feed, sdk, poly, settings, ac.signal, {
+      recorder,
+      risk,
+      walletAddress: trading.getWalletAddress(),
+      onKill,
+    }),
     ...settings.pairs.map((pair) =>
       runReplicator(pair, feed, trading, settings, ac.signal, recorder),
     ),
   ];
 
-  // -- Wait for Ctrl-C / SIGTERM --
+  // -- Wait for Ctrl-C / SIGTERM / circuit-breaker. Any abort (signal or
+  //    onKill → ac.abort()) resolves this so we proceed to clean shutdown. --
   const stop = new Promise<void>((resolve) => {
-    const onSignal = () => {
-      logger.info('shutdown signal received');
-      ac.abort();
-      resolve();
-    };
-    process.once('SIGINT', onSignal);
-    process.once('SIGTERM', onSignal);
+    process.once('SIGINT', () => ac.abort());
+    process.once('SIGTERM', () => ac.abort());
+    ac.signal.addEventListener(
+      'abort',
+      () => {
+        logger.info({ reason: killed ? 'circuit-breaker' : 'signal' }, 'shutting down');
+        resolve();
+      },
+      { once: true },
+    );
   });
 
   logger.info('bot running. Ctrl-C to stop.');

@@ -29,6 +29,7 @@ import {
   Side,
   OrderType,
   SignatureTypeV2,
+  AssetType,
   type ApiKeyCreds,
 } from '@polymarket/clob-client-v2';
 import { createWalletClient, http as viemHttp, type WalletClient } from 'viem';
@@ -145,6 +146,16 @@ export class PolymarketAdapter {
     });
 
     logger.info({ funder: this.funder, signatureType }, 'Polymarket auth OK');
+  }
+
+  /**
+   * Free pUSD collateral on Polymarket (the V2 collateral token), in dollars.
+   * Used by the risk monitor. Returns 0 in DRY_RUN (no live client).
+   */
+  async getCollateralBalance(): Promise<number> {
+    if (this.dryRun || !this.clob) return 0;
+    const bal = await this.clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+    return Number(bal.balance) / 1e6;
   }
 
   /** Populate pair.polyYesAssetId / polyNoAssetId from a Gamma lookup. */

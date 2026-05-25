@@ -17,8 +17,9 @@
 import { pino } from 'pino';
 import type { Client } from '@limitless-exchange/sdk';
 import type { PolymarketAdapter } from '../../core/polymarket/client.js';
-import type { QuoteFeed } from './quote-feed.js';
+import { QuoteFeed, quoteMid } from './quote-feed.js';
 import type { Recorder } from './recorder.js';
+import { RiskMonitor, readBaseUsdc, markPairValue, totalEquity } from './risk.js';
 import type { MarketPair, ReplicatorSettings } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'hedger' });
@@ -216,10 +217,31 @@ async function readLimitlessPositions(sdk: Client): Promise<LimitlessPositions> 
   return out;
 }
 
+/** Sum Limitless collateral locked in resting CLOB orders (USD). Resilient. */
+async function readLimitlessLocked(sdk: Client): Promise<number> {
+  try {
+    const raw = (await sdk.portfolio.getCLOBPositions()) as unknown as Array<{
+      orders?: { totalCollateralLocked?: string | number };
+    }>;
+    let locked = 0;
+    for (const p of raw ?? []) locked += Number(p.orders?.totalCollateralLocked ?? 0) / 1e6;
+    return locked;
+  } catch {
+    return 0;
+  }
+}
+
+export interface HedgerHooks {
+  recorder?: Recorder;
+  risk?: RiskMonitor;
+  walletAddress?: string; // Base trading wallet, for the free-USDC read
+  onKill?: () => void; // called once when the circuit breaker trips
+}
+
 /**
  * Run forever (until signal aborts). Polls positions every
- * `settings.hedgeIntervalSec` seconds and hedges any exposure that crosses
- * the threshold.
+ * `settings.hedgeIntervalSec` seconds, hedges threshold-crossing exposure,
+ * and (live only) marks equity to trip the loss circuit-breaker.
  */
 export async function runHedger(
   pairs: MarketPair[],
@@ -228,8 +250,9 @@ export async function runHedger(
   poly: PolymarketAdapter,
   settings: ReplicatorSettings,
   signal: AbortSignal,
-  recorder?: Recorder,
+  hooks: HedgerHooks = {},
 ): Promise<void> {
+  const { recorder, risk, walletAddress, onKill } = hooks;
   logger.info({ intervalSec: settings.hedgeIntervalSec }, 'hedger started');
 
   while (!signal.aborted) {
@@ -257,6 +280,49 @@ export async function runHedger(
           });
       const pm = await poly.getPositions(pairs);
       await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder);
+
+      // -- Circuit breaker (live only): mark equity, trip on drawdown --
+      if (!settings.dryRun && risk) {
+        const [pUSD, baseUsd, locked] = await Promise.all([
+          poly.getCollateralBalance().catch(() => 0),
+          walletAddress ? readBaseUsdc(walletAddress) : Promise.resolve(null),
+          readLimitlessLocked(sdk),
+        ]);
+        let posValue = 0;
+        for (const pair of pairs) {
+          const mid = quoteMid(feed.getQuote(pair.polymarketSlug) ?? { bid: null, ask: null });
+          posValue += markPairValue(
+            lmts[pair.limitlessSlug] ?? { yes: 0, no: 0 },
+            pm.get(pair.polymarketSlug) ?? { yes: 0, no: 0 },
+            mid,
+          );
+        }
+        const equity =
+          baseUsd == null
+            ? null
+            : totalEquity({ pUSD, lmtsFreeUsd: baseUsd, lmtsLocked: locked, posValue });
+        const res = risk.update(equity);
+        if (res.equity != null) {
+          logger.info(
+            { pnl: (res.pnl ?? 0).toFixed(2), equity: res.equity.toFixed(2), pUSD: pUSD.toFixed(2), locked: locked.toFixed(2) },
+            'risk',
+          );
+          recorder?.record({
+            kind: 'equity',
+            pnl: res.pnl ?? 0,
+            equity: res.equity,
+            pUSD,
+            lmtsFreeUsd: baseUsd ?? 0,
+            lmtsLocked: locked,
+            posValue,
+          });
+        }
+        if (res.tripped) {
+          logger.error('circuit breaker tripped — aborting run (cancel-all on shutdown)');
+          onKill?.();
+          break;
+        }
+      }
     } catch (err) {
       logger.warn({ err: (err as Error).message }, 'hedger tick failed');
     }

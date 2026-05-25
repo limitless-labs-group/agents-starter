@@ -35,6 +35,7 @@ export interface ReplicatorSettings {
   marginBps: number; // bps inside the Poly price (100 = 1%)
   hedgeThreshold: number; // min |net shares| before triggering a hedge
   hedgeIntervalSec: number; // seconds between hedge checks
+  maxLossUsd: number; // circuit breaker: halt + cancel-all if equity drawdown ≥ this
   dryRun: boolean; // log intents, don't sign or POST
   pairs: MarketPair[];
 }
