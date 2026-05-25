@@ -34,26 +34,171 @@ between the two venues plus any Limitless maker rebates.
               └─────────────────────────────────────────────┘
 ```
 
-## Setup
+## Quick start
 
 ```bash
-# from agents-starter root
+# 1. From the repo root:
 npm install
+cp .env.example .env
+chmod 600 .env
+# Edit .env — set PRIVATE_KEY + LIMITLESS_API_KEY (DRY_RUN already true).
 
-# .env already covers PRIVATE_KEY + LIMITLESS_API_KEY (shared with other strategies)
-# Add DRY_RUN=true to start safely (default in config.example.yaml too).
+# 2. Pick a market pair. Both venues need an *equivalent* market — same
+#    asset, same threshold, same UTC moment, same data source.
+npm run replicator:find-pairs
+# Scans Limitless's active CLOB markets + Polymarket's active binary
+# markets, ranks candidates by title-token Jaccard, prints paste-ready YAML.
 
+# 3. Configure the bot.
 cp src/strategies/replicator/config.example.yaml ./replicator.config.yaml
 # Edit ./replicator.config.yaml:
-#   - poly_funder        — Polymarket UI address
+#   - poly_funder        — the address Polymarket's UI shows you
 #   - poly_signature_type — 2 (legacy Safe) or 3 (new deposit wallet)
-#   - market_pairs       — same event listed on both venues
+#   - market_pairs       — paste from find-pairs output
+#   - order_size         — see "Capital math" below before raising this
 
+# 4. Smoke it in DRY_RUN first.
 npm run replicator
+# Watch the log for a few minutes. Confirm:
+#   • Limitless + Polymarket markets resolved
+#   • Poly WS connected
+#   • Cancel-replace cycle firing on every Poly tick
+# Ctrl-C to stop. On shutdown the bot cancels all open Limitless orders.
 ```
 
-Stop with Ctrl-C. On shutdown, the bot cancels every open Limitless order so
-nothing rests on the book.
+## What a healthy DRY_RUN boot looks like
+
+```
+WARN: ═══════════════ DRY_RUN MODE ═══════════════
+  No orders signed or sent. Place/cancel/hedge → log-only.
+  Polymarket auth probe is SKIPPED in dry-run.
+INFO: SDKTradingClient initialized          { address: 0x… }
+WARN: PolymarketAdapter: DRY_RUN — CLOB client not initialized
+INFO: replicator boot                       { pairs: 1, orderSize: 100, marginBps: 100, dryRun: true }
+INFO: Limitless trader                      { address: 0x… }
+INFO: [DRY_RUN] skipping Polymarket auth probe
+INFO: Limitless market resolved             { slug: '<lmts-slug>', yes: '83954139…', exchange: '0x05c7…' }
+INFO: Polymarket assets resolved            { slug: '<poly-slug>', yes: '94559586…', no: '90772332…' }
+INFO: hedger started                        { intervalSec: 5 }
+INFO: replicator started                    { polymarketSlug: '…', limitlessSlug: '…' }
+INFO: bot running. Ctrl-C to stop.
+INFO: Poly WS connected                     { count: 2 }
+# Then, every Poly book tick:
+INFO: [DRY_RUN] would cancelAll             { marketSlug: '…' }
+INFO: [DRY_RUN] would createOrder via SDK   { side: 'NO',  price: 0.92, usdAmount: 92.2, orderType: 'GTC' }
+INFO: [DRY_RUN] would createOrder via SDK   { side: 'YES', price: 0.06, usdAmount: 5.7,  orderType: 'GTC' }
+```
+
+If the cancel-replace cycle isn't firing within ~5 seconds of `Poly WS connected`,
+the Polymarket book isn't quoting (or your slug is wrong). Check Troubleshooting.
+
+## Capital math — sizing before going live
+
+Each pair keeps **two limit orders** resting on Limitless. Combined locked
+capital per pair ≈ `order_size × 1` USDC (the YES BUY + NO BUY prices sum to ~$1).
+
+```
+   per-pair locked ≈ order_size × (poly_bid + (1 - poly_ask) - 2 × margin)
+                   ≈ order_size × 1  ($1 per share total across both quotes)
+```
+
+So:
+
+| `order_size` | Limitless capital locked per pair |
+|---|---|
+| 10  | ~$10 |
+| 50  | ~$50 |
+| 100 | ~$100 (default) |
+| 250 | ~$250 |
+
+**Asymmetric markets (e.g. Taiwan = ~6% YES / ~93% NO):** the split is
+lopsided — the NO BUY quote alone can lock ~93% of your capital. If you have
+$100 Limitless and quote `order_size: 100` on Taiwan, your $93 NO BUY fills
+fine but a second tick before it cancels would overcommit. Either size down
+or pick a more balanced market.
+
+### Funding split
+
+| Side | Chain | Asset | Why |
+|---|---|---|---|
+| Limitless | Base (8453) | USDC | Collateral for resting limit orders |
+| Limitless | Base | ETH | Gas for approvals (one-time per market, ~$0.10-1) + occasional |
+| Polymarket | Polygon (137) | USDC | Collateral for FAK hedge orders |
+| Polymarket | Polygon | MATIC | Gas for hedges (~$0.01/tx) |
+
+**Critical for migrated Polymarket accounts:** the Polymarket UI shows you a
+specific address. With `poly_signature_type: 3` (new deposit wallet), funding
+sent to your OLD Safe address will not be visible to the bot — it'll sit
+idle. Verify the address before funding.
+
+## Going live
+
+```bash
+# Step 0: re-read "Capital math" above. Pick order_size that fits your funding.
+# Step 1: confirm DRY_RUN is clean for at least 5 minutes on your pair.
+# Step 2: flip:
+DRY_RUN=false npm run replicator
+```
+
+The boot sequence now runs both auth probes:
+
+- **Limitless:** the SDK lazily fetches your profile when the first order is
+  signed. Errors here = wrong `LIMITLESS_API_KEY` or revoked.
+- **Polymarket:** `createOrDeriveApiKey()` runs before quoting starts.
+  `Polymarket auth probe failed` = wrong `poly_signature_type` (flip 2 ↔ 3)
+  or wrong `poly_funder`.
+
+First-fill expectations:
+
+- Your quotes rest on the Limitless book. Fills happen when a Limitless
+  taker hits you. **There's no guarantee anyone will take your quote** —
+  illiquid pairs can rest for hours without action.
+- The first taker fill triggers a hedge tick within `hedge_interval` seconds.
+  Watch for the `HEDGE` log line followed by either `would hedgeBuy` (DRY_RUN)
+  or an actual Polymarket order id.
+- On a fresh Limitless market, the first `createOrder` will fail with
+  "Market not approved." The bot doesn't auto-approve here — run
+  `npm start approve <slug>` first.
+
+## Scaling up for volume farming
+
+The headline use of the replicator is **generating Polymarket volume** (every
+hedge is a Polymarket FAK taker order → counts toward points / airdrop
+eligibility). Each $1 of Limitless fill generates ~$1 of Polymarket volume on
+the hedge side.
+
+### Honest per-round-trip economics
+
+Default config example (Bronze Limitless tier, 100bps Poly FAK fee):
+
+```
+Gross spread captured:                        ~$1.00 per 100 shares
+Limitless taker-side fee (300bps Bronze):     −$1.35
+Polymarket FAK taker fee (~100bps avg):       −$0.54
+─────────────────────────────────────────────
+Net per round-trip:                           ≈ −$0.89   ( ~−89 bps notional )
+```
+
+**Default config is a slight net loss.** Levers to flip positive:
+
+| Lever | bps swing | How |
+|---|---|---|
+| Limitless tier (Bronze → Silver / Gold / Diamond) | +40 / +85 / +180 | Volume-gated. Diamond flips this fully positive. |
+| Limitless maker rebate program | +200-400 typical | Per-market eligibility. Biggest single lever. See [docs.limitless.exchange/user-guide/maker-rebates](https://docs.limitless.exchange/user-guide/maker-rebates). |
+| `margin_bps` 100 → 200 | +50-100 | Fewer fills but profitable when they happen. |
+| Pair selection | +30-150 | Look for pairs where cross-venue spread > fee stack. |
+
+### Suggested progression
+
+| Phase | Duration | Config | Goal |
+|---|---|---|---|
+| 0. DRY_RUN | 30-60 min | `order_size: 100`, `margin_bps: 100`, 1 pair | Validate end-to-end. |
+| 1. Tiny live | 1-2 hours | `order_size: 20`, `margin_bps: 100`, 1 pair | Confirm fills + hedges execute. ~$5-15 in fees as smoke-test cost. |
+| 2. Single pair scale | 1-2 days | `order_size: 100`, `margin_bps: 150`, 1 pair | Measure real fill rate + cost/RT. Apply for maker rebate after day 1. |
+| 3. Multi-pair production | ongoing | `order_size: 100-200`, `margin_bps: 150-200`, 3-5 pairs | Once maker rebate or tier upgrade lands, this is where farming compounds. |
+
+For $2k / $2k funding: comfortable Phase 3 config. For sub-$100, stay in
+Phase 1.
 
 ## Polymarket wallet types
 
@@ -91,30 +236,72 @@ These are load-bearing. Re-derive the math before changing any of them:
 `DRY_RUN=true` in your env (or `dry_run: true` in YAML) does:
 
 - Skips the Polymarket CLOB auth derivation (no `deriveApiKey` call).
+- Skips the Limitless portfolio read inside the hedger (no authed API call).
 - Cancel / place / hedge all short-circuit to a `[DRY_RUN] would …` log line.
-- All reads (markets, positions, WS book) still happen — config is end-to-end
-  validated.
+- All reads (markets, Polymarket positions, WS book) still happen — config is
+  end-to-end validated.
 
 This is the right way to start. Watch the log for a few minutes, sanity-check
 the quote prices and hedge directions, then flip the bit.
+
+## Troubleshooting
+
+### `Market not found for slug: …`
+The slug in `market_pairs:` doesn't exist on that venue. Run
+`npm run replicator:find-pairs` and re-paste.
+
+### `Polymarket auth probe failed`
+Wrong `poly_signature_type` for your wallet, OR `poly_funder` doesn't match the
+address your Polymarket UI shows. Flip `poly_signature_type` between 2 and 3.
+Verify `poly_funder` literally matches the address in Polymarket's UI.
+
+### `Invalid or revoked API key` (Limitless)
+Your `LIMITLESS_API_KEY` is being rejected by the X-API-Key auth path that
+this codebase uses. Possibilities:
+- The key is stale / revoked → regenerate.
+- The key is for a different auth method (Limitless's API also supports HMAC,
+  Identity, cookie). Confirm in your Limitless account that the key you copied
+  is the X-API-Key variant.
+
+In DRY_RUN this only shows up when polling Limitless positions — the hedger
+now skips that call in DRY_RUN so you can develop without it. But you'll hit
+this at LIVE boot, when the SDK tries to fetch your profile to place an order.
+
+### `Market not approved` at first live createOrder
+Each Limitless market requires a one-time USDC + CTF approval. The replicator
+doesn't auto-approve. Run:
+```bash
+npm start approve <limitless-slug>
+```
+Then re-launch the replicator.
+
+### Quotes rest forever, no fills
+Two possible causes:
+- The pair is illiquid on Limitless. Other takers aren't hitting your book.
+  Pick a higher-volume pair or accept slow signal.
+- Your `margin_bps` is too wide and your quotes are off-touch. Tighten it.
+
+### `404` on Polymarket asset resolution
+`polymarket_slug` is wrong. Polymarket has both *event* slugs and *market*
+slugs; the replicator wants the **market** slug (one binary outcome per slug).
+`find-pairs` prints the right one.
 
 ## Will this make money?
 
 Be honest: **the bot is infrastructure, the strategy is your job.** Default
 config (margin 100bps, Bronze fee tier 300bps on Limitless, FAK taker fee
-~50–200bps on Polymarket) is a slight net loss per round-trip. Real PnL
-requires one of:
+~50–200bps on Polymarket) is a slight net loss per round-trip — see "Honest
+per-round-trip economics" above. Real PnL requires one of:
 
-1. **Limitless maker rebate program** — documented at
-   [docs.limitless.exchange/user-guide/maker-rebates](https://docs.limitless.exchange/user-guide/maker-rebates).
-   Your maker fills generate rebate credit, paid daily in USDC. Eligibility
-   varies by market.
-2. **Higher Limitless fee tier** — Silver (260bps) → Gold (215bps) → Diamond
-   (120bps), gated on platform points. Volume gets you there over time.
-3. **Edge in pair selection** — markets where the cross-venue spread is wider
-   than fees, or where the Limitless book is thin relative to Polymarket.
-4. **Wider `margin_bps`** — fewer fills but each one is profitable. Tune
-   per pair.
+1. **Limitless maker rebate program** — per the link above. Eligibility
+   varies by market; biggest single lever.
+2. **Higher Limitless fee tier** — Silver → Gold → Diamond, gated on volume.
+3. **Edge in pair selection** — wider cross-venue spread > fee stack.
+4. **Wider `margin_bps`** — fewer fills but each one profitable.
+
+The dual-purpose use is volume farming for Polymarket points, where the
+fee cost is treated as the entry ticket. See "Scaling up for volume farming"
+above.
 
 ## Tests
 

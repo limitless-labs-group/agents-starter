@@ -27,8 +27,14 @@ hedge_interval: 5      # seconds between hedge ticks
 dry_run: true
 
 # --- Market pairs ----------------------------------------------------------
-# Each pair maps one Polymarket slug to one Limitless slug. We replicate
-# the Polymarket book as limit orders on the Limitless slug.
+# Each pair maps one Polymarket slug to one Limitless slug.
+# Both slugs must point to an *equivalent* market — same asset, same
+# threshold, same UTC moment, same data source. Title overlap is NOT
+# enough; verify resolution criteria match before going live.
+#
+# Discover candidates: `npm run replicator:find-pairs`
+#
+# The pair below is a placeholder — REPLACE before running. Run find-pairs.
 market_pairs:
-  - polymarket_slug: "will-btc-hit-200k-in-2026"
-    limitless_slug: "will-btc-hit-200k-in-2026"
+  - polymarket_slug: "REPLACE-ME-poly-market-slug"
+    limitless_slug:  "REPLACE-ME-limitless-market-slug"
