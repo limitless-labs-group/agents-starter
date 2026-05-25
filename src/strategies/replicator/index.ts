@@ -143,14 +143,18 @@ export async function runReplicator(
       }
     }
   } finally {
-    // Clean shutdown: cancel everything we may have placed on this slug.
+    // Clean shutdown: cancel everything on this slug AND verify it's gone —
+    // a single cancelAll has been seen to leave orders resting.
     try {
-      await trading.cancelAll(pair.limitlessSlug);
-      logger.info({ slug: pair.limitlessSlug }, 'replicator shutdown: cancelAll done');
+      const res = await trading.cancelAllAndVerify(pair.limitlessSlug);
+      logger.info(
+        { slug: pair.limitlessSlug, remaining: res.remaining },
+        'replicator shutdown: cancelAll verified',
+      );
     } catch (err) {
-      logger.warn(
+      logger.error(
         { err: (err as Error).message, slug: pair.limitlessSlug },
-        'shutdown cancelAll failed',
+        'shutdown cancelAll failed — orders may still be resting',
       );
     }
   }

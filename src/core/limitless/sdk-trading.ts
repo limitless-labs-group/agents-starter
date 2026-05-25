@@ -289,4 +289,58 @@ export class SDKTradingClient {
     logger.debug({ marketSlug }, 'cancelAll done');
     return res;
   }
+
+  /** Count live (resting) orders on a market. Returns -1 if the read fails. */
+  async countLiveOrders(marketSlug: string): Promise<number> {
+    try {
+      const positions = (await this.client.portfolio.getCLOBPositions()) as unknown as Array<{
+        market?: { slug?: string };
+        orders?: { liveOrders?: unknown[] };
+      }>;
+      let n = 0;
+      for (const p of positions ?? []) {
+        if (p.market?.slug === marketSlug) n += p.orders?.liveOrders?.length ?? 0;
+      }
+      return n;
+    } catch (err) {
+      logger.warn({ err: (err as Error).message, marketSlug }, 'countLiveOrders read failed');
+      return -1;
+    }
+  }
+
+  /**
+   * Cancel-all, then VERIFY nothing is still resting and retry if so. A single
+   * cancelAll has been observed to silently leave orders on the book — for an
+   * unattended bot that means orphaned live orders on shutdown. Retries up to
+   * `attempts` times with a short backoff; logs loudly if it can't confirm clean.
+   */
+  async cancelAllAndVerify(
+    marketSlug: string,
+    attempts = 3,
+  ): Promise<{ message: string; remaining: number }> {
+    if (process.env.DRY_RUN === 'true') {
+      logger.info({ marketSlug }, '[DRY_RUN] would cancelAllAndVerify');
+      return { message: 'dry-run', remaining: 0 };
+    }
+    for (let i = 1; i <= attempts; i++) {
+      await this.orderClient.cancelAll(marketSlug).catch((err) => {
+        logger.warn({ err: (err as Error).message, marketSlug, attempt: i }, 'cancelAll call failed');
+      });
+      const remaining = await this.countLiveOrders(marketSlug);
+      if (remaining === 0) {
+        logger.info({ marketSlug, attempt: i }, 'cancelAll verified clean');
+        return { message: 'ok', remaining: 0 };
+      }
+      logger.warn(
+        { marketSlug, remaining, attempt: i },
+        remaining < 0 ? 'cancelAll could not verify (read failed) — retrying' : 'cancelAll left orders — retrying',
+      );
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    const remaining = await this.countLiveOrders(marketSlug);
+    if (remaining !== 0) {
+      logger.error({ marketSlug, remaining }, 'cancelAllAndVerify could NOT confirm a clean book');
+    }
+    return { message: remaining === 0 ? 'ok' : 'incomplete', remaining };
+  }
 }
