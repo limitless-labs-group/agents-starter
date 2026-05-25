@@ -9,6 +9,10 @@ between the two venues plus any Limitless maker rebates.
 > implementation, not production trading infrastructure. **Use a dedicated
 > wallet** and always start with `DRY_RUN=true`.
 
+> New here? Start with **[TUTORIAL.md](./TUTORIAL.md)** — a condensed,
+> end-to-end walkthrough (setup → token → find-pairs → dry-run → live).
+> This README is the deeper reference.
+
 ## How it works
 
 ```
@@ -49,14 +53,16 @@ chmod 600 .env
 # 2. Pick a market pair. Both venues need an *equivalent* market — same
 #    asset, same threshold, same UTC moment, same data source.
 npm run replicator:find-pairs
-# Scans Limitless's active CLOB markets + Polymarket's active binary
-# markets, ranks candidates by title-token Jaccard, prints paste-ready YAML.
+# Scans both venues, gates on a live Polymarket book (orderbook enabled,
+# tight spread, balanced price) + Limitless volume, and prints a liquidity-
+# ranked shortlist as paste-ready YAML. Avoids thin/skewed books (no fills,
+# lopsided capital). Verify resolution criteria by hand before going live.
 
 # 3. Configure the bot.
 cp src/strategies/replicator/config.example.yaml ./replicator.config.yaml
 # Edit ./replicator.config.yaml:
-#   - poly_funder        — the address Polymarket's UI shows you
-#   - poly_signature_type — 2 (legacy Safe) or 3 (new deposit wallet)
+#   - poly_funder        — the address Polymarket's UI shows you (holds pUSD)
+#   - poly_signature_type — 3 (deposit wallet, default) or 2 (existing Safe)
 #   - market_pairs       — paste from find-pairs output
 #   - order_size         — see "Capital math" below before raising this
 
