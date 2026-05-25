@@ -56,7 +56,22 @@ function isTruthyEnv(value: string | undefined): boolean {
 
 export function loadSettings(): ReplicatorSettings {
   const privateKey = requireEnv('PRIVATE_KEY');
-  const lmtsApiKey = requireEnv('LIMITLESS_API_KEY');
+
+  // Limitless auth. Prefer scoped HMAC token (LMTS_TOKEN_ID + LMTS_TOKEN_SECRET);
+  // fall back to the deprecated X-API-Key (LIMITLESS_API_KEY) for legacy users.
+  const tokenId = process.env.LMTS_TOKEN_ID;
+  const tokenSecret = process.env.LMTS_TOKEN_SECRET;
+  const legacyApiKey = process.env.LIMITLESS_API_KEY;
+  const hmacCredentials =
+    tokenId && tokenSecret ? { tokenId, secret: tokenSecret } : undefined;
+  if (!hmacCredentials && !legacyApiKey) {
+    throw new Error(
+      'No Limitless auth configured. Set LMTS_TOKEN_ID + LMTS_TOKEN_SECRET ' +
+        '(scoped HMAC token — preferred) or LIMITLESS_API_KEY (deprecated). ' +
+        'See docs.limitless.exchange/developers/authentication.',
+    );
+  }
+
   const configPath = process.env.REPLICATOR_CONFIG_PATH || './replicator.config.yaml';
 
   const resolved = path.resolve(configPath);
@@ -97,7 +112,8 @@ export function loadSettings(): ReplicatorSettings {
 
   return {
     privateKey,
-    lmtsApiKey,
+    hmacCredentials,
+    lmtsApiKey: legacyApiKey,
     polyFunder: raw.poly_funder ?? raw.polyFunder ?? '',
     polySignatureType: sigTypeRaw as 2 | 3,
     orderSize: Number(raw.order_size ?? raw.orderSize ?? 100),

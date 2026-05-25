@@ -42,9 +42,18 @@ cp .env.example .env
 Edit `.env` and set these required values. Ask your user for them if not provided:
 
 ```
-PRIVATE_KEY=0x...          # Base chain wallet private key (dedicated trading wallet)
-LIMITLESS_API_KEY=lmts_... # From limitless.exchange -> Profile -> API Keys
+PRIVATE_KEY=0x...           # Base chain wallet private key (dedicated trading wallet)
+LMTS_TOKEN_ID=...           # Limitless scoped HMAC token id
+LMTS_TOKEN_SECRET=...       # Limitless scoped HMAC token secret (base64)
 ```
+
+Limitless authenticates with **scoped HMAC tokens** (`lmts-api-key` /
+`lmts-timestamp` / `lmts-signature` headers, built by the SDK). Get yours from
+the UI: **limitless.exchange → connect wallet → API token modal → "API Tokens"
+tab → Derive → copy the tokenId + secret.** The browser handles the login
+session, so you never handle a Privy token, and no smart wallet is involved.
+(Headless/CI without a browser: derive programmatically — `npm run derive-token`.
+Legacy `LIMITLESS_API_KEY` still works as a fallback if you hold one.)
 
 The wallet needs USDC (collateral) and a small amount of ETH (gas, ~$1-2) on Base chain.
 
@@ -567,12 +576,24 @@ Fund the wallet with USDC on Base chain:
 
 **Recommended starting balance:** $10–$50 USDC. You can always add more later.
 
-### Step 3: Get a Limitless API Key
+### Step 3: Get a Limitless scoped HMAC token
 
-1. Go to [limitless.exchange](https://limitless.exchange)
-2. Connect your trading wallet
-3. Navigate to Profile → API Keys
-4. Click "Generate" and copy the key (starts with `lmts_`)
+Limitless's current auth method is a **scoped API token** signed with HMAC.
+Get one from the UI (one-time, ~20s):
+
+1. Go to [limitless.exchange](https://limitless.exchange) and connect your wallet.
+2. Open the API token modal → **"API Tokens"** tab → **Derive**.
+3. Copy the `tokenId` and `secret` → set as `LMTS_TOKEN_ID` and `LMTS_TOKEN_SECRET`.
+
+The browser handles the login session for you — no Privy token to copy, no
+smart wallet. These are long-lived HMAC credentials; this is a one-time setup.
+
+Headless / CI (no browser): derive programmatically via the SDK's
+`apiTokens.deriveToken` — `npm run derive-token` (see its script header for the
+one input it needs). Most builders should just use the UI above.
+
+Legacy: an older `LIMITLESS_API_KEY` (X-API-Key header) still works as a
+fallback if you already hold one.
 
 ### Step 4: Configure Environment
 
@@ -585,7 +606,9 @@ Edit `.env` with your values:
 ```bash
 # ─── REQUIRED ─────────────────────────────────────────────
 PRIVATE_KEY=0x...your-64-char-hex-private-key
-LIMITLESS_API_KEY=lmts_...your-api-key
+LMTS_TOKEN_ID=your-token-id              # scoped HMAC token (current method)
+LMTS_TOKEN_SECRET=your-base64-secret
+# LIMITLESS_API_KEY=...                   # legacy X-API-Key — deprecated fallback
 
 # ─── SAFETY ───────────────────────────────────────────────
 DRY_RUN=true                    # ALWAYS start with true. Set false only after validation.
@@ -1331,7 +1354,9 @@ go get github.com/limitless-labs-group/limitless-exchange-go-sdk@v1.0.6
 
 All three SDKs expose a root `Client` class that composes every domain service (markets, orders, portfolio, API tokens, partner accounts, delegated orders).
 
-**Personal trading (API key):**
+Auth: **scoped HMAC tokens are the current method for everyone** — traders, bots, and partners alike. The plain X-API-Key block below is legacy; it still works if you hold a key, but new setups should use the HMAC token.
+
+**Legacy (deprecated X-API-Key — only if you already hold a key):**
 
 ```typescript
 // TypeScript
@@ -1362,7 +1387,7 @@ client := limitless.NewClient(
 )
 ```
 
-**Partner / programmatic (HMAC scoped token):**
+**All integrations (scoped HMAC token — current method, use this):**
 
 ```typescript
 // TypeScript
@@ -2287,7 +2312,7 @@ ws_client = WebSocketClient(config)
 ```go
 // Go
 ws := limitless.NewWebSocketClient(
-    limitless.WithWebSocketAPIKey("lmts_your_key_here"),
+    limitless.WithWebSocketAPIKey("your-ws-api-key"),
     limitless.WithAutoReconnect(true),
     limitless.WithReconnectDelay(1 * time.Second),
 )

@@ -83,11 +83,16 @@ export async function main(): Promise<void> {
   );
 
   // -- Limitless side --
-  const http = new HttpClient({ apiKey: settings.lmtsApiKey });
+  // Prefer scoped HMAC token; fall back to deprecated X-API-Key. The read
+  // client (markets, portfolio) and the write client (orders) both need it.
+  const limitlessAuth = settings.hmacCredentials
+    ? { hmacCredentials: settings.hmacCredentials }
+    : { apiKey: settings.lmtsApiKey };
+  const http = new HttpClient(limitlessAuth);
   const sdk = Client.fromHttpClient(http);
   const trading = new SDKTradingClient({
     privateKey: settings.privateKey,
-    apiKey: settings.lmtsApiKey,
+    ...limitlessAuth,
   });
 
   // -- Polymarket side --
