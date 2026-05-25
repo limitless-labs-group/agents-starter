@@ -1,22 +1,27 @@
 /**
- * Derive a Limitless scoped HMAC token from a Privy identity token.
+ * Derive a Limitless scoped HMAC token programmatically.
+ *
+ * ⚠️ MOST BUILDERS DON'T NEED THIS. The easy path is the UI:
+ *   limitless.exchange → connect wallet → API token modal → "API Tokens" tab
+ *   → Derive → copy the tokenId + secret into .env. No browser-token copying.
+ *
+ * This script is for **headless / CI environments where you can't open a
+ * browser.** It calls the same `/auth/api-tokens/derive` endpoint the UI uses,
+ * but since there's no UI session, YOU must supply a Privy identity token:
  *
  *   npm run derive-token              # reads PRIVY_IDENTITY_TOKEN from env
  *   npm run derive-token <token>      # or pass it as an arg
  *
  * Prints paste-ready `LMTS_TOKEN_ID` / `LMTS_TOKEN_SECRET` lines for your .env.
  *
- * ── Where the Privy identity token comes from ──────────────────────────────
- * Scoped tokens are derived against your Privy login, so you need a fresh
- * Privy identity token (one-time):
+ * ── Getting the Privy identity token (only for this headless path) ─────────
  *   1. Log in at https://limitless.exchange with your wallet.
- *   2. Open DevTools → Application/Storage → look for the Privy auth response,
- *      or Network tab → find the `privy.io` authenticate call and copy the
+ *   2. DevTools → Network → find the `privy.io` authenticate call → copy the
  *      `token` field from its JSON response (NOT `privy_access_token`).
  *   3. Run: PRIVY_IDENTITY_TOKEN=<paste> npm run derive-token
  *
- * The `trading` scope is available to all users with no application. This is
- * a one-time setup — the resulting tokenId + secret are long-lived HMAC creds.
+ * The `trading` scope is available to all users with no application. The
+ * resulting tokenId + secret are long-lived HMAC creds (one-time setup).
  */
 
 import { config as loadEnv } from 'dotenv';

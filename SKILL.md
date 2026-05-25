@@ -48,12 +48,12 @@ LMTS_TOKEN_SECRET=...       # Limitless scoped HMAC token secret (base64)
 ```
 
 Limitless authenticates with **scoped HMAC tokens** (`lmts-api-key` /
-`lmts-timestamp` / `lmts-signature` headers, built by the SDK). Plain API keys
-are deprecated and no longer issued. Derive a token via
-`POST /auth/api-tokens/derive` — see
-[docs.limitless.exchange/developers/authentication](https://docs.limitless.exchange/developers/authentication).
-(Legacy users with an old `LIMITLESS_API_KEY` can still use it; the code falls
-back to the X-API-Key header when no HMAC token is set.)
+`lmts-timestamp` / `lmts-signature` headers, built by the SDK). Get yours from
+the UI: **limitless.exchange → connect wallet → API token modal → "API Tokens"
+tab → Derive → copy the tokenId + secret.** The browser handles the login
+session, so you never handle a Privy token, and no smart wallet is involved.
+(Headless/CI without a browser: derive programmatically — `npm run derive-token`.
+Legacy `LIMITLESS_API_KEY` still works as a fallback if you hold one.)
 
 The wallet needs USDC (collateral) and a small amount of ETH (gas, ~$1-2) on Base chain.
 
@@ -579,14 +579,21 @@ Fund the wallet with USDC on Base chain:
 ### Step 3: Get a Limitless scoped HMAC token
 
 Limitless's current auth method is a **scoped API token** signed with HMAC.
-Derive one via `POST /auth/api-tokens/derive` (pass a Privy identity token in
-the `identity` header as `Bearer <token>`). The response gives you a `tokenId`
-and `secret` — set them as `LMTS_TOKEN_ID` and `LMTS_TOKEN_SECRET`. This is a
-one-time setup. Full flow:
-[docs.limitless.exchange/developers/authentication](https://docs.limitless.exchange/developers/authentication).
+Get one from the UI (one-time, ~20s):
 
-Legacy: plain API keys (`LIMITLESS_API_KEY`, X-API-Key header) are deprecated
-and no longer issued. If you already hold one it still works as a fallback.
+1. Go to [limitless.exchange](https://limitless.exchange) and connect your wallet (MetaMask is fine).
+2. Open the API token modal → **"API Tokens"** tab → **Derive**.
+3. Copy the `tokenId` and `secret` → set as `LMTS_TOKEN_ID` and `LMTS_TOKEN_SECRET`.
+
+The browser handles the login session for you — no Privy token to copy, no
+smart wallet. These are long-lived HMAC credentials; this is a one-time setup.
+
+Headless / CI (no browser): derive programmatically via the SDK's
+`apiTokens.deriveToken` — `npm run derive-token` (see its script header for the
+one input it needs). Most builders should just use the UI above.
+
+Legacy: an older `LIMITLESS_API_KEY` (X-API-Key header) still works as a
+fallback if you already hold one.
 
 ### Step 4: Configure Environment
 
@@ -1347,7 +1354,7 @@ go get github.com/limitless-labs-group/limitless-exchange-go-sdk@v1.0.6
 
 All three SDKs expose a root `Client` class that composes every domain service (markets, orders, portfolio, API tokens, partner accounts, delegated orders).
 
-Auth: **scoped HMAC tokens are the current method for everyone** — traders, bots, and partners alike. Plain API keys are deprecated and no longer issued; the block below is legacy-only.
+Auth: **scoped HMAC tokens are the current method for everyone** — traders, bots, and partners alike. The plain X-API-Key block below is legacy; it still works if you hold a key, but new setups should use the HMAC token.
 
 **Legacy (deprecated X-API-Key — only if you already hold a key):**
 

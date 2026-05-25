@@ -41,8 +41,10 @@ between the two venues plus any Limitless maker rebates.
 npm install
 cp .env.example .env
 chmod 600 .env
-# Edit .env — set PRIVATE_KEY + a Limitless scoped HMAC token
-# (LMTS_TOKEN_ID + LMTS_TOKEN_SECRET). DRY_RUN is already true.
+# Edit .env — set PRIVATE_KEY + a Limitless scoped HMAC token.
+# Get the token from the UI: limitless.exchange → connect wallet →
+# API token modal → "API Tokens" tab → Derive → copy tokenId + secret
+# into LMTS_TOKEN_ID + LMTS_TOKEN_SECRET. DRY_RUN is already true.
 
 # 2. Pick a market pair. Both venues need an *equivalent* market — same
 #    asset, same threshold, same UTC moment, same data source.
@@ -259,14 +261,15 @@ Verify `poly_funder` literally matches the address in Polymarket's UI.
 
 ### `Invalid or revoked API key` / `401` (Limitless)
 Your Limitless auth is being rejected. Limitless's current auth method is a
-**scoped HMAC token** — plain API keys are deprecated and no longer issued.
-- **Recommended:** set `LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET` (derive via
-  `POST /auth/api-tokens/derive`, see
-  [docs.limitless.exchange/developers/authentication](https://docs.limitless.exchange/developers/authentication)).
-  The SDK signs every request with HMAC automatically.
-- **Legacy:** if you still hold an old `lmts`-era API key it works via
-  `LIMITLESS_API_KEY` (X-API-Key header) — but if it 401s, it's likely
-  revoked or never had the right scope. Migrate to an HMAC token.
+**scoped HMAC token**.
+- **Get/refresh the token from the UI:** limitless.exchange → connect wallet →
+  API token modal → "API Tokens" tab → Derive → copy the `tokenId` + `secret`
+  into `LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET`. The SDK signs every request with
+  HMAC automatically.
+- **If you're on a legacy `LIMITLESS_API_KEY`:** note Limitless only keeps
+  **one active key per account** — generating a new one in the UI silently
+  revokes the old one. A `401` usually means the key in your `.env` was
+  superseded. Switch to an HMAC token (above) to avoid this entirely.
 
 In DRY_RUN this only shows up when polling Limitless positions — the hedger
 now skips that call in DRY_RUN so you can develop without it. But you'll hit
