@@ -78,6 +78,8 @@ npm run replicator
 - **Boot-clean**: every live start cancels any orders left by a prior run before
   quoting, so orphans never accumulate.
 - **Ctrl-C** cancels all resting orders (verified) on the way out.
+- **`npm run replicator:flatten`** — manual kill switch: cancels all resting
+  orders for your configured pairs (use if a run was killed ungracefully).
 
 ## What "working" looks like, live
 
