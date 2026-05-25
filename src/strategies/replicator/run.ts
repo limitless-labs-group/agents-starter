@@ -95,6 +95,7 @@ export async function main(): Promise<void> {
   const trading = new SDKTradingClient({
     privateKey: settings.privateKey,
     ...limitlessAuth,
+    dryRun: settings.dryRun, // single source of truth — env OR yaml, decided in config.ts
   });
 
   // -- Polymarket side --

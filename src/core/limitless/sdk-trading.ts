@@ -65,6 +65,14 @@ export interface SDKTradingConfig {
    */
   apiKey?: string;
   apiBaseUrl?: string;
+  /**
+   * Log-only mode: no orders signed or sent. Single source of truth — pass
+   * the caller's resolved dry-run decision (e.g. settings.dryRun). Falls back
+   * to `process.env.DRY_RUN === 'true'` so standalone callers still work, but
+   * passing it explicitly avoids the trap where env and config disagree and
+   * the client trades live while the rest of the system thinks it's dry.
+   */
+  dryRun?: boolean;
 }
 
 /**
@@ -114,11 +122,13 @@ export class SDKTradingClient {
   private readonly client: Client;
   private readonly orderClient: OrderClient;
   private readonly wallet: ethers.Wallet;
+  private readonly dryRun: boolean;
 
   constructor(config: SDKTradingConfig) {
     if (!config.privateKey) {
       throw new Error('SDKTradingClient: privateKey is required');
     }
+    this.dryRun = config.dryRun ?? process.env.DRY_RUN === 'true';
 
     const auth = resolveAuth(config);
     if (!auth.hmacCredentials && !auth.apiKey) {
@@ -205,7 +215,7 @@ export class SDKTradingClient {
 
     const price = limitPriceCents / 100;
 
-    if (process.env.DRY_RUN === 'true') {
+    if (this.dryRun) {
       logger.info(
         { marketSlug, side, price, usdAmount, orderType },
         '[DRY_RUN] would createOrder via SDK'
@@ -272,7 +282,7 @@ export class SDKTradingClient {
 
   /** Cancel a single order by ID. */
   async cancelOrder(orderId: string): Promise<{ message: string }> {
-    if (process.env.DRY_RUN === 'true') {
+    if (this.dryRun) {
       logger.info({ orderId }, '[DRY_RUN] would cancelOrder');
       return { message: 'dry-run' };
     }
@@ -281,7 +291,7 @@ export class SDKTradingClient {
 
   /** Cancel every live order on a market. */
   async cancelAll(marketSlug: string): Promise<{ message: string }> {
-    if (process.env.DRY_RUN === 'true') {
+    if (this.dryRun) {
       logger.info({ marketSlug }, '[DRY_RUN] would cancelAll');
       return { message: 'dry-run' };
     }
@@ -318,7 +328,7 @@ export class SDKTradingClient {
     marketSlug: string,
     attempts = 3,
   ): Promise<{ message: string; remaining: number }> {
-    if (process.env.DRY_RUN === 'true') {
+    if (this.dryRun) {
       logger.info({ marketSlug }, '[DRY_RUN] would cancelAllAndVerify');
       return { message: 'dry-run', remaining: 0 };
     }
