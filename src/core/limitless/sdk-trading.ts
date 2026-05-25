@@ -132,14 +132,20 @@ export class SDKTradingClient {
     } = params;
 
     // Resolve YES/NO → tokenId by fetching the market.
-    const market = await this.client.markets.getMarket(marketSlug);
-    if (!market.positionIds || market.positionIds.length < 2) {
+    // The SDK returns either { positionIds: [yes, no] } or { tokens: { yes, no } }
+    // depending on market vintage. Read both defensively.
+    const market = (await this.client.markets.getMarket(marketSlug)) as unknown as {
+      positionIds?: string[];
+      tokens?: { yes?: string; no?: string };
+    };
+    const yesToken = market.positionIds?.[0] ?? market.tokens?.yes;
+    const noToken = market.positionIds?.[1] ?? market.tokens?.no;
+    if (!yesToken || !noToken) {
       throw new Error(
-        `SDKTradingClient: market ${marketSlug} has no valid positionIds`
+        `SDKTradingClient: market ${marketSlug} has no valid yes/no token ids`,
       );
     }
-    const tokenId =
-      side === 'YES' ? market.positionIds[0] : market.positionIds[1];
+    const tokenId = side === 'YES' ? yesToken : noToken;
 
     const price = limitPriceCents / 100;
 

@@ -24,17 +24,22 @@ export class LimitlessClient {
 
     constructor(private baseUrl: string = API_BASE) { }
 
+    /**
+     * GET /markets/active.
+     * Note: the API caps `limit` at 25 (responds 400 above that). For larger
+     * scans iterate via `page` (1-indexed).
+     */
     async getActiveMarkets(options: {
         category?: number;
         tradeType?: 'amm' | 'clob' | 'group';
         limit?: number;
-        offset?: number;
+        page?: number;
     } = {}): Promise<Market[]> {
         const params = new URLSearchParams();
         if (options.category) params.append('category', options.category.toString());
         if (options.tradeType) params.append('tradeType', options.tradeType);
         if (options.limit) params.append('limit', options.limit.toString());
-        if (options.offset) params.append('offset', options.offset.toString());
+        if (options.page) params.append('page', options.page.toString());
 
         try {
             const url = `${this.baseUrl}/markets/active?${params.toString()}`;
@@ -42,7 +47,11 @@ export class LimitlessClient {
             const res = await fetch(url, { headers: getHeaders() });
 
             if (!res.ok) {
-                throw new Error(`Failed to fetch markets: ${res.status} ${res.statusText}`);
+                const body = await res.text().catch(() => '');
+                throw new Error(
+                    `Failed to fetch markets: ${res.status} ${res.statusText}` +
+                    (body ? ` — ${body}` : ''),
+                );
             }
 
             const data = await res.json();

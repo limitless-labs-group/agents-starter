@@ -150,7 +150,8 @@ export async function hedgeOnce(
   }
 }
 
-/** Limitless positions reader — calls the SDK's PortfolioFetcher. */
+/** Limitless positions reader — calls the SDK's PortfolioFetcher.
+ *  Throws on auth failure; caller catches and falls through with empty positions. */
 async function readLimitlessPositions(sdk: Client): Promise<LimitlessPositions> {
   // The SDK's portfolio endpoint returns per-slug yes/no balances scaled to
   // 6-decimal units. We sum AMM + CLOB buckets the same way the Python
@@ -209,10 +210,19 @@ export async function runHedger(
     if (signal.aborted) break;
 
     try {
-      const [lmts, pm] = await Promise.all([
-        readLimitlessPositions(sdk),
-        poly.getPositions(pairs),
-      ]);
+      // In DRY_RUN no orders are signed → Limitless positions can't accumulate.
+      // Skip the authed portfolio read so a missing/invalid API key doesn't
+      // spam the log every tick.
+      const lmts: LimitlessPositions = settings.dryRun
+        ? {}
+        : await readLimitlessPositions(sdk).catch((err) => {
+            logger.warn(
+              { err: (err as Error).message },
+              'limitless portfolio read failed — treating as empty for this tick',
+            );
+            return {} as LimitlessPositions;
+          });
+      const pm = await poly.getPositions(pairs);
       await hedgeOnce(pairs, feed, lmts, pm, poly, settings);
     } catch (err) {
       logger.warn({ err: (err as Error).message }, 'hedger tick failed');
