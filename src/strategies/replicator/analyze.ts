@@ -57,6 +57,7 @@ function main(): void {
   const orders = events.filter((e) => e.kind === 'order') as Array<Logged & { kind: 'order' }>;
   const snaps = events.filter((e) => e.kind === 'snapshot') as Array<Logged & { kind: 'snapshot' }>;
   const hedges = events.filter((e) => e.kind === 'hedge') as Array<Logged & { kind: 'hedge' }>;
+  const equities = events.filter((e) => e.kind === 'equity') as Array<Logged & { kind: 'equity' }>;
 
   console.log(`\n=== Replicator run: ${path.basename(file)} ===`);
   if (run) {
@@ -105,6 +106,18 @@ function main(): void {
   console.log(
     `\nHedges: ${hedges.length} fired (${okHedges.length} ok) | $${hedgedUsdc.toFixed(2)} bought on Polymarket`,
   );
+
+  // -- PnL / equity (the "is it bleeding?" signal) --
+  if (equities.length > 0) {
+    const pnls = equities.map((e) => e.pnl);
+    const minPnl = Math.min(...pnls);
+    const maxPnl = Math.max(...pnls);
+    const last = equities[equities.length - 1];
+    console.log(
+      `\nEquity (live): start $${equities[0].equity.toFixed(2)} → end $${last.equity.toFixed(2)} | ` +
+        `net PnL $${last.pnl.toFixed(2)} | worst $${minPnl.toFixed(2)} | best $${maxPnl.toFixed(2)}`,
+    );
+  }
 
   if (orders.length > 0 && snaps.every((s) => Math.abs(s.net) < 1e-6) && hedges.length === 0) {
     console.log(`\nNote: quotes rested but nothing filled (book stayed flat). Try a more active`);

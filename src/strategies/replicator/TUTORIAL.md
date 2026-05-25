@@ -56,15 +56,28 @@ cp src/strategies/replicator/config.example.yaml ./replicator.config.yaml
 #   market_pairs         → paste your verified pair
 #   order_size           → start tiny (e.g. 5)
 
-# 4. Dry run — watch it think, sign nothing
+# 4. Preflight — validate auth, funding, sig type, and the pair resolve
+npm run replicator:preflight
+#   Exits non-zero if anything's wrong, so this is a safe gate before live.
+
+# 5. Dry run — watch it think, sign nothing
 npm run replicator
 #   Confirm: both markets resolve, Poly WS connects, cancel-replace fires
 #   every tick. Ctrl-C stops and cancels everything.
 
-# 5. Go live — small
-#   set dry_run: false (and make sure DRY_RUN isn't set in .env), then:
+# 6. Go live — small
+#   set dry_run: false (and make sure DRY_RUN isn't set/true in .env), then:
 npm run replicator
 ```
+
+## Safety rails (built in)
+
+- **Loss circuit-breaker** (`max_loss_usd`, default $10): the bot marks equity
+  (pUSD + Base USDC + position value) every tick and, if it draws down past the
+  limit, cancels all orders and halts. Set it to your tolerance before going live.
+- **Boot-clean**: every live start cancels any orders left by a prior run before
+  quoting, so orphans never accumulate.
+- **Ctrl-C** cancels all resting orders (verified) on the way out.
 
 ## What "working" looks like, live
 

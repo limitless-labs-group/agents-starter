@@ -21,13 +21,21 @@ poly_funder: "0xYourPolymarketFunderAddress"
 poly_signature_type: 3
 
 # --- Trading parameters -----------------------------------------------------
-order_size: 100        # shares per order (same N on YES and NO sides)
+order_size: 5          # shares per order (same N on YES and NO sides) — start small
 margin_bps: 100        # how much *inside* the Poly price we quote (100 = 1%)
 hedge_threshold: 2.0   # hedge when |net exposure| in shares exceeds this
 hedge_interval: 5      # seconds between hedge ticks
 
 # --- Safety -----------------------------------------------------------------
-# Strongly recommended for your first run. Overridden by DRY_RUN env var.
+# Hard loss circuit-breaker: if marked equity (pUSD + Base USDC + position
+# value) drops this many dollars below the run's starting equity, the bot
+# cancels all orders and halts. Also settable via REPLICATOR_MAX_LOSS_USD.
+max_loss_usd: 10
+
+# dry_run: true logs intents and signs nothing. Keep it true until you've run
+# `npm run replicator:preflight` and watched a dry run. NOTE: the DRY_RUN env
+# var (e.g. in .env) OVERRIDES this — to go live, set dry_run: false AND make
+# sure DRY_RUN is not set/true in your environment.
 dry_run: true
 
 # --- Market pairs ----------------------------------------------------------
