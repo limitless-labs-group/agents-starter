@@ -27,11 +27,9 @@ export interface ReplicatorSettings {
   hmacCredentials?: { tokenId: string; secret: string };
   lmtsApiKey?: string; // legacy X-API-Key fallback
   polyFunder: string; // Polymarket UI-shown address (Safe or deposit wallet)
-  // User-facing: 2 = legacy Safe/proxy (created before CLOB V2),
-  //              3 = new deposit wallet (created after CLOB V2).
-  // Matches the Python original + what Polymarket's UI tells users.
-  // Translated to @polymarket/clob-client's enum (POLY_GNOSIS_SAFE=2, POLY_PROXY=1)
-  // in core/polymarket/client.ts.
+  // User-facing: 2 = existing Gnosis Safe, 3 = deposit wallet (POLY_1271,
+  // the default for new API users). Maps 1:1 onto clob-client-v2's
+  // SignatureTypeV2 in core/polymarket/client.ts.
   polySignatureType: 2 | 3;
   orderSize: number; // contracts per order (same N on YES and NO sides)
   marginBps: number; // bps inside the Poly price (100 = 1%)

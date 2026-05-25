@@ -34,7 +34,7 @@
   "license": "MIT",
   "dependencies": {
     "@limitless-exchange/sdk": "^1.0.9",
-    "@polymarket/clob-client": "^5.8.1",
+    "@polymarket/clob-client-v2": "^1.0.6",
     "@types/node": "^22.0.0",
     "cross-fetch": "^4.1.0",
     "dotenv": "^16.4.0",

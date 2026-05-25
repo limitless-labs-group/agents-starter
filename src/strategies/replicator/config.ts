@@ -100,10 +100,12 @@ export function loadSettings(): ReplicatorSettings {
     return { polymarketSlug: poly, limitlessSlug: lmts };
   });
 
-  const sigTypeRaw = raw.poly_signature_type ?? raw.polySignatureType ?? 2;
+  // Default 3 (POLY_1271 deposit wallet) — what new Polymarket API users get.
+  // Existing Gnosis Safe users set 2.
+  const sigTypeRaw = raw.poly_signature_type ?? raw.polySignatureType ?? 3;
   if (sigTypeRaw !== 2 && sigTypeRaw !== 3) {
     throw new Error(
-      `poly_signature_type must be 2 (legacy Safe) or 3 (new deposit wallet), got ${sigTypeRaw}`,
+      `poly_signature_type must be 2 (existing Gnosis Safe) or 3 (deposit wallet / POLY_1271), got ${sigTypeRaw}`,
     );
   }
 

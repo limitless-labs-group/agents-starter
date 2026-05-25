@@ -206,16 +206,20 @@ Phase 1.
 
 ## Polymarket wallet types
 
-The single most common configuration mistake. The user-facing
-`poly_signature_type` matches what Polymarket's UI tells you:
+The single most common configuration mistake. Your funds are **pUSD** held by
+your **funder** address; set `poly_signature_type` to match how that address
+was created:
 
-| Account vintage | `poly_funder` is the | Set `poly_signature_type` to |
+| Account type | `poly_funder` is the | Set `poly_signature_type` to |
 |---|---|---|
-| Created **before** CLOB V2 (legacy) | proxy / Gnosis Safe address | `2` |
-| Created **after** CLOB V2 (current) | deposit wallet address | `3` |
+| New API user (default) | deposit wallet address | `3` (POLY_1271) |
+| Existing Gnosis Safe user | your Safe address | `2` |
 
-If the boot-time auth probe says **"Polymarket auth probe failed"**, you have
-the wrong sig type. Flip the bit and re-run.
+Find the funder in Polymarket's UI under your account. Note the address shown
+as **"for API use only — do not send funds"** is your *signer EOA*, not the
+funder — don't put that one in `poly_funder`. If the boot-time auth probe says
+**"Polymarket auth probe failed"** or you see "maker address not allowed", you
+have the wrong sig type. Flip the bit and re-run.
 
 ## Strategy invariants
 
@@ -333,9 +337,13 @@ Material differences:
 
 - **Limitless side uses `@limitless-exchange/sdk`** instead of hand-rolled
   EIP-712. Venue/exchange routing (default CTF vs neg-risk) is automatic.
-- **Polymarket side uses `@polymarket/clob-client`** instead of `py-clob-client-v2`.
-- **User-facing `poly_signature_type` semantics preserved** (2 = legacy Safe,
-  3 = new deposit wallet). Translated to the TS client's enum internally.
+- **Polymarket side uses `@polymarket/clob-client-v2`** (the v2 TS client).
+  This is required, not cosmetic: Polymarket migrated collateral from USDC.e
+  to **pUSD** on a V2 exchange, and only v2 trades pUSD. The old v1 client
+  silently fails ("insufficient balance") against a pUSD-funded account.
+- **User-facing `poly_signature_type`** — 2 = existing Gnosis Safe,
+  3 = deposit wallet (`POLY_1271`, the default for new API users). Maps 1:1
+  onto v2's `SignatureTypeV2` internally.
 - **Same strategy** — identical quote math, identical hedge logic, identical
   cancel-on-shutdown behavior.
 

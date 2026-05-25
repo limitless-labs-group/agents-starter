@@ -10,12 +10,15 @@
 # full architecture + invariants.
 
 # --- Polymarket wallet ------------------------------------------------------
-# The address Polymarket's UI shows you as "your address".
-#   - Legacy accounts (created before CLOB V2): proxy/Safe address → set poly_signature_type: 2
-#   - New accounts (created after CLOB V2):    deposit-wallet address → set poly_signature_type: 3
-# If you see "maker address not allowed" at boot, you have the wrong sig type.
+# Polymarket's collateral is pUSD on the V2 exchange; this bot uses
+# @polymarket/clob-client-v2. The funder is the address that holds your pUSD:
+#   - New API users (default): deposit wallet address → poly_signature_type: 3 (POLY_1271)
+#   - Existing Gnosis Safe users: your Safe address    → poly_signature_type: 2
+# Find the address in Polymarket's UI under your account (settings). The
+# "for API use only, do not send funds" address is your SIGNER EOA, not the
+# funder. If you see "maker address not allowed" at boot, the sig type is wrong.
 poly_funder: "0xYourPolymarketFunderAddress"
-poly_signature_type: 2
+poly_signature_type: 3
 
 # --- Trading parameters -----------------------------------------------------
 order_size: 100        # shares per order (same N on YES and NO sides)
