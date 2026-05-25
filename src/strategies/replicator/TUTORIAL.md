@@ -109,13 +109,24 @@ You get: orders placed, fills inferred from Limitless balance deltas, how flat
 the book stayed (the health signal), and hedges fired. Use it to tell whether a
 pair/margin combo actually fills and stays delta-neutral before trusting it.
 
-## Why pick a *liquid* pair
+## Why pick a *liquid* pair — and the catch
 
 Quote inside a thin or skewed book and two things go wrong: nothing fills (no
 counterparties on Limitless), and the legs are lopsided (a 7%-YES market locks
 almost all your capital on one side). `find-pairs` filters for a live
 Polymarket book with a tight spread and a balanced price (~0.1–0.9) so both
 legs are real and fills actually happen.
+
+**The real constraint: the pair must be liquid on _both_ venues at once.** You
+make on Limitless (so you need Limitless _takers_ to get filled) and hedge on
+Polymarket (so you need a Polymarket book to hedge into). As of this writing
+the venues don't always overlap — e.g. Limitless's busiest markets are hourly
+crypto "Up or Down", which Polymarket may not list, while a clean political
+match can sit untraded on Limitless for hours. `find-pairs` ranks by the
+Polymarket book; **also sanity-check the Limitless side has real recent volume**
+(an empty Limitless book = your maker quotes rest forever, never filling). The
+sweet spot is a market actively traded on both — that's when the spread is
+actually capturable.
 
 ## Knobs
 
