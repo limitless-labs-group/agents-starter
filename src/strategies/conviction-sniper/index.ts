@@ -21,7 +21,7 @@
 
 import { BaseStrategy, StrategyConfig, TradeDecision, StrategyStats } from '../base-strategy.js';
 import { LimitlessClient } from '../../core/limitless/markets.js';
-import { TradingClient } from '../../core/limitless/trading.js';
+import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
 import { HermesClient } from '../../core/price-feeds/hermes.js';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -66,7 +66,7 @@ export class ConvictionSniperStrategy extends BaseStrategy {
 
     constructor(
         config: StrategyConfig,
-        deps: { limitless: LimitlessClient; trading: TradingClient }
+        deps: { limitless: LimitlessClient; trading: SDKTradingClient }
     ) {
         super(config, deps);
         this.hermes = new HermesClient();

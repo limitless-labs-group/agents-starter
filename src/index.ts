@@ -1,10 +1,8 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-import { getWallet } from './core/wallet.js';
 import { LimitlessClient } from './core/limitless/markets.js';
-import { OrderSigner } from './core/limitless/sign.js';
-import { TradingClient } from './core/limitless/trading.js';
+import { SDKTradingClient } from './core/limitless/sdk-trading.js';
 import { approveMarketVenue } from './core/limitless/approve.js';
 import { createStrategy } from './strategies/index.js';
 import { StrategyConfig } from './strategies/base-strategy.js';
@@ -39,10 +37,7 @@ Examples:
         process.exit(0);
     }
 
-    const { client: walletClient, account } = getWallet();
     const limitless = new LimitlessClient();
-    const signer = new OrderSigner(walletClient, account);
-    const trading = new TradingClient(limitless, signer);
 
     try {
         if (command === 'approve') {
@@ -51,6 +46,10 @@ Examples:
             await approveMarketVenue(marketSlug);
 
         } else if (command === 'signal-sniper') {
+            const trading = new SDKTradingClient({
+                privateKey: process.env.PRIVATE_KEY!,
+                apiKey: process.env.LIMITLESS_API_KEY!,
+            });
             const assets = (args[1] || 'bitcoin').split(',').filter(Boolean);
             const betSize = Number(args[2]) || 2;
 
@@ -74,6 +73,11 @@ Examples:
             await strategy.start();
 
         } else if (command === 'complement-arb') {
+            const trading = new SDKTradingClient({
+                privateKey: process.env.PRIVATE_KEY!,
+                apiKey: process.env.LIMITLESS_API_KEY!,
+            });
+
             const config: StrategyConfig = {
                 id: 'arb-1',
                 type: 'cross-market-arb',

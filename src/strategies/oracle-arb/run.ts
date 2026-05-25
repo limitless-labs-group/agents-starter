@@ -24,10 +24,8 @@ process.on('unhandledRejection', (err: any) => {
 import { config } from 'dotenv';
 config();
 
-import { getWallet } from '../../core/wallet.js';
 import { LimitlessClient } from '../../core/limitless/markets.js';
-import { TradingClient } from '../../core/limitless/trading.js';
-import { OrderSigner } from '../../core/limitless/sign.js';
+import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
 import { OracleArbStrategy, type OracleArbConfig } from './index.js';
 import pino from 'pino';
 
@@ -46,20 +44,20 @@ async function main() {
     }
 
     const dryRun = process.env.DRY_RUN !== 'false';
+    process.env.DRY_RUN = dryRun ? 'true' : 'false';
     console.log(`🤖 Oracle Arb Strategy`);
     console.log(`   Mode: ${dryRun ? 'DRY RUN (no trades)' : 'LIVE TRADING'}`);
     console.log(`   Set DRY_RUN=false to enable real orders`);
     console.log();
 
-    // Initialize wallet and clients
-    const { client: walletClient, account } = getWallet();
-    const walletAddress = account.address;
+    const limitless = new LimitlessClient();
+    const trading = new SDKTradingClient({
+        privateKey: process.env.PRIVATE_KEY!,
+        apiKey: process.env.LIMITLESS_API_KEY!,
+    });
+    const walletAddress = trading.getWalletAddress();
 
     logger.info({ address: walletAddress }, 'Wallet initialized');
-
-    const limitless = new LimitlessClient();
-    const signer = new OrderSigner(walletClient, account);
-    const trading = new TradingClient(limitless, signer);
 
     // Strategy configuration
     const strategyConfig: OracleArbConfig = {

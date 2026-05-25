@@ -1,5 +1,5 @@
 import { LimitlessClient } from '../core/limitless/markets.js';
-import { TradingClient } from '../core/limitless/trading.js';
+import { SDKTradingClient } from '../core/limitless/sdk-trading.js';
 import { OrderType } from '../core/limitless/types.js';
 import { pino, Logger } from 'pino';
 
@@ -42,13 +42,13 @@ export abstract class BaseStrategy {
 
     // Shared services
     protected limitless: LimitlessClient;
-    protected trading: TradingClient;
+    protected trading: SDKTradingClient;
 
     constructor(
         protected config: StrategyConfig,
         dependencies: {
             limitless: LimitlessClient;
-            trading: TradingClient;
+            trading: SDKTradingClient;
         }
     ) {
         this.limitless = dependencies.limitless;

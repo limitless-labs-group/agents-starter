@@ -1,10 +1,10 @@
 import { BaseStrategy, StrategyConfig } from './base-strategy.js';
 import { LimitlessClient } from '../core/limitless/markets.js';
-import { TradingClient } from '../core/limitless/trading.js';
+import { SDKTradingClient } from '../core/limitless/sdk-trading.js';
 
 type StrategyConstructor = new (
     config: StrategyConfig,
-    deps: { limitless: LimitlessClient; trading: TradingClient }
+    deps: { limitless: LimitlessClient; trading: SDKTradingClient }
 ) => BaseStrategy;
 
 const registry = new Map<string, StrategyConstructor>();
@@ -24,7 +24,7 @@ registerStrategy('oracle-arb', OracleArbStrategy);
 
 export function createStrategy(
     config: StrategyConfig,
-    deps: { limitless: LimitlessClient; trading: TradingClient }
+    deps: { limitless: LimitlessClient; trading: SDKTradingClient }
 ): BaseStrategy {
     const cls = registry.get(config.type);
     if (!cls) {
