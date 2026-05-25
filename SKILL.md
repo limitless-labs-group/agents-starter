@@ -581,7 +581,7 @@ Fund the wallet with USDC on Base chain:
 Limitless's current auth method is a **scoped API token** signed with HMAC.
 Get one from the UI (one-time, ~20s):
 
-1. Go to [limitless.exchange](https://limitless.exchange) and connect your wallet (MetaMask is fine).
+1. Go to [limitless.exchange](https://limitless.exchange) and connect your wallet.
 2. Open the API token modal → **"API Tokens"** tab → **Derive**.
 3. Copy the `tokenId` and `secret` → set as `LMTS_TOKEN_ID` and `LMTS_TOKEN_SECRET`.
 
