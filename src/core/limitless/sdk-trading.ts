@@ -261,9 +261,10 @@ export class SDKTradingClient {
       return res;
     }
 
-    // GTC / FAK: size in contracts, price as decimal.
-    // SDK's OrderBuilder tick-aligns automatically.
-    const size = usdAmount / price;
+    // GTC / FAK: size in contracts, price as decimal. Round to the 0.001
+    // share step — the SDK validates size divisibility and rejects raw float
+    // divisions like usdAmount/price (e.g. 4.9597) that miss the grid.
+    const size = Math.round((usdAmount / price) * 1000) / 1000;
     const res = await this.orderClient.createOrder({
       tokenId,
       price,
