@@ -497,9 +497,10 @@ src/
 │   │   ├── index.ts                   # SignalSniperStrategy — CoinGecko momentum trading
 │   │   ├── run.ts                     # Standalone runner with dry-run support
 │   │   └── learnings.ts              # Trade logging, win/loss tracking, suggestions
-│   └── cross-market-arb/
-│       ├── index.ts                   # ComplementArbStrategy — YES+NO < $1 arbitrage
-│       └── run.ts                     # Standalone runner
+│   └── replicator/
+│       ├── index.ts                   # Cross-venue MM loop (Polymarket → Limitless)
+│       ├── hedger.ts                  # Flattens exposure with FAK buys on Polymarket
+│       └── run.ts                     # Standalone runner (npm run replicator)
 ```
 
 ### Module Dependency Graph
@@ -523,7 +524,7 @@ markets.ts (LimitlessClient) ───┤
                     │
           ┌─────────┴──────────┐
           ▼                    ▼
-   signal-sniper/       cross-market-arb/
+   signal-sniper/       replicator/
           │
           ▼
    learnings.ts ──→ iterate.ts
@@ -2730,30 +2731,6 @@ All contracts are on **Base chain** (chainId: `8453`).
 4. Filter to CLOB markets expiring within 2 hours
 5. Calculate fair value: `confidence = 0.50 + |percentFromStrike| * 40` (capped at 0.95)
 6. Compare fair value against market price → if edge > threshold, trade
-
----
-
-### Binary Complement Arb (`cross-market-arb`)
-
-**Concept:** In a binary market, YES + NO must equal $1.00 at resolution. If you can buy both sides for less than $1.00, you're guaranteed a profit regardless of outcome.
-
-**Example:** YES = $0.45, NO = $0.48. Total cost = $0.93. Buy both → guaranteed $1.00 at resolution → $0.07 profit (7.5% return).
-
-**Edge exploited:** Market maker spread inefficiency, thin liquidity, or momentary pricing dislocations.
-
-**Best market types:** Any binary CLOB market with thin liquidity.
-
-**Configuration:**
-
-| Env Variable | Default | Description |
-|-------------|---------|-------------|
-| `ARB_BET_SIZE` | `10` | Total USD per arb (split across YES + NO) |
-| `ARB_MIN_SPREAD` | `3` | Minimum profit % to trigger |
-| `ARB_SCAN_INTERVAL` | `30000` | Scan interval in ms |
-
-**Risk profile:** Low (guaranteed profit if both sides fill). Main risk is partial fills — getting only one side means directional exposure.
-
-**Tick interval:** 30 seconds (configurable).
 
 ---
 

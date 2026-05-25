@@ -70,7 +70,7 @@ Three strategies are included as starting points. They demonstrate different app
 
 **Signal Sniper** (`npm run signal-sniper`) — Simpler approach using CoinGecko price data. Finds prediction markets where the current spot price creates an edge against market odds. Good starting point for understanding the strategy framework.
 
-**Cross-Market Arb** (`npm run complement-arb`, also `npm run cross-market-arb`) — Scans for pricing inefficiencies where YES + NO < $1.00. Experimental — demonstrates the complement arbitrage concept. The strategy lives in `src/strategies/cross-market-arb/`; both script names point at the same runner.
+**Replicator** (`npm run replicator`) — Cross-venue market-making: mirrors Polymarket's live orderbook onto Limitless as resting BUY quotes and hedges fills back on Polymarket (FAK) to stay delta-flat. Earns the spread between venues. See [`src/strategies/replicator/TUTORIAL.md`](src/strategies/replicator/TUTORIAL.md).
 
 **Build your own** — Extend `BaseStrategy` with a `tick()` method that returns trade decisions. The base class handles the execution loop, order submission, and PM2 lifecycle. See `src/strategies/oracle-arb/` for the most complete example.
 
@@ -85,7 +85,7 @@ src/
     base-strategy.ts    # Strategy base class with tick loop
     oracle-arb/         # Oracle arbitrage strategy
     signal-sniper/      # CoinGecko momentum strategy
-    cross-market-arb/   # Binary complement arb
+    replicator/         # Cross-venue market-making (Polymarket ↔ Limitless)
   dashboard.ts          # Analytics dashboard server
 ```
 

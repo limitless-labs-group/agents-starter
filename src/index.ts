@@ -24,13 +24,11 @@ Usage:
 
 Commands:
   signal-sniper [assets] [bet-size]   Run CoinGecko momentum strategy
-  complement-arb                       Run YES+NO < $1 arb scanner
   approve <market-slug>                Approve tokens for a market
   iterate [report|analyze|markets]     Strategy analysis & iteration
 
 Examples:
   npm start signal-sniper bitcoin,ethereum 2
-  npm start complement-arb
   npm start approve my-market-slug
   npm start iterate analyze
         `);
@@ -61,30 +59,6 @@ Examples:
                 minConfidence: 0.7,
                 maxPositionUsd: betSize,
                 edgeThresholdPercent: 10
-            };
-
-            const strategy = createStrategy(config, { limitless, trading });
-
-            process.on('SIGINT', async () => {
-                await strategy.stop();
-                process.exit(0);
-            });
-
-            await strategy.start();
-
-        } else if (command === 'complement-arb') {
-            const trading = new SDKTradingClient({
-                privateKey: process.env.PRIVATE_KEY!,
-                apiKey: process.env.LIMITLESS_API_KEY!,
-            });
-
-            const config: StrategyConfig = {
-                id: 'arb-1',
-                type: 'cross-market-arb',
-                enabled: true,
-                maxPositionUsd: parseFloat(args[1] || '10'),
-                minSpreadPercent: parseFloat(args[2] || '3'),
-                scanIntervalMs: 30000,
             };
 
             const strategy = createStrategy(config, { limitless, trading });
