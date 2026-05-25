@@ -81,6 +81,19 @@ INFO hedge filled                       { buyUsdc: '2.10' }
 
 Ctrl-C → the bot cancels every resting Limitless order on the way out.
 
+## Measuring it — is this actually good?
+
+Every run writes a JSONL log to `./data/` (orders, per-tick exposure snapshots,
+hedges) and prints a live `status` heartbeat. After a run, summarize it:
+
+```bash
+npm run replicator:analyze        # latest run in ./data
+```
+
+You get: orders placed, fills inferred from Limitless balance deltas, how flat
+the book stayed (the health signal), and hedges fired. Use it to tell whether a
+pair/margin combo actually fills and stays delta-neutral before trusting it.
+
 ## Why pick a *liquid* pair
 
 Quote inside a thin or skewed book and two things go wrong: nothing fills (no

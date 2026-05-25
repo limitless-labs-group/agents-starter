@@ -18,6 +18,7 @@ import { pino } from 'pino';
 import type { Client } from '@limitless-exchange/sdk';
 import type { PolymarketAdapter } from '../../core/polymarket/client.js';
 import type { QuoteFeed } from './quote-feed.js';
+import type { Recorder } from './recorder.js';
 import type { MarketPair, ReplicatorSettings } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'hedger' });
@@ -113,11 +114,33 @@ export async function hedgeOnce(
   polyPositions: PolyPositionsMap,
   poly: PolymarketAdapter,
   settings: ReplicatorSettings,
+  recorder?: Recorder,
 ): Promise<void> {
   for (const pair of pairs) {
     const lm = lmtsPositions[pair.limitlessSlug] ?? { yes: 0, no: 0 };
     const pm = polyPositions.get(pair.polymarketSlug) ?? { yes: 0, no: 0 };
     const net = lm.yes - lm.no + (pm.yes - pm.no);
+
+    // Heartbeat + data point every tick, hedge or not — this is the signal
+    // for "is the strategy staying flat / making money?".
+    logger.info(
+      {
+        slug: pair.limitlessSlug,
+        net: net.toFixed(2),
+        lmts: `${lm.yes.toFixed(1)}/${lm.no.toFixed(1)}`,
+        poly: `${pm.yes.toFixed(1)}/${pm.no.toFixed(1)}`,
+      },
+      'status',
+    );
+    recorder?.record({
+      kind: 'snapshot',
+      pair: pair.polymarketSlug,
+      net,
+      lmtsYes: lm.yes,
+      lmtsNo: lm.no,
+      polyYes: pm.yes,
+      polyNo: pm.no,
+    });
 
     const quote = feed.getQuote(pair.polymarketSlug);
     const decision = decideHedge({
@@ -146,7 +169,16 @@ export async function hedgeOnce(
       },
       'HEDGE',
     );
-    await poly.hedgeBuy(assetId, decision.notionalUsdc);
+    const ok = await poly.hedgeBuy(assetId, decision.notionalUsdc);
+    recorder?.record({
+      kind: 'hedge',
+      pair: pair.polymarketSlug,
+      buy: decision.buyYes ? 'YES' : 'NO',
+      shares: decision.amountShares,
+      price: decision.pricePerShare,
+      usdc: decision.notionalUsdc,
+      success: ok,
+    });
   }
 }
 
@@ -196,6 +228,7 @@ export async function runHedger(
   poly: PolymarketAdapter,
   settings: ReplicatorSettings,
   signal: AbortSignal,
+  recorder?: Recorder,
 ): Promise<void> {
   logger.info({ intervalSec: settings.hedgeIntervalSec }, 'hedger started');
 
@@ -223,7 +256,7 @@ export async function runHedger(
             return {} as LimitlessPositions;
           });
       const pm = await poly.getPositions(pairs);
-      await hedgeOnce(pairs, feed, lmts, pm, poly, settings);
+      await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder);
     } catch (err) {
       logger.warn({ err: (err as Error).message }, 'hedger tick failed');
     }

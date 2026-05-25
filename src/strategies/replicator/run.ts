@@ -25,6 +25,7 @@ import { QuoteFeed } from './quote-feed.js';
 import { runReplicator } from './index.js';
 import { runHedger } from './hedger.js';
 import { loadSettings } from './config.js';
+import { Recorder } from './recorder.js';
 import type { MarketPair } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'replicator-main' });
@@ -129,13 +130,24 @@ export async function main(): Promise<void> {
     yesAssets.add(pair.polyYesAssetId);
   }
 
+  // -- Data capture: one JSONL file per run (orders, snapshots, hedges) --
+  const recorder = new Recorder();
+  recorder.record({
+    kind: 'run',
+    dryRun: settings.dryRun,
+    pairs: settings.pairs.length,
+    orderSize: settings.orderSize,
+    marginBps: settings.marginBps,
+  });
+  logger.info({ file: recorder.filePath }, 'recording run data (npm run replicator:analyze)');
+
   // -- Spawn tasks under a shared AbortController --
   const ac = new AbortController();
   const tasks: Promise<void>[] = [
     runPolyWs(feed, assetToSlug, yesAssets, ac.signal),
-    runHedger(settings.pairs, feed, sdk, poly, settings, ac.signal),
+    runHedger(settings.pairs, feed, sdk, poly, settings, ac.signal, recorder),
     ...settings.pairs.map((pair) =>
-      runReplicator(pair, feed, trading, settings, ac.signal),
+      runReplicator(pair, feed, trading, settings, ac.signal, recorder),
     ),
   ];
 
@@ -155,6 +167,8 @@ export async function main(): Promise<void> {
 
   // Let all tasks settle their finally{} blocks (replicator cancelAll on shutdown)
   await Promise.allSettled(tasks);
+  recorder.close();
+  logger.info({ file: recorder.filePath }, 'run data saved');
   logger.info('bye.');
 }
 
