@@ -53,7 +53,6 @@ async function main() {
     const limitless = new LimitlessClient();
     const trading = new SDKTradingClient({
         privateKey: process.env.PRIVATE_KEY!,
-        apiKey: process.env.LIMITLESS_API_KEY!,
     });
     const walletAddress = trading.getWalletAddress();
 

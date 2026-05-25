@@ -22,7 +22,10 @@ export interface MarketPair {
 
 export interface ReplicatorSettings {
   privateKey: string; // 0x... — must be funded on Base AND Polygon
-  lmtsApiKey: string;
+  // Limitless auth. Prefer scoped HMAC token (tokenId + secret); plain API
+  // keys are deprecated. Exactly one of these is populated by config loading.
+  hmacCredentials?: { tokenId: string; secret: string };
+  lmtsApiKey?: string; // legacy X-API-Key fallback
   polyFunder: string; // Polymarket UI-shown address (Safe or deposit wallet)
   // User-facing: 2 = legacy Safe/proxy (created before CLOB V2),
   //              3 = new deposit wallet (created after CLOB V2).

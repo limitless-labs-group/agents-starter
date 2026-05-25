@@ -45,13 +45,53 @@ const logger = pino({
 /**
  * Config for constructing an SDKTradingClient.
  *
- * Pulls sensible defaults from the same env vars the legacy client uses, so
- * dropping this into an existing strategy requires no env changes.
+ * Auth: prefer **scoped HMAC token credentials** (`hmacCredentials`). Plain
+ * API keys are deprecated on Limitless (no longer issued) — `apiKey` is kept
+ * only as a legacy fallback for users who already hold one. You must provide
+ * one or the other.
+ *
+ * @see https://docs.limitless.exchange/developers/authentication
  */
 export interface SDKTradingConfig {
   privateKey: string;
-  apiKey: string;
+  /**
+   * Scoped API-token credentials for HMAC request signing (current method).
+   * Derive via `POST /auth/api-tokens/derive`; you receive `{ tokenId, secret }`.
+   */
+  hmacCredentials?: { tokenId: string; secret: string };
+  /**
+   * Legacy `X-API-Key` value. Deprecated — only used when `hmacCredentials`
+   * is absent. New Limitless users cannot obtain one.
+   */
+  apiKey?: string;
   apiBaseUrl?: string;
+}
+
+/**
+ * Resolve auth from explicit config or environment, preferring HMAC.
+ *
+ * Env precedence: `LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET` (HMAC) over
+ * `LIMITLESS_API_KEY` (legacy).
+ */
+export function resolveAuth(config: SDKTradingConfig): {
+  hmacCredentials?: { tokenId: string; secret: string };
+  apiKey?: string;
+} {
+  if (config.hmacCredentials) {
+    return { hmacCredentials: config.hmacCredentials };
+  }
+  const envTokenId = process.env.LMTS_TOKEN_ID;
+  const envTokenSecret = process.env.LMTS_TOKEN_SECRET;
+  if (envTokenId && envTokenSecret) {
+    return { hmacCredentials: { tokenId: envTokenId, secret: envTokenSecret } };
+  }
+  if (config.apiKey) {
+    return { apiKey: config.apiKey };
+  }
+  if (process.env.LIMITLESS_API_KEY) {
+    return { apiKey: process.env.LIMITLESS_API_KEY };
+  }
+  return {};
 }
 
 /**
@@ -79,17 +119,33 @@ export class SDKTradingClient {
     if (!config.privateKey) {
       throw new Error('SDKTradingClient: privateKey is required');
     }
-    if (!config.apiKey) {
-      throw new Error('SDKTradingClient: apiKey is required');
+
+    const auth = resolveAuth(config);
+    if (!auth.hmacCredentials && !auth.apiKey) {
+      throw new Error(
+        'SDKTradingClient: no auth configured. Provide hmacCredentials ' +
+          '({ tokenId, secret }) — preferred — or set LMTS_TOKEN_ID + ' +
+          'LMTS_TOKEN_SECRET in the environment. Legacy: apiKey / LIMITLESS_API_KEY.',
+      );
     }
 
     const http = new HttpClient({
       baseURL: config.apiBaseUrl || process.env.LIMITLESS_API_URL,
-      apiKey: config.apiKey,
+      ...(auth.hmacCredentials
+        ? { hmacCredentials: auth.hmacCredentials }
+        : { apiKey: auth.apiKey }),
     });
 
     this.client = Client.fromHttpClient(http);
     this.wallet = new ethers.Wallet(config.privateKey);
+
+    if (auth.apiKey && !auth.hmacCredentials) {
+      logger.warn(
+        'SDKTradingClient: using deprecated X-API-Key auth. Limitless no ' +
+          'longer issues these — migrate to a scoped HMAC token ' +
+          '(LMTS_TOKEN_ID + LMTS_TOKEN_SECRET). See docs.limitless.exchange/developers/authentication.',
+      );
+    }
 
     // Pass the private key string (not the Wallet object) to side-step the
     // SDK's CJS Wallet type vs our ESM Wallet type mismatch. The SDK

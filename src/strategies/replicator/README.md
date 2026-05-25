@@ -41,7 +41,8 @@ between the two venues plus any Limitless maker rebates.
 npm install
 cp .env.example .env
 chmod 600 .env
-# Edit .env — set PRIVATE_KEY + LIMITLESS_API_KEY (DRY_RUN already true).
+# Edit .env — set PRIVATE_KEY + a Limitless scoped HMAC token
+# (LMTS_TOKEN_ID + LMTS_TOKEN_SECRET). DRY_RUN is already true.
 
 # 2. Pick a market pair. Both venues need an *equivalent* market — same
 #    asset, same threshold, same UTC moment, same data source.
@@ -143,7 +144,8 @@ DRY_RUN=false npm run replicator
 The boot sequence now runs both auth probes:
 
 - **Limitless:** the SDK lazily fetches your profile when the first order is
-  signed. Errors here = wrong `LIMITLESS_API_KEY` or revoked.
+  signed. Errors here = bad HMAC token (`LMTS_TOKEN_ID` / `LMTS_TOKEN_SECRET`)
+  or, if you're on the legacy path, a revoked `LIMITLESS_API_KEY`.
 - **Polymarket:** `createOrDeriveApiKey()` runs before quoting starts.
   `Polymarket auth probe failed` = wrong `poly_signature_type` (flip 2 ↔ 3)
   or wrong `poly_funder`.
@@ -255,13 +257,16 @@ Wrong `poly_signature_type` for your wallet, OR `poly_funder` doesn't match the
 address your Polymarket UI shows. Flip `poly_signature_type` between 2 and 3.
 Verify `poly_funder` literally matches the address in Polymarket's UI.
 
-### `Invalid or revoked API key` (Limitless)
-Your `LIMITLESS_API_KEY` is being rejected by the X-API-Key auth path that
-this codebase uses. Possibilities:
-- The key is stale / revoked → regenerate.
-- The key is for a different auth method (Limitless's API also supports HMAC,
-  Identity, cookie). Confirm in your Limitless account that the key you copied
-  is the X-API-Key variant.
+### `Invalid or revoked API key` / `401` (Limitless)
+Your Limitless auth is being rejected. Limitless's current auth method is a
+**scoped HMAC token** — plain API keys are deprecated and no longer issued.
+- **Recommended:** set `LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET` (derive via
+  `POST /auth/api-tokens/derive`, see
+  [docs.limitless.exchange/developers/authentication](https://docs.limitless.exchange/developers/authentication)).
+  The SDK signs every request with HMAC automatically.
+- **Legacy:** if you still hold an old `lmts`-era API key it works via
+  `LIMITLESS_API_KEY` (X-API-Key header) — but if it 401s, it's likely
+  revoked or never had the right scope. Migrate to an HMAC token.
 
 In DRY_RUN this only shows up when polling Limitless positions — the hedger
 now skips that call in DRY_RUN so you can develop without it. But you'll hit

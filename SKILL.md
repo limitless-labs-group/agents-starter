@@ -42,9 +42,18 @@ cp .env.example .env
 Edit `.env` and set these required values. Ask your user for them if not provided:
 
 ```
-PRIVATE_KEY=0x...          # Base chain wallet private key (dedicated trading wallet)
-LIMITLESS_API_KEY=lmts_... # From limitless.exchange -> Profile -> API Keys
+PRIVATE_KEY=0x...           # Base chain wallet private key (dedicated trading wallet)
+LMTS_TOKEN_ID=...           # Limitless scoped HMAC token id
+LMTS_TOKEN_SECRET=...       # Limitless scoped HMAC token secret (base64)
 ```
+
+Limitless authenticates with **scoped HMAC tokens** (`lmts-api-key` /
+`lmts-timestamp` / `lmts-signature` headers, built by the SDK). Plain API keys
+are deprecated and no longer issued. Derive a token via
+`POST /auth/api-tokens/derive` — see
+[docs.limitless.exchange/developers/authentication](https://docs.limitless.exchange/developers/authentication).
+(Legacy users with an old `LIMITLESS_API_KEY` can still use it; the code falls
+back to the X-API-Key header when no HMAC token is set.)
 
 The wallet needs USDC (collateral) and a small amount of ETH (gas, ~$1-2) on Base chain.
 
@@ -567,12 +576,17 @@ Fund the wallet with USDC on Base chain:
 
 **Recommended starting balance:** $10–$50 USDC. You can always add more later.
 
-### Step 3: Get a Limitless API Key
+### Step 3: Get a Limitless scoped HMAC token
 
-1. Go to [limitless.exchange](https://limitless.exchange)
-2. Connect your trading wallet
-3. Navigate to Profile → API Keys
-4. Click "Generate" and copy the key (starts with `lmts_`)
+Limitless's current auth method is a **scoped API token** signed with HMAC.
+Derive one via `POST /auth/api-tokens/derive` (pass a Privy identity token in
+the `identity` header as `Bearer <token>`). The response gives you a `tokenId`
+and `secret` — set them as `LMTS_TOKEN_ID` and `LMTS_TOKEN_SECRET`. This is a
+one-time setup. Full flow:
+[docs.limitless.exchange/developers/authentication](https://docs.limitless.exchange/developers/authentication).
+
+Legacy: plain API keys (`LIMITLESS_API_KEY`, X-API-Key header) are deprecated
+and no longer issued. If you already hold one it still works as a fallback.
 
 ### Step 4: Configure Environment
 
@@ -585,7 +599,9 @@ Edit `.env` with your values:
 ```bash
 # ─── REQUIRED ─────────────────────────────────────────────
 PRIVATE_KEY=0x...your-64-char-hex-private-key
-LIMITLESS_API_KEY=lmts_...your-api-key
+LMTS_TOKEN_ID=your-token-id              # scoped HMAC token (current method)
+LMTS_TOKEN_SECRET=your-base64-secret
+# LIMITLESS_API_KEY=...                   # legacy X-API-Key — deprecated fallback
 
 # ─── SAFETY ───────────────────────────────────────────────
 DRY_RUN=true                    # ALWAYS start with true. Set false only after validation.
@@ -1331,7 +1347,9 @@ go get github.com/limitless-labs-group/limitless-exchange-go-sdk@v1.0.6
 
 All three SDKs expose a root `Client` class that composes every domain service (markets, orders, portfolio, API tokens, partner accounts, delegated orders).
 
-**Personal trading (API key):**
+Auth: **scoped HMAC tokens are the current method for everyone** — traders, bots, and partners alike. Plain API keys are deprecated and no longer issued; the block below is legacy-only.
+
+**Legacy (deprecated X-API-Key — only if you already hold a key):**
 
 ```typescript
 // TypeScript
@@ -1362,7 +1380,7 @@ client := limitless.NewClient(
 )
 ```
 
-**Partner / programmatic (HMAC scoped token):**
+**All integrations (scoped HMAC token — current method, use this):**
 
 ```typescript
 // TypeScript
@@ -2287,7 +2305,7 @@ ws_client = WebSocketClient(config)
 ```go
 // Go
 ws := limitless.NewWebSocketClient(
-    limitless.WithWebSocketAPIKey("lmts_your_key_here"),
+    limitless.WithWebSocketAPIKey("your-ws-api-key"),
     limitless.WithAutoReconnect(true),
     limitless.WithReconnectDelay(1 * time.Second),
 )
