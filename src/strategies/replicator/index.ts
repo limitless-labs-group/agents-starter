@@ -116,7 +116,7 @@ export async function runReplicator(
 
   try {
     while (!signal.aborted) {
-      await feed.nextUpdate(slug);
+      await feed.nextUpdate(slug, signal);
       if (signal.aborted) break;
 
       const quote = feed.getQuote(slug);

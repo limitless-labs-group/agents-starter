@@ -269,7 +269,12 @@ export class PolymarketAdapter {
       );
       const success =
         typeof resp === 'object' && resp !== null && (resp as { success?: boolean }).success === true;
-      if (!success) {
+      if (success) {
+        logger.info(
+          { assetId: assetId.slice(0, 8) + '…', buyUsdc: buyUsdc.toFixed(2) },
+          'hedge filled',
+        );
+      } else {
         logger.info({ resp }, 'hedge rejected');
       }
       return success;

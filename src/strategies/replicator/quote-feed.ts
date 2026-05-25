@@ -58,19 +58,29 @@ export class QuoteFeed {
   }
 
   /**
-   * Resolves on the next `update()` for this slug. Re-awaitable.
+   * Resolves on the next `update()` for this slug, OR when `signal` aborts.
+   * Re-awaitable. The abort path is load-bearing: on shutdown the WS closes
+   * and stops pushing updates, so without it a consumer loop would block here
+   * forever and never reach its cleanup (e.g. cancel-all).
    *
    * @example
-   *   while (running) {
-   *     await feed.nextUpdate(slug);
+   *   while (!signal.aborted) {
+   *     await feed.nextUpdate(slug, signal);
    *     const q = feed.getQuote(slug);
    *     ...
    *   }
    */
-  nextUpdate(slug: string): Promise<void> {
+  nextUpdate(slug: string, signal?: AbortSignal): Promise<void> {
     this.ensureSlug(slug);
+    if (signal?.aborted) return Promise.resolve();
     return new Promise<void>((resolve) => {
-      this.waiters.get(slug)!.add(resolve);
+      const set = this.waiters.get(slug)!;
+      const settle = () => {
+        set.delete(settle);
+        resolve();
+      };
+      set.add(settle);
+      signal?.addEventListener('abort', settle, { once: true });
     });
   }
 

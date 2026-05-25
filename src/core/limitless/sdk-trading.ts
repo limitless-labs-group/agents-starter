@@ -237,19 +237,24 @@ export class SDKTradingClient {
     // Map our orderType string → SDK OrderType enum + branch on shape.
     // FOK uses USD notional (makerAmount as dollars); GTC/FAK use price+size.
     if (orderType === 'FOK') {
-      return await this.orderClient.createOrder({
+      const res = await this.orderClient.createOrder({
         tokenId,
         side: Side.BUY,
         orderType: OrderType.FOK,
         makerAmount: usdAmount, // SDK handles micro-USDC scaling internally
         marketSlug,
       } as any);
+      logger.info(
+        { marketSlug, side, price, usdAmount, orderType, orderId: (res as OrderResponse)?.order?.id },
+        'createOrder placed',
+      );
+      return res;
     }
 
     // GTC / FAK: size in contracts, price as decimal.
     // SDK's OrderBuilder tick-aligns automatically.
     const size = usdAmount / price;
-    return await this.orderClient.createOrder({
+    const res = await this.orderClient.createOrder({
       tokenId,
       price,
       size,
@@ -258,6 +263,11 @@ export class SDKTradingClient {
       marketSlug,
       ...(orderType === 'GTC' && postOnly ? { postOnly: true } : {}),
     } as any);
+    logger.info(
+      { marketSlug, side, price, size, orderType, orderId: (res as OrderResponse)?.order?.id },
+      'createOrder placed',
+    );
+    return res;
   }
 
   /** Cancel a single order by ID. */
@@ -275,6 +285,8 @@ export class SDKTradingClient {
       logger.info({ marketSlug }, '[DRY_RUN] would cancelAll');
       return { message: 'dry-run' };
     }
-    return await this.orderClient.cancelAll(marketSlug);
+    const res = await this.orderClient.cancelAll(marketSlug);
+    logger.debug({ marketSlug }, 'cancelAll done');
+    return res;
   }
 }
