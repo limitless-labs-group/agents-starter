@@ -8,8 +8,8 @@
  * Usage:
  *   npm run replicator:find-pairs
  *
- * Requires LIMITLESS_API_KEY in .env (the Limitless active-markets endpoint
- * is authed). Polymarket's gamma-api is public.
+ * No auth required — both venues' active-market listings are public
+ * (Limitless /markets/active and Polymarket's gamma-api).
  *
  * ⚠ Title similarity is a starting hint. The replicator only hedges
  * correctly when BOTH markets resolve on identical criteria — same asset,
@@ -113,13 +113,6 @@ interface Candidate {
 }
 
 async function main(): Promise<void> {
-  if (!process.env.LIMITLESS_API_KEY) {
-    console.error('ERROR: LIMITLESS_API_KEY not set.');
-    console.error('  This script needs your API key to list active Limitless markets.');
-    console.error('  Add it to .env then re-run.');
-    process.exit(1);
-  }
-
   console.log('Fetching active markets from both venues…');
   const limitless = new LimitlessClient();
   // Limitless API caps limit=25; paginate (page is 1-indexed).
