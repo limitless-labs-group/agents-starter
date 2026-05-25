@@ -1,9 +1,14 @@
 /**
- * find-pairs — list candidate cross-venue market pairs for the replicator.
+ * find-pairs — shortlist liquid cross-venue market pairs for the replicator.
  *
  * Queries Limitless's active CLOB markets and Polymarket's active binary
- * markets, scores them by title-token Jaccard similarity, and prints the top
- * matches as paste-ready YAML for `replicator.config.yaml`.
+ * markets, matches them by title-token similarity, then **filters and ranks
+ * by liquidity** so you don't end up quoting inside a thin, skewed book (no
+ * fills, lopsided capital). Prints a shortlist as paste-ready YAML.
+ *
+ * "Not thin" here means: Polymarket has a live orderbook with a tight spread
+ * and a balanced price (so both YES/NO legs are reasonably sized), and the
+ * Limitless market has some traded volume (so your resting quotes can fill).
  *
  * Usage:
  *   npm run replicator:find-pairs
@@ -23,6 +28,14 @@ import { LimitlessClient } from '../../core/limitless/markets.js';
 const POLYMARKET_GAMMA_API = 'https://gamma-api.polymarket.com';
 const TITLE_SIMILARITY_THRESHOLD = 0.4;
 const TOP_N = 10;
+
+// Liquidity gates (tune to taste). A candidate must clear all of these to be
+// considered "tradeable" rather than thin.
+const MIN_POLY_LIQUIDITY = 1000; // USD resting in the Polymarket CLOB book
+const MAX_POLY_SPREAD = 0.05; // max bid/ask gap we'll quote inside (5 cents)
+const PRICE_MIN = 0.1; // avoid extreme/skewed books (e.g. 7% longshots)
+const PRICE_MAX = 0.9; //   where one leg locks ~all the capital
+const MIN_LMTS_VOLUME = 100; // some traded volume on the Limitless side
 
 // Generic prediction-market noise — drop before computing similarity so the
 // signal-bearing tokens (asset names, numbers, dates) dominate the score.
@@ -50,11 +63,22 @@ function jaccard(a: Set<string>, b: Set<string>): number {
   return inter / (a.size + b.size - inter);
 }
 
+function num(v: unknown): number {
+  const n = typeof v === 'string' ? parseFloat(v) : typeof v === 'number' ? v : NaN;
+  return Number.isFinite(n) ? n : 0;
+}
+
 interface PolyMarket {
   slug: string;
   question: string;
   eventSlug: string;
   eventTitle: string;
+  liquidity: number;
+  volume24hr: number;
+  spread: number;
+  bestBid: number;
+  bestAsk: number;
+  enableOrderBook: boolean;
 }
 
 interface PolyEventApi {
@@ -67,6 +91,12 @@ interface PolyEventApi {
     active?: boolean;
     archived?: boolean;
     closed?: boolean;
+    liquidity?: string | number;
+    volume24hr?: string | number;
+    spread?: string | number;
+    bestBid?: string | number;
+    bestAsk?: string | number;
+    enableOrderBook?: boolean;
   }>;
 }
 
@@ -85,7 +115,7 @@ async function fetchPolymarketMarkets(): Promise<PolyMarket[]> {
         if (m.archived || m.closed || m.active === false) continue;
         let outcomes: string[] = [];
         try {
-          outcomes = JSON.parse(m.outcomes || '[]');
+          outcomes = JSON.parse((m.outcomes as string) || '[]');
         } catch {
           continue;
         }
@@ -95,6 +125,12 @@ async function fetchPolymarketMarkets(): Promise<PolyMarket[]> {
           question: m.question,
           eventSlug: e.slug,
           eventTitle: e.title,
+          liquidity: num(m.liquidity),
+          volume24hr: num(m.volume24hr),
+          spread: num(m.spread),
+          bestBid: num(m.bestBid),
+          bestAsk: num(m.bestAsk),
+          enableOrderBook: m.enableOrderBook !== false,
         });
       }
     }
@@ -106,10 +142,40 @@ async function fetchPolymarketMarkets(): Promise<PolyMarket[]> {
 interface Candidate {
   lmtsSlug: string;
   lmtsTitle: string;
+  lmtsVolume: number;
   polySlug: string;
   polyTitle: string;
   polyEventSlug: string;
   score: number;
+  poly: PolyMarket;
+}
+
+/** Does the Polymarket book clear the liquidity gates? */
+function isLiquid(c: Candidate): boolean {
+  const mid = (c.poly.bestBid + c.poly.bestAsk) / 2;
+  return (
+    c.poly.enableOrderBook &&
+    c.poly.liquidity >= MIN_POLY_LIQUIDITY &&
+    c.poly.spread > 0 &&
+    c.poly.spread <= MAX_POLY_SPREAD &&
+    mid >= PRICE_MIN &&
+    mid <= PRICE_MAX &&
+    c.lmtsVolume >= MIN_LMTS_VOLUME
+  );
+}
+
+function printCandidate(c: Candidate): void {
+  const mid = ((c.poly.bestBid + c.poly.bestAsk) / 2).toFixed(2);
+  console.log(`# ── sim=${c.score.toFixed(2)} ────────────────────────────────`);
+  console.log(`# Limitless:  ${c.lmtsTitle}  (vol ${c.lmtsVolume.toFixed(0)})`);
+  console.log(`# Polymarket: ${c.polyTitle}`);
+  console.log(
+    `#   poly: liq $${c.poly.liquidity.toFixed(0)} | 24h vol $${c.poly.volume24hr.toFixed(0)} | ` +
+      `spread ${c.poly.spread.toFixed(3)} | bid/ask ${c.poly.bestBid}/${c.poly.bestAsk} | mid ${mid}`,
+  );
+  console.log(`- polymarket_slug: "${c.polySlug}"`);
+  console.log(`  limitless_slug:  "${c.lmtsSlug}"`);
+  console.log();
 }
 
 async function main(): Promise<void> {
@@ -144,29 +210,32 @@ async function main(): Promise<void> {
       candidates.push({
         lmtsSlug: lmts.slug,
         lmtsTitle: lmts.title,
+        lmtsVolume: num((lmts as { volumeFormatted?: string }).volumeFormatted),
         polySlug: p.slug,
         polyTitle: p.question,
         polyEventSlug: p.eventSlug,
         score: best.score,
+        poly: p,
       });
     }
   }
 
-  candidates.sort((a, b) => b.score - a.score);
-
   if (candidates.length === 0) {
-    console.log('No candidate pairs found above the similarity threshold.');
-    console.log(
-      `  (threshold=${TITLE_SIMILARITY_THRESHOLD}; edit find-pairs.ts to lower it).`,
-    );
-    console.log('  This is common — venues frequently list different events.');
-    console.log('  Browse https://app.limitless.exchange and https://polymarket.com');
-    console.log('  to find genuinely-equivalent markets by hand.');
+    console.log('No title matches found above the similarity threshold.');
+    console.log(`  (threshold=${TITLE_SIMILARITY_THRESHOLD}; venues often list different events.)`);
     return;
   }
 
-  console.log(`Top ${Math.min(candidates.length, TOP_N)} candidate pairs:`);
-  console.log();
+  // Rank liquid candidates by title similarity first (a high score is the
+  // best proxy we have for "actually the same market"), then by Polymarket
+  // book liquidity as a tiebreak. Ranking by liquidity alone floats up
+  // high-volume *false* matches (shared words, different questions). Fall
+  // back to listing thin matches so the run isn't empty-handed.
+  const byMatchThenLiquidity = (a: Candidate, b: Candidate) =>
+    b.score - a.score || b.poly.liquidity - a.poly.liquidity;
+  const liquid = candidates.filter(isLiquid).sort(byMatchThenLiquidity);
+  const thin = candidates.filter((c) => !isLiquid(c)).sort((a, b) => b.score - a.score);
+
   console.log('# ⚠  VERIFY both markets resolve on the SAME criteria before going live.');
   console.log('# Same asset, same threshold, same UTC moment, same data source.');
   console.log('# Title similarity is a hint, not a guarantee of identical resolution.');
@@ -174,18 +243,29 @@ async function main(): Promise<void> {
   console.log('# Paste your chosen pair under `market_pairs:` in ./replicator.config.yaml');
   console.log();
 
-  for (const c of candidates.slice(0, TOP_N)) {
-    console.log(`# ── score=${c.score.toFixed(2)} ──────────────────`);
-    console.log(`# Limitless:  ${c.lmtsTitle}`);
-    console.log(`# Polymarket: ${c.polyTitle}`);
-    console.log(`#   (poly event: ${c.polyEventSlug})`);
-    console.log(`- polymarket_slug: "${c.polySlug}"`);
-    console.log(`  limitless_slug:  "${c.lmtsSlug}"`);
+  if (liquid.length > 0) {
+    console.log(
+      `## ${Math.min(liquid.length, TOP_N)} LIQUID pair(s) ` +
+        `(poly liq ≥ $${MIN_POLY_LIQUIDITY}, spread ≤ ${MAX_POLY_SPREAD}, ` +
+        `price ${PRICE_MIN}-${PRICE_MAX}, lmts vol ≥ ${MIN_LMTS_VOLUME}):`,
+    );
     console.log();
+    for (const c of liquid.slice(0, TOP_N)) printCandidate(c);
+  } else {
+    console.log('## No pairs cleared the liquidity gates.');
+    console.log('#  Loosen the thresholds at the top of find-pairs.ts, or pick from the');
+    console.log('#  thin matches below (expect few/no fills + asymmetric capital).');
+    console.log();
+  }
+
+  if (liquid.length < TOP_N && thin.length > 0) {
+    console.log(`## ${Math.min(thin.length, TOP_N - liquid.length)} thinner title-match(es) (use with caution):`);
+    console.log();
+    for (const c of thin.slice(0, TOP_N - liquid.length)) printCandidate(c);
   }
 }
 
-main().catch((e: any) => {
-  console.error('find-pairs failed:', e?.message || e);
+main().catch((e: unknown) => {
+  console.error('find-pairs failed:', e instanceof Error ? e.message : e);
   process.exit(1);
 });
