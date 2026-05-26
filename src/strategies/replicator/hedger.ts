@@ -241,6 +241,14 @@ export async function runHedger(
   const { recorder, risk, walletAddress, onKill } = hooks;
   logger.info({ intervalSec: settings.hedgeIntervalSec }, 'hedger started');
 
+  // DRY_RUN fill simulation state. Walks the real pipeline through:
+  //   flat → (tick 2) inject Limitless fill → hedger fires hedge → (tick 3+)
+  //   inject the offsetting Poly position → flat (hedged). No real money.
+  const sim = settings.dryRun ? settings.simulateFill : undefined;
+  if (sim) logger.warn({ sim }, 'SIMULATE_FILL active — injecting a synthetic fill into the pipeline');
+  let simTick = 0;
+  let simHedged = false;
+
   while (!signal.aborted) {
     await new Promise<void>((resolve) => {
       const t = setTimeout(resolve, settings.hedgeIntervalSec * 1000);
@@ -265,7 +273,31 @@ export async function runHedger(
             return {} as LimitlessPositions;
           });
       const pm = await poly.getPositions(pairs);
+
+      // -- SIMULATE_FILL (DRY_RUN): inject a synthetic fill on the first pair --
+      if (sim && pairs.length > 0) {
+        simTick++;
+        const pair = pairs[0];
+        if (simTick >= 2) {
+          // The fill: we now hold `shares` of `side` on Limitless.
+          const lm = lmts[pair.limitlessSlug] ?? { yes: 0, no: 0 };
+          if (sim.side === 'YES') lm.yes += sim.shares;
+          else lm.no += sim.shares;
+          lmts[pair.limitlessSlug] = lm;
+          // Once the hedge has fired, reflect the offsetting Poly position so
+          // the book returns to flat (delta-neutral) on subsequent ticks.
+          if (simHedged) {
+            const pmPos = pm.get(pair.polymarketSlug) ?? { yes: 0, no: 0 };
+            if (sim.side === 'YES') pmPos.no += sim.shares;
+            else pmPos.yes += sim.shares;
+            pm.set(pair.polymarketSlug, pmPos);
+          }
+        }
+      }
+
       await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder);
+      // After the first post-fill tick, the hedge has been decided+recorded.
+      if (sim && simTick >= 2) simHedged = true;
 
       // -- Circuit breaker (live only): mark equity, trip on drawdown --
       if (!settings.dryRun && risk) {

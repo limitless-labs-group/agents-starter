@@ -37,5 +37,11 @@ export interface ReplicatorSettings {
   hedgeIntervalSec: number; // seconds between hedge checks
   maxLossUsd: number; // circuit breaker: halt + cancel-all if equity drawdown ≥ this
   dryRun: boolean; // log intents, don't sign or POST
+  /**
+   * DRY_RUN-only: inject a synthetic Limitless fill on the first pair so the
+   * real hedger pipeline (decide → hedge → record) runs end-to-end without a
+   * live taker. Set via SIMULATE_FILL=YES:5 (side:shares). Ignored when live.
+   */
+  simulateFill?: { side: 'YES' | 'NO'; shares: number };
   pairs: MarketPair[];
 }

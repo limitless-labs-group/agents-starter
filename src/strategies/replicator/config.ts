@@ -114,6 +114,17 @@ export function loadSettings(): ReplicatorSettings {
   // Env DRY_RUN overrides YAML; sensible default = false.
   const dryRun = isTruthyEnv(process.env.DRY_RUN) || (raw.dry_run ?? raw.dryRun ?? false);
 
+  // SIMULATE_FILL=YES:5 (DRY_RUN-only) — inject a synthetic fill to exercise
+  // the hedge pipeline end-to-end without a live taker.
+  let simulateFill: ReplicatorSettings['simulateFill'];
+  const simRaw = process.env.SIMULATE_FILL;
+  if (simRaw) {
+    const [sideStr, sharesStr] = simRaw.split(':');
+    const side = sideStr?.toUpperCase() === 'NO' ? 'NO' : 'YES';
+    const shares = Number(sharesStr ?? 5);
+    if (shares > 0) simulateFill = { side, shares };
+  }
+
   return {
     privateKey,
     hmacCredentials,
@@ -128,6 +139,7 @@ export function loadSettings(): ReplicatorSettings {
       process.env.REPLICATOR_MAX_LOSS_USD ?? raw.max_loss_usd ?? raw.maxLossUsd ?? 10,
     ),
     dryRun,
+    simulateFill,
     pairs,
   };
 }

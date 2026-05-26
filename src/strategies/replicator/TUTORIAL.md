@@ -109,6 +109,21 @@ You get: orders placed, fills inferred from Limitless balance deltas, how flat
 the book stayed (the health signal), and hedges fired. Use it to tell whether a
 pair/margin combo actually fills and stays delta-neutral before trusting it.
 
+### See the hedge fire without waiting for a live taker
+
+Illiquid Limitless markets may not fill for a long time. To watch the full
+fill→hedge round-trip end-to-end through the real pipeline (no real money):
+
+```bash
+SIMULATE_FILL=YES:5 DRY_RUN=true npm run replicator     # then Ctrl-C, then:
+npm run replicator:analyze
+```
+
+It injects a synthetic 5-share YES fill on the first pair; the real hedger
+detects the exposure, fires the offsetting NO hedge on Polymarket (logged in
+dry-run), and the book returns to delta-flat — all recorded to `./data`. Handy
+for demos and for sanity-checking the hedge math on a new pair.
+
 ## Why pick a *liquid* pair — and the catch
 
 Quote inside a thin or skewed book and two things go wrong: nothing fills (no
