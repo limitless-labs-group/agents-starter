@@ -51,24 +51,43 @@ npm run replicator:find-pairs
 
 # 3. Configure
 cp src/strategies/replicator/config.example.yaml ./replicator.config.yaml
-#   poly_funder          → the address Polymarket's UI shows (holds your pUSD)
-#   poly_signature_type  → 3 deposit wallet (default) | 2 existing Safe
+#   poly_funder          → your Polymarket DEPOSIT-WALLET address (see below),
+#                          NOT a Gnosis Safe — the CLOB rejects Safe makers
+#   poly_signature_type  → 3 (deposit wallet / POLY_1271) for new API accounts
 #   market_pairs         → paste your verified pair
 #   order_size           → start tiny (e.g. 5)
 
-# 4. Preflight — validate auth, funding, sig type, and the pair resolve
+# 4. Preflight — validate auth, funding, sig type, exchange approval + pair
 npm run replicator:preflight
-#   Exits non-zero if anything's wrong, so this is a safe gate before live.
+#   Exits non-zero if anything's wrong (incl. a Safe funder or an
+#   un-approved exchange), so this is a safe gate before live.
 
-# 5. Dry run — watch it think, sign nothing
+# 5. Approve the market's exchange (one-time, per exchange)
+npm start approve <your-limitless-slug>
+#   Limitless needs USDC (and, for selling, CTF) approved for the market's
+#   exchange contract. Neg-risk markets (sports/election "winner" markets) use
+#   a SEPARATE exchange, so they need their own approve. Preflight tells you
+#   if it's missing.
+
+# 6. Dry run — watch it think, sign nothing
 npm run replicator
 #   Confirm: both markets resolve, Poly WS connects, cancel-replace fires
 #   every tick. Ctrl-C stops and cancels everything.
 
-# 6. Go live — small
+# 7. Go live — small
 #   set dry_run: false (and make sure DRY_RUN isn't set/true in .env), then:
 npm run replicator
 ```
+
+### Polymarket account: use the deposit-wallet flow, not a Safe
+
+Polymarket's CLOB will **reject orders from a Gnosis Safe** ("maker address not
+allowed, please use the deposit wallet flow") — even though auth and balance
+reads succeed from it. For programmatic/API trading you need Polymarket's
+**deposit wallet** (a POLY_1271 smart wallet, signature type **3**): enable API
+trading in the Polymarket UI, use the deposit-wallet address it shows as
+`poly_funder`, and hold your pUSD there. `preflight` detects a Safe funder and
+fails fast so you fix this before risking a live run.
 
 ## Safety rails (built in)
 
@@ -80,6 +99,11 @@ npm run replicator
 - **Ctrl-C** cancels all resting orders (verified) on the way out.
 - **`npm run replicator:flatten`** — manual kill switch: cancels all resting
   orders for your configured pairs (use if a run was killed ungracefully).
+- **`npm run replicator:close`** — programmatic exit: SELLS all held YES/NO
+  inventory back to flat (FAK at bid − slippage). The quoting loop is BUY-only
+  and the hedger keeps you ~flat, but if a fill leaves you holding inventory
+  this is how you wind down without waiting for resolution. (Selling needs the
+  one-time exchange approval from step 5.)
 
 ## What "working" looks like, live
 
@@ -136,12 +160,40 @@ legs are real and fills actually happen.
 make on Limitless (so you need Limitless _takers_ to get filled) and hedge on
 Polymarket (so you need a Polymarket book to hedge into). As of this writing
 the venues don't always overlap — e.g. Limitless's busiest markets are hourly
-crypto "Up or Down", which Polymarket may not list, while a clean political
-match can sit untraded on Limitless for hours. `find-pairs` ranks by the
-Polymarket book; **also sanity-check the Limitless side has real recent volume**
-(an empty Limitless book = your maker quotes rest forever, never filling). The
-sweet spot is a market actively traded on both — that's when the spread is
-actually capturable.
+crypto "Up or Down", which Polymarket may not list at the same window, while a
+clean political match can sit untraded on Limitless for hours. `find-pairs`
+ranks by the Polymarket book; **also sanity-check the Limitless side has real
+recent volume** (an empty Limitless book = your maker quotes rest forever, never
+filling). The sweet spot is a market actively traded on both — that's when the
+spread is actually capturable.
+
+### Where to actually look
+
+There's no magic matcher — finding equivalent markets is a manual judgment call,
+and `find-pairs` only does the first-pass ranking. Two categories overlap most
+reliably:
+
+- **Crypto price markets** — the short-window "Up or Down" / "above $X by <date>"
+  contracts. The underlying is identical across venues, so these are the closest
+  to truly equivalent. The catch is **timing and resolution**: confirm both sides
+  use the same window (e.g. hourly vs 15-min), the same reference price/oracle,
+  and resolve at the same instant. A 1h Limitless market and a 15-min Polymarket
+  market on the same coin are _not_ the same trade.
+- **Recurring macro / economic markets** — e.g. Fed rate decisions, CPI prints.
+  These tend to be listed on both venues around the event and resolve on the same
+  public number.
+- **Sports finals, elections, tournament winners** — the deepest, most balanced
+  cross-venue overlap (UCL/NBA/NHL champions, presidential/nomination winners).
+  These are grouped/neg-risk markets — each candidate is its own YES/NO sub-market.
+  `find-pairs` now enumerates these (it queries `tradeType=group` and flattens the
+  per-candidate sub-markets), so they show up in the shortlist; **just confirm the
+  exact candidate matches on both sides** (the matcher will pair the right market
+  type with the wrong team/candidate if you let it).
+
+Whatever you pick, **read both resolution criteria in full before trusting the
+match** — same title is not the same market. Two traps the matcher won't catch:
+a prop vs the winner ("reach final"/"top scorer" ≠ "win"), and the right market
+with the wrong entity ("Italy to win" paired with "Spain to win").
 
 ## Knobs
 
