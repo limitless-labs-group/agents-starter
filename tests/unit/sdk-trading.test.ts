@@ -128,4 +128,16 @@ describe('SDKTradingClient', () => {
     const r = await c.cancelAll('any-slug');
     expect(r.message).toBe('dry-run');
   });
+
+  it('DRY_RUN sellShares short-circuits before any network call', async () => {
+    process.env.DRY_RUN = 'true';
+    const c = new SDKTradingClient({ privateKey: TEST_PRIVATE_KEY, hmacCredentials: HMAC });
+    const r = await c.sellShares({
+      marketSlug: 'any-slug',
+      side: 'YES',
+      shares: 5,
+      limitPriceCents: 38,
+    });
+    expect(r.order.id).toMatch(/^dry-run-sell-/);
+  });
 });

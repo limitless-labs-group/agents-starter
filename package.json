@@ -19,6 +19,7 @@
     "replicator:find-pairs": "tsx src/strategies/replicator/find-pairs.ts",
     "replicator:preflight": "tsx src/strategies/replicator/preflight.ts",
     "replicator:flatten": "tsx src/strategies/replicator/flatten.ts",
+    "replicator:close": "tsx src/strategies/replicator/close.ts",
     "replicator:analyze": "tsx src/strategies/replicator/analyze.ts",
     "derive-token": "tsx src/core/limitless/derive-token.ts",
     "test": "vitest run",

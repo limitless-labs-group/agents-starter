@@ -281,6 +281,77 @@ export class SDKTradingClient {
     return res;
   }
 
+  /** Read held YES/NO token balances (in shares) for a market. */
+  async getPositionTokens(marketSlug: string): Promise<{ yes: number; no: number }> {
+    const positions = (await this.client.portfolio.getCLOBPositions()) as unknown as Array<{
+      market?: { slug?: string };
+      tokensBalance?: { yes?: string | number; no?: string | number };
+    }>;
+    for (const p of positions ?? []) {
+      if (p.market?.slug === marketSlug) {
+        return {
+          yes: Number(p.tokensBalance?.yes ?? 0) / 1e6,
+          no: Number(p.tokensBalance?.no ?? 0) / 1e6,
+        };
+      }
+    }
+    return { yes: 0, no: 0 };
+  }
+
+  /**
+   * SELL `shares` of a side to CLOSE inventory — the programmatic exit the
+   * BUY-only quoting loop lacks. Defaults to FAK at an aggressive limit so it
+   * takes resting bid liquidity and fills immediately (use to flatten a
+   * position the hedger couldn't keep neutral, or on manual close).
+   *
+   * Requires CTF `setApprovalForAll` for the market's exchange (selling moves
+   * your conditional tokens) — see `npm start approve <slug>`.
+   */
+  async sellShares(params: {
+    marketSlug: string;
+    side: 'YES' | 'NO';
+    shares: number;
+    /** Limit price in CENTS; sell fills at this price or higher. */
+    limitPriceCents: number;
+    orderType?: 'GTC' | 'FAK';
+  }): Promise<OrderResponse> {
+    const { marketSlug, side, shares, limitPriceCents, orderType = 'FAK' } = params;
+    const price = limitPriceCents / 100;
+    // Floor (never round up) — rounding the held balance up asks to sell more
+    // than you own → "Insufficient conditional token balance".
+    const size = Math.floor(shares * 1000) / 1000; // 0.001 share grid
+
+    if (this.dryRun) {
+      logger.info({ marketSlug, side, price, size, orderType }, '[DRY_RUN] would SELL to close');
+      return { order: { id: `dry-run-sell-${Date.now()}` } } as unknown as OrderResponse;
+    }
+
+    const market = (await this.client.markets.getMarket(marketSlug)) as unknown as {
+      positionIds?: string[];
+      tokens?: { yes?: string; no?: string };
+    };
+    const yesToken = market.positionIds?.[0] ?? market.tokens?.yes;
+    const noToken = market.positionIds?.[1] ?? market.tokens?.no;
+    if (!yesToken || !noToken) {
+      throw new Error(`SDKTradingClient: market ${marketSlug} has no valid yes/no token ids`);
+    }
+    const tokenId = side === 'YES' ? yesToken : noToken;
+
+    const res = await this.orderClient.createOrder({
+      tokenId,
+      price,
+      size,
+      side: Side.SELL,
+      orderType: orderType === 'GTC' ? OrderType.GTC : OrderType.FAK,
+      marketSlug,
+    } as any);
+    logger.info(
+      { marketSlug, side, price, size, orderType, orderId: (res as OrderResponse)?.order?.id },
+      'sellShares (close) placed',
+    );
+    return res;
+  }
+
   /** Cancel a single order by ID. */
   async cancelOrder(orderId: string): Promise<{ message: string }> {
     if (this.dryRun) {
