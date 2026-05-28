@@ -139,6 +139,42 @@ async function fetchPolymarketMarkets(): Promise<PolyMarket[]> {
   return markets;
 }
 
+/**
+ * Enumerate Limitless grouped/negRisk markets (tradeType=group) and flatten
+ * each into its per-candidate sub-markets. These are the winner markets
+ * (e.g. "UEFA Champions League Winner" → Arsenal/PSG/…) and head-to-heads
+ * that the `clob` (marketType=single) listing omits — and they're exactly
+ * the deepest cross-venue overlap (sports finals, elections, tournament
+ * winners). Each sub-market has its own slug + tokens, so it's a quotable
+ * binary. The candidate title is "<group> <candidate>" so title-similarity
+ * matches Polymarket's "Will <candidate> win the <group>" phrasing.
+ */
+async function fetchLimitlessGroupSubMarkets(
+  limitless: LimitlessClient,
+): Promise<Array<{ title: string; slug: string; volumeFormatted?: string }>> {
+  const out: Array<{ title: string; slug: string; volumeFormatted?: string }> = [];
+  for (let page = 1; page <= 16; page++) {
+    const groups = await limitless.getActiveMarkets({ tradeType: 'group', limit: 25, page });
+    for (const g of groups as unknown as Array<Record<string, unknown>>) {
+      const subs = (g.markets ?? g.outcomeTokens ?? []) as Array<Record<string, unknown>>;
+      if (!Array.isArray(subs)) continue;
+      for (const s of subs) {
+        const slug = s.slug as string | undefined;
+        if (!slug) continue; // not independently quotable
+        const candidate = (s.groupItemTitle ?? s.title ?? '') as string;
+        out.push({
+          // group volume is the best activity signal we have per sub-market
+          title: `${g.title ?? ''} ${candidate}`.trim(),
+          slug,
+          volumeFormatted: (g.volumeFormatted ?? s.volumeFormatted) as string | undefined,
+        });
+      }
+    }
+    if (groups.length < 25) break;
+  }
+  return out;
+}
+
 interface Candidate {
   lmtsSlug: string;
   lmtsTitle: string;
@@ -182,13 +218,20 @@ async function main(): Promise<void> {
   console.log('Fetching active markets from both venues…');
   const limitless = new LimitlessClient();
   // Limitless API caps limit=25; paginate (page is 1-indexed).
-  const lmtsMarkets = [];
+  const lmtsMarkets: Array<{ title: string; slug: string; volumeFormatted?: string }> = [];
   for (let page = 1; page <= 16; page++) {
     const chunk = await limitless.getActiveMarkets({ tradeType: 'clob', limit: 25, page });
-    lmtsMarkets.push(...chunk);
+    lmtsMarkets.push(...(chunk as typeof lmtsMarkets));
     if (chunk.length < 25) break;
   }
-  console.log(`  Limitless:  ${lmtsMarkets.length} active CLOB markets`);
+  const singleCount = lmtsMarkets.length;
+  // Also enumerate grouped/negRisk sub-markets (winner markets, head-to-heads)
+  // — the deepest cross-venue overlap, which the `clob` listing omits.
+  const groupSubs = await fetchLimitlessGroupSubMarkets(limitless);
+  lmtsMarkets.push(...groupSubs);
+  console.log(
+    `  Limitless:  ${lmtsMarkets.length} markets (${singleCount} single + ${groupSubs.length} grouped sub-markets)`,
+  );
 
   const polyMarkets = await fetchPolymarketMarkets();
   console.log(`  Polymarket: ${polyMarkets.length} active binary markets`);
