@@ -58,6 +58,13 @@ export class Recorder {
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     this.filePath = path.join(dir, `replicator-${ts}.jsonl`);
     this.stream = fs.createWriteStream(this.filePath, { flags: 'a' });
+    // The stream opens the fd asynchronously; a failed open/write (disk full,
+    // dir removed) emits 'error'. Without a listener that's an uncaught
+    // exception that would take down the bot — recording is best-effort, so
+    // disable it instead of crashing.
+    this.stream.on('error', () => {
+      this.stream = null;
+    });
   }
 
   record(ev: ReplicatorEvent): void {
