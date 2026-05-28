@@ -11,11 +11,17 @@
  */
 
 import 'dotenv/config';
+import { createPublicClient, http as viemHttp, parseAbi } from 'viem';
+import { base, polygon } from 'viem/chains';
 import { Client, HttpClient } from '@limitless-exchange/sdk';
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
 import { PolymarketAdapter } from '../../core/polymarket/client.js';
 import { readBaseUsdc } from './risk.js';
 import { loadSettings } from './config.js';
+
+const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const ERC20_ALLOWANCE = parseAbi(['function allowance(address,address) view returns (uint256)']);
+const SAFE_VERSION = parseAbi(['function VERSION() view returns (string)']);
 
 interface Check {
   name: string;
@@ -88,21 +94,74 @@ async function main(): Promise<void> {
     );
   }
 
+  // -- Polymarket funder must be API-tradeable (deposit-wallet flow), NOT a
+  //    Gnosis Safe. The CLOB rejects a Safe maker with "maker address not
+  //    allowed, please use the deposit wallet flow" — auth + balance reads
+  //    still work, so this only surfaces when an order is POSTed. Detect a
+  //    Safe (it exposes VERSION()) up front and fail fast with the fix.
+  try {
+    const polyPub = createPublicClient({ chain: polygon, transport: viemHttp() });
+    const ver = await polyPub
+      .readContract({ address: s.polyFunder as `0x${string}`, abi: SAFE_VERSION, functionName: 'VERSION' })
+      .catch(() => null);
+    if (ver) {
+      add(
+        'Polymarket funder is API-tradeable',
+        false,
+        true,
+        `funder is a Gnosis Safe (v${ver}) — Polymarket's CLOB will reject orders ` +
+          `("use the deposit wallet flow"). Set poly_funder to your Polymarket ` +
+          `deposit-wallet address (enable API trading in the Polymarket UI) and ` +
+          `poly_signature_type: 3.`,
+      );
+    } else {
+      add('Polymarket funder is API-tradeable', true, false, 'not a Gnosis Safe (deposit-wallet/EOA)');
+    }
+  } catch {
+    /* RPC hiccup — non-critical, skip */
+  }
+
   // -- Circuit breaker configured --
   add('Loss circuit-breaker', s.maxLossUsd > 0, true, `kill at -$${s.maxLossUsd}`);
   add('Order size sane', s.orderSize > 0 && s.orderSize <= 100, s.orderSize > 0, `${s.orderSize} contracts/side`);
 
-  // -- Each pair resolves on both venues --
+  // -- Each pair resolves on both venues (+ collateral approved for its exchange) --
+  const basePub = createPublicClient({ chain: base, transport: viemHttp() });
   for (const pair of s.pairs) {
+    let exchange: string | undefined;
     try {
       const m = (await sdk.markets.getMarket(pair.limitlessSlug)) as unknown as {
         tokens?: { yes?: string; no?: string };
         positionIds?: string[];
+        venue?: { exchange?: string };
       };
       const ok = !!(m.tokens?.yes ?? m.positionIds?.[0]);
+      exchange = m.venue?.exchange;
       add(`Limitless market: ${pair.limitlessSlug.slice(0, 40)}`, ok, true, ok ? 'resolved' : 'no token ids');
     } catch (e) {
       add(`Limitless market: ${pair.limitlessSlug.slice(0, 40)}`, false, true, (e as Error).message);
+    }
+    // USDC must be approved for THIS market's exchange (neg-risk markets use a
+    // separate exchange contract — a fresh approve is needed per exchange, or
+    // quoting fails "Insufficient collateral allowance").
+    if (exchange && address) {
+      try {
+        const allowance = (await basePub.readContract({
+          address: BASE_USDC,
+          abi: ERC20_ALLOWANCE,
+          functionName: 'allowance',
+          args: [address as `0x${string}`, exchange as `0x${string}`],
+        })) as bigint;
+        const ok = allowance > 0n;
+        add(
+          `Exchange approved: ${exchange.slice(0, 10)}…`,
+          ok,
+          true,
+          ok ? 'USDC approved' : `not approved — run: npm start approve ${pair.limitlessSlug}`,
+        );
+      } catch {
+        add(`Exchange approved: ${exchange.slice(0, 10)}…`, false, false, 'allowance read failed');
+      }
     }
     try {
       await poly.resolveAssetIds(pair);
