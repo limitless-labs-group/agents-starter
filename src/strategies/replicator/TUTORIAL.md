@@ -84,10 +84,21 @@ npm run replicator
 Polymarket's CLOB will **reject orders from a Gnosis Safe** ("maker address not
 allowed, please use the deposit wallet flow") — even though auth and balance
 reads succeed from it. For programmatic/API trading you need Polymarket's
-**deposit wallet** (a POLY_1271 smart wallet, signature type **3**): enable API
-trading in the Polymarket UI, use the deposit-wallet address it shows as
-`poly_funder`, and hold your pUSD there. `preflight` detects a Safe funder and
-fails fast so you fix this before risking a live run.
+**deposit wallet** (a POLY_1271 smart wallet, signature type **3**).
+
+One command sets it up (gasless — create a relayer API key in the Polymarket
+builder dashboard, put it in `.env` as `RELAYER_API_KEY` + `RELAYER_API_KEY_ADDRESS`):
+
+```bash
+npm run replicator:setup-poly
+#   derives your deposit-wallet address, deploys it via the relayer, and
+#   approves pUSD for the Polymarket v2 exchanges. Prints the address to set as
+#   poly_funder (with poly_signature_type: 3). Then transfer your pUSD INTO that
+#   deposit wallet — pUSD held elsewhere is not CLOB buying power.
+```
+
+`preflight` detects a Safe funder and fails fast, so you fix this before risking
+a live run.
 
 ## Safety rails (built in)
 
