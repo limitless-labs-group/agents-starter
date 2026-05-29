@@ -1,7 +1,7 @@
 /**
  * status — one cross-venue portfolio view.
  *
- *   npm run replicator:status
+ *   npm run cross-market-mm:status
  *
  * Read-only. Shows your Limitless balance + positions/orders, and your
  * Polymarket DEPOSIT WALLET's pUSD + positions. The deposit wallet is a
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   console.log('\n═══ Polymarket (deposit wallet) ═══');
   const dw = s.polyFunder;
   if (!dw) {
-    console.log('  poly_funder not set — run `npm run replicator:setup-poly` and set poly_funder + poly_signature_type: 3.');
+    console.log('  poly_funder not set — run `npm run cross-market-mm:setup-poly` and set poly_funder + poly_signature_type: 3.');
   } else {
     console.log(`  deposit wallet: ${dw}`);
     console.log(`  view: https://polygonscan.com/address/${dw}`);

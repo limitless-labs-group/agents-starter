@@ -1,7 +1,7 @@
 /**
  * flatten — cancel ALL resting Limitless orders for the configured pairs.
  *
- *   npm run replicator:flatten
+ *   npm run cross-market-mm:flatten
  *
  * A manual kill switch / recovery tool: if a run was killed ungracefully and
  * left orders resting, or you just want a clean book, run this. Uses the same

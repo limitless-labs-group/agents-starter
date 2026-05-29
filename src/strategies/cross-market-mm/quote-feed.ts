@@ -1,6 +1,6 @@
 /**
  * Shared state between the Polymarket WS listener and the per-pair
- * replicator loops.
+ * cross-market-mm loops.
  *
  * Port of the QuoteFeed dataclass + per-slug asyncio.Event from
  * `clients/poly_ws.py` in the Python original. asyncio.Event semantics map
@@ -26,7 +26,7 @@ export function quoteMid(q: Quote): number | null {
 /**
  * Per-slug "wake on next update" + latest quote.
  *
- * Each replicator task awaits `nextUpdate(slug)` which resolves when the
+ * Each cross-market-mm task awaits `nextUpdate(slug)` which resolves when the
  * WS listener calls `update(slug, ...)`. Resolution clears the waiter
  * so the next call re-awaits.
  */

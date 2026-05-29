@@ -1,16 +1,16 @@
 /**
- * Replicator entry point — `npm run replicator`.
+ * Cross-market MM entry point — `npm run cross-market-mm`.
  *
  * Wires up:
- *   1. Loads .env + replicator.config.yaml.
+ *   1. Loads .env + cross-market-mm.config.yaml.
  *   2. Constructs SDKTradingClient (Limitless side, EIP-712 signing).
  *   3. Constructs PolymarketAdapter (Polymarket side, FAK hedge).
  *   4. Runs both auth probes (Limitless login + Polymarket deriveApiKey)
  *      BEFORE quoting starts. Catches wrong signatureType / wrong funder
  *      in 2 seconds instead of after fills accumulate.
  *   5. Resolves market metadata on both venues for each pair.
- *   6. Spawns Poly WS task + N replicator tasks + 1 hedger task.
- *   7. Awaits SIGINT/SIGTERM, then cancels everything (replicators
+ *   6. Spawns Poly WS task + N cross-market-mm tasks + 1 hedger task.
+ *   7. Awaits SIGINT/SIGTERM, then cancels everything (cross-market-mm tasks
  *      cancel-all on the way out).
  *
  * Port of `main.py` from limitless-replicator.
@@ -131,7 +131,7 @@ export async function main(): Promise<void> {
     }
   }
 
-  // -- Shared state for WS → replicator --
+  // -- Shared state for WS → cross-market-mm --
   const feed = new QuoteFeed();
   const assetToSlug = new Map<string, string>();
   const yesAssets = new Set<string>();
@@ -154,10 +154,10 @@ export async function main(): Promise<void> {
     orderSize: settings.orderSize,
     marginBps: settings.marginBps,
   });
-  logger.info({ file: recorder.filePath }, 'recording run data (npm run replicator:analyze)');
+  logger.info({ file: recorder.filePath }, 'recording run data (npm run cross-market-mm:analyze)');
 
   // -- Loss circuit breaker (live only). Tripping aborts everything; the
-  //    replicator tasks cancel-all in their finally{} on abort. --
+  //    cross-market-mm tasks cancel-all in their finally{} on abort. --
   const ac = new AbortController();
   const risk = new RiskMonitor(settings.maxLossUsd);
   let killed = false;
@@ -201,14 +201,14 @@ export async function main(): Promise<void> {
   logger.info('bot running. Ctrl-C to stop.');
   await stop;
 
-  // Let all tasks settle their finally{} blocks (replicator cancelAll on shutdown)
+  // Let all tasks settle their finally{} blocks (cross-market-mm cancelAll on shutdown)
   await Promise.allSettled(tasks);
 
   // -- Flatten to flat on the way out (live only). Cancelling orders (above)
   //    stops new exposure, but a fill that already hedged leaves directional
   //    inventory on BOTH venues. flattenBothVenues sells/redeems it back to
   //    flat so a stop — Ctrl-C OR a tripped breaker — never walks away with an
-  //    open position. Idempotent; re-run `npm run replicator:close` if a thin
+  //    open position. Idempotent; re-run `npm run cross-market-mm:close` if a thin
   //    book leaves a remainder. --
   if (!settings.dryRun && settings.flattenOnStop) {
     logger.warn({ reason: killed ? 'circuit-breaker' : 'signal' }, 'flattening inventory on both venues');
@@ -223,16 +223,16 @@ export async function main(): Promise<void> {
             polymarket: `YES ${r.polymarket.yes.toFixed(2)} / NO ${r.polymarket.no.toFixed(2)}`,
             flat: r.flat,
           },
-          r.flat ? 'flat on both venues' : 'NOT fully flat — run `npm run replicator:close` to retry',
+          r.flat ? 'flat on both venues' : 'NOT fully flat — run `npm run cross-market-mm:close` to retry',
         );
       }
       if (results.some((r) => !r.flat)) {
-        logger.error('some pairs left inventory (thin book?) — run `npm run replicator:close`');
+        logger.error('some pairs left inventory (thin book?) — run `npm run cross-market-mm:close`');
       }
     } catch (e) {
       logger.error(
         { err: e instanceof Error ? e.message : e },
-        'flatten-on-stop failed — run `npm run replicator:close` manually',
+        'flatten-on-stop failed — run `npm run cross-market-mm:close` manually',
       );
     }
   }

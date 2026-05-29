@@ -1,13 +1,13 @@
 /**
- * preflight — validate everything the replicator needs BEFORE it quotes.
+ * preflight — validate everything the cross-market-mm needs BEFORE it quotes.
  *
- *   npm run replicator:preflight
+ *   npm run cross-market-mm:preflight
  *
  * Read-only (plus a Polymarket API-key derive, which signs nothing on-chain).
  * Checks Limitless HMAC auth + collateral, Polymarket auth + sig type + pUSD,
  * the circuit-breaker setting, and that every configured pair resolves on both
  * venues. Prints a checklist and exits non-zero if any critical check fails,
- * so `npm run replicator:preflight && npm run replicator` is a safe gate.
+ * so `npm run cross-market-mm:preflight && npm run cross-market-mm` is a safe gate.
  */
 
 import 'dotenv/config';
@@ -172,7 +172,7 @@ async function main(): Promise<void> {
   }
 
   // -- Report --
-  console.log('\n── Replicator preflight ──');
+  console.log('\n── Cross-market MM preflight ──');
   for (const c of checks) {
     const mark = c.ok ? '✅' : c.critical ? '❌' : '⚠️ ';
     console.log(`${mark} ${c.name}${c.detail ? `  (${c.detail})` : ''}`);
