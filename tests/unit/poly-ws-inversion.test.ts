@@ -6,7 +6,7 @@
  *   YES_ask = 1 - NO_bid
  *   YES_bid = 1 - NO_ask
  *
- * If this is wrong, the replicator quotes on the wrong side of the book.
+ * If this is wrong, the cross-market-mm quotes on the wrong side of the book.
  *
  * Port of `tests/unit/test_poly_ws_inversion.py` from limitless-replicator.
  */

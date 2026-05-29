@@ -1,5 +1,5 @@
 /**
- * Fill → hedge round-trip (the core replicator mechanic), deterministic.
+ * Fill → hedge round-trip (the core cross-market-mm mechanic), deterministic.
  *
  * A live fill needs an external Limitless taker, which is market-gated and
  * not reproducible on demand. This proves the pipeline that fires once a fill
