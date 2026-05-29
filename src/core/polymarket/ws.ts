@@ -3,7 +3,7 @@
  *
  * Subscribes to one or more clob token ids and writes per-slug best bid/ask
  * into a shared `QuoteFeed`. Every update fires per-slug waiters so the
- * replicator task wakes immediately.
+ * cross-market-mm task wakes immediately.
  *
  * Port of `clients/poly_ws.py` from limitless-replicator. Strategy invariant:
  * everything in `QuoteFeed` is YES-frame. When a NO-asset update arrives we
@@ -11,7 +11,7 @@
  */
 
 import { pino } from 'pino';
-import { QuoteFeed } from '../../strategies/replicator/quote-feed.js';
+import { QuoteFeed } from '../../strategies/cross-market-mm/quote-feed.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'poly-ws' });
 

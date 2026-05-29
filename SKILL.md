@@ -6,40 +6,61 @@ This file is the operating manual. An agent with shell access and this file can 
 
 ---
 
+## Built on the official Limitless SDK
+
+This repo is **not** a hand-rolled API client — it runs on the official,
+maintained SDKs, so you inherit signing, HMAC auth, venue routing, and retry
+logic for free:
+
+| SDK | Version | Used for |
+|-----|---------|----------|
+| [`@limitless-exchange/sdk`](/developers/sdk/typescript/getting-started) | `^1.0.9` | All Limitless market data, order placement (EIP-712), portfolio, API tokens. Wrapped by `src/core/limitless/sdk-trading.ts` (`SDKTradingClient`). |
+| [`@polymarket/clob-client-v2`](https://github.com/Polymarket/clob-client) | `^1.0.6` | Polymarket hedge leg (cross-market-mm only). **v2 is required** — Polymarket migrated collateral to pUSD on a V2 exchange and the v1 client can't trade it. |
+| `@polymarket/builder-relayer-client` | `^0.0.10` | Gasless Polymarket deposit-wallet deploy + approvals (cross-market-mm setup). |
+
+The official SDK handles `lmts-api-key` / `lmts-timestamp` / `lmts-signature`
+HMAC headers and the EIP-712 order signing automatically — you supply a scoped
+token + a private key, nothing else. Prefer the SDK over the legacy hand-rolled
+clients in `src/core/limitless/` (`trading.ts`, `sign.ts`) for anything new; the
+shipped strategies all go through `SDKTradingClient`. Section 7 has the official
+SDK quick reference for TypeScript, Python, and Go.
+
+---
+
 ## Quick Start Prompt
 
-Paste this into your Clawbot (or any coding agent with shell access) to go from zero to live trading in one shot. The agent clones the repo, reads this file, and handles the rest.
+Paste this into Claude Code / OpenClaw (or any coding agent with shell access)
+to go from zero to a dry run. The agent clones the repo, reads this file, and
+handles the rest.
 
 ```
 Clone https://github.com/limitless-labs-group/agents-starter.git — your operating manual is SKILL.md, read it before doing anything else.
 
-Then ask me for two things:
-→ PRIVATE_KEY — Base chain private key (dedicated trading wallet, never your main)
-→ LIMITLESS_API_KEY — from limitless.exchange → Profile → API Keys
+Then ask me for:
+→ PRIVATE_KEY — Base chain private key (dedicated trading wallet, never my main)
+→ LMTS_TOKEN_ID + LMTS_TOKEN_SECRET — Limitless scoped HMAC token (limitless.exchange → connect wallet → API token modal → API Tokens → Derive)
 
-Once I give you those: dry run first, then walk me through the available strategies so I can pick one. Start the dashboard so I can monitor performance. Set up hourly auto-claim to collect winnings from resolved markets automatically.
+Once I give you those: dry-run a strategy first (start with `npm run certainty-closer` — SDK-only, no extra setup), then walk me through the three strategies so I can pick one. The flagship is cross-market-mm — if I pick it, read src/strategies/cross-market-mm/SKILL.md for its full lifecycle.
 
 Keep me posted. Fix problems quietly.
 ```
 
 ---
 
-## Agent Setup Wizard
+## Setup
 
-Follow these steps in order. Each step builds on the previous one.
-
-### Step 1: Clone and Install
+### Step 1: Clone and install
 
 ```bash
-git clone https://github.com/limitless-labs-group/agents-starter.git ~/limitless-trader
-cd ~/limitless-trader
+git clone https://github.com/limitless-labs-group/agents-starter.git
+cd agents-starter
 npm install
-cp .env.example .env
+cp .env.example .env && chmod 600 .env
 ```
 
-### Step 2: Configure Credentials
+### Step 2: Credentials (scoped HMAC token)
 
-Edit `.env` and set these required values. Ask your user for them if not provided:
+Set in `.env`:
 
 ```
 PRIVATE_KEY=0x...           # Base chain wallet private key (dedicated trading wallet)
@@ -47,130 +68,72 @@ LMTS_TOKEN_ID=...           # Limitless scoped HMAC token id
 LMTS_TOKEN_SECRET=...       # Limitless scoped HMAC token secret (base64)
 ```
 
-Limitless authenticates with **scoped HMAC tokens** (`lmts-api-key` /
-`lmts-timestamp` / `lmts-signature` headers, built by the SDK). Get yours from
-the UI: **limitless.exchange → connect wallet → API token modal → "API Tokens"
-tab → Derive → copy the tokenId + secret.** The browser handles the login
-session, so you never handle a Privy token, and no smart wallet is involved.
-(Headless/CI without a browser: derive programmatically — `npm run derive-token`.
-Legacy `LIMITLESS_API_KEY` still works as a fallback if you hold one.)
+Limitless authenticates with **scoped HMAC tokens**. Get yours from the UI:
+**limitless.exchange → connect wallet → API token modal → "API Tokens" tab →
+Derive → copy the tokenId + secret.** The browser handles the login session, so
+you never touch a Privy token and no smart wallet is involved. (Headless/CI:
+`npm run derive-token`. A legacy `LIMITLESS_API_KEY` still works as a fallback.)
+See [Authentication](/developers/authentication) for the full flow.
 
-The wallet needs USDC (collateral) and a small amount of ETH (gas, ~$1-2) on Base chain.
+The wallet needs USDC (collateral) + a little ETH (gas, ~$1–2) on Base.
 
-### Step 3: Verify Wallet
+### Step 3: Dry run
 
-```bash
-npx tsx -e "
-import { getWallet } from './src/core/wallet.js';
-import { createPublicClient, http, formatUnits } from 'viem';
-import { base } from 'viem/chains';
-const { account } = getWallet();
-const client = createPublicClient({ chain: base, transport: http() });
-const usdc = await client.readContract({
-  address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-  abi: [{ name: 'balanceOf', type: 'function', inputs: [{type:'address'}], outputs: [{type:'uint256'}], stateMutability: 'view' }],
-  functionName: 'balanceOf', args: [account.address]
-});
-console.log('Address:', account.address);
-console.log('USDC:', formatUnits(usdc, 6));
-"
-```
-
-If USDC is 0, the user needs to fund the wallet before proceeding.
-
-### Step 4: Dry Run
+Always start in `DRY_RUN` — every order intent is logged, nothing signs or posts.
 
 ```bash
-DRY_RUN=true npm run conviction-sniper
+npm run certainty-closer        # simplest: SDK-only, no extra setup, dry-run by default
 ```
 
-Confirm: markets are scanned, no orders placed. If this works, the setup is correct.
+Confirm markets are scanned and "would createOrder" lines appear. If so, your
+SDK auth + wallet are wired correctly.
 
-### Step 4b: Token Approvals (CRITICAL — do this before going live)
+### Step 4: Approve a market's exchange (before going live)
 
-Limitless uses the Conditional Tokens Framework (CTF). Before any order can fill, the exchange contract must be approved to spend your USDC. Without this, every order will be rejected with `"Insufficient collateral allowance"`.
-
-**The conviction-sniper handles this automatically** — on first trade with a new venue it will detect the approval error, approve, and retry. No manual step needed.
-
-If you want to pre-approve before the first live tick (recommended for clean demos):
+Limitless uses the Conditional Tokens Framework. Before an order can fill, the
+market's exchange must be approved to spend your USDC (and CTF, for sells):
 
 ```bash
-# Approve any one active market slug — approves the shared venue for all markets
-npx tsx src/index.ts approve <any-active-market-slug>
+npm start approve <any-active-market-slug>
 ```
 
-Example:
-```bash
-npx tsx src/index.ts approve dollarbtc-above-dollar6736989-on-feb-28-1000-utc-1772186402293
-```
+One approval covers every market that shares that exchange. Neg-risk
+(grouped/winner) markets use a separate exchange and need their own approve.
 
-This sends two on-chain transactions (~$0.01 gas each):
-1. **USDC → Exchange** (required for all BUY orders)
-2. **CTF → Exchange** (required for SELL orders)
+### Step 5: Go live
 
-All markets sharing the same exchange venue address are covered by a single approval. You only need to do this once per wallet.
-
-### Step 5: Go Live
-
-Edit `.env`:
-```
-DRY_RUN=false
-SNIPER_BET_SIZE=0.50
-SNIPER_ASSETS=BTC,ETH,SOL
-SNIPER_MIN_LEAD=0.55
-SNIPER_MAX_LEAD=0.85
-SNIPER_MIN_CONVICTION=2.0
-SNIPER_MIN_MINUTES=3
-SNIPER_MAX_MINUTES=60
-```
-
-Start with PM2 for persistence:
-```bash
-pm2 start "npx tsx src/strategies/conviction-sniper/run.ts" --name conviction-sniper --max-restarts 999 --restart-delay 5000
-pm2 start "npx tsx src/dashboard.ts" --name dashboard
-pm2 logs conviction-sniper --lines 20
-```
-
-### Step 6: Monitor
-
-Dashboard: `http://localhost:3456` (or set `DASHBOARD_PORT`)
-
-Check logs: `pm2 logs oracle-live --lines 50`
-
-Claim winnings: `npx tsx src/core/limitless/redeem.ts claim-all`
-
-### Step 7: Iterate
-
-Read `data/oracle-arb-trades.jsonl` for trade history. Analyze fill rates, win rates by asset, and edge distribution. Adjust `.env` parameters and restart:
+Flip `DRY_RUN=false` in `.env` (or `dry_run: false` for cross-market-mm's YAML),
+keep sizes small for the first runs, and run your chosen strategy. Claim winnings
+from resolved markets any time:
 
 ```bash
-pm2 restart oracle-live
-```
-
-Log parameter changes to `data/iteration-log.jsonl` for tracking what works.
-
-### Emergency Stop
-
-```bash
-pm2 stop oracle-live
-npx tsx src/core/limitless/redeem.ts claim-all
+npm run redeem claim-all
 ```
 
 ---
 
-## Strategy Notes
+## Strategies
 
-The oracle-arb strategy uses Pyth Hermes SSE for sub-second oracle prices and compares them against Limitless market pricing. When the oracle shows strong conviction that a market is mispriced, it fires FOK (Fill-or-Kill) orders.
+Three strategies ship, spanning distinct archetypes. All authenticate via the
+scoped HMAC token and default to `DRY_RUN`.
 
-Key behaviors:
+- **`cross-market-mm`** (flagship) — cross-venue market making: quote on
+  Limitless, hedge fills on Polymarket to stay delta-neutral. Earns the
+  cross-venue spread + Limitless maker rebates / LP rewards. Has its own full
+  operating manual: **`src/strategies/cross-market-mm/SKILL.md`** (setup →
+  find-pairs → preflight → run → status → close). `npm run cross-market-mm`.
+- **`oracle-arb`** — compares a Pyth (Hermes SSE) oracle price against Limitless
+  markets resolving on the same underlying; fires FOK/FAK when the implied
+  probability strays far enough from the oracle to clear fees. `npm run oracle-arb`.
+- **`certainty-closer`** — SDK-only (no external feeds): filters markets near
+  resolution and buys the favourite, sized via fractional Kelly
+  (`src/core/kelly.ts`). The simplest on-ramp; honestly framed as a teaching
+  scaffold with no independent edge. `npm run certainty-closer`.
 
-- **Checks actual orderbook ask before ordering.** The API's displayed price can be stale. The strategy fetches the real ask and validates it against `ORACLE_MAX_PRICE` before placing any order.
-- **FOK orders only.** Fill instantly or reject. No ghost orders on the book.
-- **Continuous scanning** with faster intervals during the golden window (xx:57-xx:03 of each hour) when new markets appear.
-- **Auto-approval.** First trade on a new market triggers automatic USDC/CTF approval.
-- **Position tracking.** Prevents duplicate bets on the same market.
-
-What works: targeting balanced markets (30-70% odds) where the orderbook has real liquidity below 75 cents. Hit the ask, don't fish.
+Build your own by extending `BaseStrategy` (`src/strategies/base-strategy.ts`) —
+implement `tick()` (return `TradeDecision[]`) + `initialize()`/`shutdown()`; the
+base class runs the loop and gates on `DRY_RUN`. (`cross-market-mm` has its own
+runtime rather than `BaseStrategy`.)
 
 ---
 
@@ -178,25 +141,23 @@ What works: targeting balanced markets (30-70% odds) where the orderbook has rea
 
 | File | Purpose |
 |------|---------|
-| `.env` | All strategy configuration |
-| `src/strategies/oracle-arb/index.ts` | Main strategy logic |
-| `src/strategies/base-strategy.ts` | Strategy base class (tick loop, order execution) |
-| `src/core/limitless/trading.ts` | Order creation, signing, submission |
+| `.env` | Secrets + per-strategy tunables |
+| `src/core/limitless/sdk-trading.ts` | `SDKTradingClient` — wraps the official SDK (orders, HMAC auth, venue routing) |
 | `src/core/limitless/markets.ts` | Market discovery, orderbook, search |
 | `src/core/limitless/redeem.ts` | Claim winnings from resolved markets |
-| `src/core/price-feeds/hermes.ts` | Pyth Hermes SSE price streaming |
-| `src/dashboard.ts` | Analytics dashboard server |
-| `data/oracle-arb-trades.jsonl` | Trade execution log |
-| `data/oracle-arb-positions.json` | Current tracked positions |
-| `data/pnl-tracker.json` | Realized P&L from claims |
+| `src/core/polymarket/` | Polymarket clob-client-v2 adapter + WS (cross-market-mm hedge leg) |
+| `src/core/price-feeds/hermes.ts` | Pyth Hermes SSE price streaming (oracle-arb) |
+| `src/core/kelly.ts` | Fractional-Kelly position sizing |
+| `src/strategies/cross-market-mm/` | Flagship + its own SKILL.md / QUICKSTART / GO-LIVE / DEMO |
+| `src/strategies/oracle-arb/`, `certainty-closer/` | Example strategies (extend `BaseStrategy`) |
 
 ---
 
 ## Table of Contents
 
-1. [Agent Setup Wizard](#agent-setup-wizard) — start here
-2. [Strategy Notes](#strategy-notes)
-3. [Key Files](#key-files)
+1. [Built on the official Limitless SDK](#built-on-the-official-limitless-sdk)
+2. [Setup](#setup) — start here
+3. [Strategies](#strategies) · [Key Files](#key-files)
 4. [Overview](#1-overview)
 5. [Live Documentation (MCP)](#2-live-documentation-mcp)
 6. [Market Structure](#3-market-structure)
@@ -475,58 +436,43 @@ The `prices` field on a market object is an array: `[YES_price, NO_price]`.
 
 ```
 src/
-├── index.ts                           # CLI entry point — routes commands to strategies
+├── index.ts                           # CLI entry — the `approve` command
 ├── core/
 │   ├── wallet.ts                      # Private key → viem WalletClient + Account
+│   ├── kelly.ts                       # Fractional-Kelly position sizing util
 │   ├── limitless/
-│   │   ├── types.ts                   # All TypeScript interfaces & EIP-712 type definitions
+│   │   ├── sdk-trading.ts             # SDKTradingClient — wraps @limitless-exchange/sdk (orders, HMAC)
 │   │   ├── markets.ts                 # LimitlessClient — market discovery, search, orderbook
-│   │   ├── trading.ts                 # TradingClient — order creation, cancellation, submission
-│   │   ├── sign.ts                    # OrderSigner — EIP-712 typed data signing
 │   │   ├── approve.ts                 # Token approvals — USDC (ERC-20) and CTF (ERC-1155)
 │   │   ├── redeem.ts                  # RedeemClient — claim winnings from resolved markets
-│   │   ├── portfolio.ts               # PortfolioClient — positions, trades, P&L, history
-│   │   └── websocket.ts              # LimitlessWebSocket — real-time price & orderbook updates
+│   │   ├── derive-token.ts            # Headless HMAC-token derivation
+│   │   ├── trading.ts / sign.ts       # Legacy hand-rolled client (prefer sdk-trading.ts)
+│   │   └── portfolio.ts / websocket.ts
+│   ├── polymarket/                    # clob-client-v2 adapter + WS (cross-market-mm hedge leg)
 │   └── price-feeds/
-│       └── coingecko.ts               # CoinGeckoClient — external price data
+│       └── hermes.ts                  # Pyth Hermes SSE oracle prices (oracle-arb)
 ├── strategies/
 │   ├── base-strategy.ts               # BaseStrategy abstract class — tick loop, trade execution
-│   ├── index.ts                       # Strategy registry — register & instantiate strategies
-│   ├── iterate.ts                     # Iterator — report, analyze, market scan for AI agents
-│   ├── signal-sniper/
-│   │   ├── index.ts                   # SignalSniperStrategy — CoinGecko momentum trading
-│   │   ├── run.ts                     # Standalone runner with dry-run support
-│   │   └── learnings.ts              # Trade logging, win/loss tracking, suggestions
-│   └── cross-market-arb/
-│       ├── index.ts                   # ComplementArbStrategy — YES+NO < $1 arbitrage
-│       └── run.ts                     # Standalone runner
+│   ├── cross-market-mm/               # FLAGSHIP: cross-venue MM (own SKILL.md/QUICKSTART/GO-LIVE/DEMO)
+│   ├── oracle-arb/                    # Pyth oracle edge-detection (extends BaseStrategy)
+│   └── certainty-closer/              # SDK-only near-resolution example (extends BaseStrategy)
 ```
 
 ### Module Dependency Graph
 
 ```
-wallet.ts ──────────────────────┐
-                                ▼
-                          sign.ts (OrderSigner)
-                                │
-markets.ts (LimitlessClient) ───┤
-                                ▼
-                          trading.ts (TradingClient)
-                                │
-                    ┌───────────┤───────────────┐
-                    ▼           ▼               ▼
-             approve.ts    redeem.ts      portfolio.ts
-                                │
-                    ┌───────────┘
-                    ▼
-             base-strategy.ts (BaseStrategy)
-                    │
-          ┌─────────┴──────────┐
-          ▼                    ▼
-   signal-sniper/       cross-market-arb/
-          │
-          ▼
-   learnings.ts ──→ iterate.ts
+wallet.ts ───────────────┐
+                         ▼
+@limitless-exchange/sdk ─┴─→ sdk-trading.ts (SDKTradingClient)
+markets.ts (LimitlessClient) ─┤
+                              ▼
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+      base-strategy.ts   cross-market-mm/   approve.ts / redeem.ts
+              │            (own runtime +
+   ┌──────────┴────────┐    polymarket/ + kelly.ts)
+   ▼                   ▼
+oracle-arb/      certainty-closer/ ──→ kelly.ts
 ```
 
 ### Core Concepts
@@ -535,13 +481,13 @@ markets.ts (LimitlessClient) ───┤
 
 **LimitlessClient** (`markets.ts`): Stateless HTTP client for the Limitless REST API. Caches venue data (exchange/adapter addresses) internally to avoid repeated lookups.
 
-**TradingClient** (`trading.ts`): Orchestrates order creation — fetches market details, computes tick-aligned amounts, calls `OrderSigner`, and submits to the API. Respects `DRY_RUN` env var.
+**SDKTradingClient** (`sdk-trading.ts`): the current order path — wraps the official `@limitless-exchange/sdk` for order creation/signing (EIP-712), HMAC auth, and venue routing. All shipped strategies use it. Respects `DRY_RUN`.
 
-**OrderSigner** (`sign.ts`): Pure signing logic. Takes venue + order params, constructs the EIP-712 typed data, signs with the wallet, returns a `SignedOrder` ready for submission.
+**TradingClient / OrderSigner** (`trading.ts`, `sign.ts`): the **legacy** hand-rolled order + EIP-712 signing path, kept for reference. Prefer `SDKTradingClient` for new code.
 
 **BaseStrategy** (`base-strategy.ts`): Abstract class providing the tick loop pattern. Subclasses implement `initialize()`, `tick()`, `shutdown()`, and `getStats()`. The base class handles the timer, decision execution, and error recovery.
 
-**Learnings** (`learnings.ts`): Append-only JSONL trade log. Every trade decision is recorded with context (asset, strike, edge, time-to-expiry). After resolution, outcomes can be backfilled for analysis.
+**Recorder** (`strategies/cross-market-mm/recorder.ts`): Append-only JSONL run log — config, every order, per-tick exposure snapshot, every hedge — written to `./data`; summarized by `analyze.ts`.
 
 ---
 
@@ -551,8 +497,8 @@ markets.ts (LimitlessClient) ───┤
 
 - **Node.js 18+** (check: `node --version`)
 - **A wallet with USDC on Base chain** (dedicated trading wallet — NOT your main wallet)
-- **A Limitless API key** (free, from the Limitless website)
-- **Optional:** CoinGecko API key (for the signal-sniper strategy)
+- **A Limitless scoped HMAC token** (free, from the UI — see Step 3)
+- **For cross-market-mm only:** a Polymarket relayer API key + pUSD on Polygon
 
 ### Step 1: Clone & Install
 
@@ -616,44 +562,28 @@ MAX_TOTAL_EXPOSURE_USD=50       # Maximum total capital at risk across all posit
 MAX_SINGLE_TRADE_USD=10         # Maximum single trade size
 
 # ─── OPTIONAL ─────────────────────────────────────────────
-COINGECKO_API_KEY=CG-...        # Required for signal-sniper strategy (free tier works)
 LOG_LEVEL=info                  # debug | info | warn | error
 LIMITLESS_API_URL=https://api.limitless.exchange  # Override API base URL
 LIMITLESS_WS_URL=wss://ws.limitless.exchange      # Override WebSocket URL
 
-# ─── SIGNAL SNIPER CONFIG ────────────────────────────────
-SNIPER_ASSETS=bitcoin,ethereum,solana,dogecoin     # CoinGecko asset IDs to track
-SNIPER_BET_SIZE=0.50            # USD per trade
-SNIPER_MIN_EDGE=10              # Minimum edge % to trigger a trade
-SNIPER_EXPERIMENT=signal-sniper-v1  # Experiment name for logging
-
-# ─── COMPLEMENT ARB CONFIG ───────────────────────────────
-ARB_BET_SIZE=10                 # USD per arb (split across YES+NO)
-ARB_MIN_SPREAD=3                # Minimum spread % to trigger arb
-ARB_SCAN_INTERVAL=30000         # Scan interval in ms
+# ─── STRATEGY TUNABLES (all optional, defaults shown in .env.example) ───
+# oracle-arb:        ORACLE_ASSETS, ORACLE_MIN_EDGE, ORACLE_BET_SIZE, …
+# certainty-closer:  CC_ASSUMED_EDGE, CC_KELLY_FRACTION, CC_MAX_RISK, …
+# cross-market-mm:   configured in cross-market-mm.config.yaml (not .env) +
+#                    RELAYER_API_KEY / RELAYER_API_KEY_ADDRESS for Polymarket setup
 ```
 
 ### Step 5: First Dry Run
 
 ```bash
-# Run signal sniper in dry-run mode (no real trades)
-npm run signal-sniper
+# Simplest: SDK-only, no extra setup, dry-run by default
+npm run certainty-closer
 ```
 
-You should see output like:
-```
-╔══════════════════════════════════════════════╗
-║         SIGNAL SNIPER STRATEGY               ║
-║  CoinGecko Signals • Edge Detection          ║
-╚══════════════════════════════════════════════╝
-
-  Assets:     bitcoin, ethereum, solana, dogecoin
-  Edge:       >10%
-  Bet size:   $0.50
-  Mode:       DRY RUN
-```
-
-The bot will scan markets and log what it *would* trade without executing.
+You should see the SDK client initialize, markets get scanned, and
+`[DRY_RUN] would createOrder` lines — it logs what it *would* trade without
+signing or posting anything. (For the flagship, `npm run cross-market-mm` is the
+equivalent dry-run; see `src/strategies/cross-market-mm/QUICKSTART.md`.)
 
 ### Step 6: Market Approval (CRITICAL for AI Agents)
 
@@ -724,9 +654,9 @@ try {
 ### Step 7: Go Live
 
 ```bash
-# Edit .env: DRY_RUN=false
-# Keep bet sizes small ($0.50-$2) until validated
-npm run signal-sniper
+# Edit .env: DRY_RUN=false  (cross-market-mm: dry_run: false in its YAML)
+# Keep sizes small ($0.50-$2 / order_size 5) until validated
+npm run certainty-closer        # or: oracle-arb / cross-market-mm
 ```
 
 ---
@@ -1124,7 +1054,7 @@ npx tsx src/core/limitless/redeem.ts check <market-slug>
 # Claim from specific markets
 npx tsx src/core/limitless/redeem.ts claim <slug1> <slug2> ...
 
-# Claim all from learnings.jsonl (all markets you've ever traded)
+# Claim all resolved winning positions the wallet holds
 npx tsx src/core/limitless/redeem.ts claim-all
 ```
 
@@ -1281,33 +1211,11 @@ ws.disconnect();
 
 ---
 
-### CoinGeckoClient (`src/core/price-feeds/coingecko.ts`)
+### Price feed: Pyth Hermes (`src/core/price-feeds/hermes.ts`)
 
-External price data for calculating fair values in prediction markets.
-
-#### Constructor
-
-```typescript
-const cg = new CoinGeckoClient(
-  baseUrl?: string,    // Default: https://api.coingecko.com/api/v3
-  apiKey?: string       // Default: from COINGECKO_API_KEY env
-);
-```
-
-#### `getPrice(coinId, vsCurrency?)`
-
-Get the current USD price for a coin.
-
-```typescript
-const price = await cg.getPrice('bitcoin');        // Returns: 97500.23
-const price = await cg.getPrice('dogecoin');       // Returns: 0.0971
-const price = await cg.getPrice('ethereum', 'eur');// Returns: 2850.50
-```
-
-**Notes:**
-- Returns `0` on error (rate limit, network failure) — always check for this
-- CoinGecko free tier: ~30 req/min. The demo API key raises this
-- Common coin IDs: `bitcoin`, `ethereum`, `solana`, `dogecoin`, `cardano`
+`oracle-arb` streams sub-second oracle prices from Pyth's Hermes SSE endpoint to
+compare against Limitless market pricing. It's the only external price feed in
+the repo (the old CoinGecko adapter was removed with the signal-sniper strategy).
 
 ---
 
@@ -2700,60 +2608,34 @@ All contracts are on **Base chain** (chainId: `8453`).
 
 ## 16. Strategies Reference
 
-### Signal Sniper (`signal-sniper`)
+Three strategies ship, spanning distinct archetypes (see also the overview near
+the top of this file). All authenticate via the scoped HMAC token and default to
+`DRY_RUN`.
 
-**Concept:** Monitors external price feeds (CoinGecko) and compares the real-world price against prediction market strike prices. When the current price clearly indicates an outcome but the market hasn't adjusted, buy the underpriced side.
+### `cross-market-mm` (flagship — cross-venue market making)
 
-**Example:** BTC is at $97,500. Market "BTC above $97,000?" has YES at 60¢. Since BTC is already above the strike, YES should be much higher. Buy YES at 60¢, expect it to resolve at $1.00.
+Quote on Limitless, hedge fills on Polymarket to stay delta-neutral; earn the
+cross-venue spread + Limitless maker rebates / LP rewards. This is the deepest
+strategy and has its **own complete operating manual** —
+`src/strategies/cross-market-mm/SKILL.md` (setup → find-pairs → preflight → run
+→ status → close), plus QUICKSTART / GO-LIVE / DEMO. Run: `npm run cross-market-mm`.
 
-**Edge exploited:** Information latency — external price data updates faster than prediction market odds, especially for short-duration markets.
+### `oracle-arb` (Pyth oracle edge-detection)
 
-**Best market types:** Crypto price bracket markets with 5min–2hr expiry windows.
+Streams a Pyth (Hermes SSE) oracle price and compares it to Limitless markets
+resolving on the same underlying. When the implied probability strays far enough
+from the oracle to clear fees + slippage, it fires FOK/FAK orders at the real
+orderbook ask. Best on balanced (30–70¢) markets with real liquidity. Config:
+`ORACLE_*` env vars (see `.env.example`). Run: `npm run oracle-arb`.
 
-**Configuration:**
+### `certainty-closer` (SDK-only near-resolution example)
 
-| Env Variable | Default | Description |
-|-------------|---------|-------------|
-| `SNIPER_ASSETS` | `bitcoin,ethereum,solana,dogecoin` | CoinGecko coin IDs to track |
-| `SNIPER_BET_SIZE` | `0.50` | USD per trade |
-| `SNIPER_MIN_EDGE` | `10` | Minimum edge % to trigger trade |
-| `SNIPER_EXPERIMENT` | `signal-sniper-v1` | Experiment name for learnings |
-
-**Risk profile:** Medium. Depends on price stability between entry and expiry. High volatility near expiry can flip outcomes.
-
-**Tick interval:** 15 seconds (fast for short-duration markets).
-
-**How it evaluates:**
-1. Fetch current price from CoinGecko
-2. Search Limitless for markets matching the asset ticker
-3. Parse the strike price from market title (e.g., "above $97,000")
-4. Filter to CLOB markets expiring within 2 hours
-5. Calculate fair value: `confidence = 0.50 + |percentFromStrike| * 40` (capped at 0.95)
-6. Compare fair value against market price → if edge > threshold, trade
-
----
-
-### Binary Complement Arb (`cross-market-arb`)
-
-**Concept:** In a binary market, YES + NO must equal $1.00 at resolution. If you can buy both sides for less than $1.00, you're guaranteed a profit regardless of outcome.
-
-**Example:** YES = $0.45, NO = $0.48. Total cost = $0.93. Buy both → guaranteed $1.00 at resolution → $0.07 profit (7.5% return).
-
-**Edge exploited:** Market maker spread inefficiency, thin liquidity, or momentary pricing dislocations.
-
-**Best market types:** Any binary CLOB market with thin liquidity.
-
-**Configuration:**
-
-| Env Variable | Default | Description |
-|-------------|---------|-------------|
-| `ARB_BET_SIZE` | `10` | Total USD per arb (split across YES + NO) |
-| `ARB_MIN_SPREAD` | `3` | Minimum profit % to trigger |
-| `ARB_SCAN_INTERVAL` | `30000` | Scan interval in ms |
-
-**Risk profile:** Low (guaranteed profit if both sides fill). Main risk is partial fills — getting only one side means directional exposure.
-
-**Tick interval:** 30 seconds (configurable).
+The simplest on-ramp — no external feeds. Filters markets near resolution and
+buys the favourite, sized via fractional Kelly (`src/core/kelly.ts`). Honestly
+framed: on its own it has no independent edge (the edge is `CC_ASSUMED_EDGE`,
+which *you* assert); it's the clearest teaching example of the
+market-filter → decide → execute loop. Config: `CC_*` env vars. Run:
+`npm run certainty-closer`.
 
 ---
 
@@ -2908,24 +2790,13 @@ Common approaches:
 - **Kelly criterion** — `f = (edge * odds - 1) / (odds - 1)` — sizes bets proportional to edge
 - **Fractional Kelly** — use 25-50% of full Kelly to reduce variance
 
-### Logging Learnings
+### Recording run data
 
-Use the learnings system to track every trade for later analysis:
-
-```typescript
-import { recordTrade } from '../signal-sniper/learnings.js';
-
-recordTrade({
-  market: market.slug,
-  asset: 'BTC',
-  strike: 97000,
-  priceAtEntry: 97500,
-  side: 'YES',
-  betSize: 1.00,
-  edgePercent: 15.0,
-  hoursToExpiry: 0.5,
-});
-```
+For capturing a run's orders/fills/exposure to `./data` for later analysis, see
+the `cross-market-mm` recorder pattern (`src/strategies/cross-market-mm/recorder.ts`
++ `analyze.ts`): it writes one JSONL line per event and `npm run
+cross-market-mm:analyze` summarizes it. Mirror that pattern (an append-only
+JSONL recorder + an analyze script) for your own strategy.
 
 ### Adding New Price Feeds
 
@@ -2942,72 +2813,33 @@ export class MyFeedClient {
 }
 ```
 
-Then use it in your strategy's `tick()` method alongside or instead of CoinGecko.
+Then use it in your strategy's `tick()` method (the `oracle-arb` Pyth Hermes feed in `src/core/price-feeds/hermes.ts` is the in-repo example).
 
 ---
 
 ## 18. Autonomous Iteration
 
-This is where AI agents shine. The `iterate.ts` module provides commands designed to be called by an AI agent on a schedule, creating a continuous improvement loop.
+Run a strategy continuously, review what it captured, tune, repeat. Each
+strategy records its activity (the `cross-market-mm` recorder writes
+`./data/cross-market-mm-*.jsonl`; summarize with `npm run cross-market-mm:analyze`).
 
-### Iterator Commands
-
-```bash
-# Quick status: wallet balance, trade count, win rate
-npm run iterate
-# or: npx tsx src/strategies/iterate.ts report
-
-# Deep analysis: trade patterns, recommendations, market scan
-npm run iterate:analyze
-# or: npx tsx src/strategies/iterate.ts analyze
-
-# Market scanner: find interesting opportunities right now
-npm run iterate:markets
-# or: npx tsx src/strategies/iterate.ts markets
-```
-
-### What Each Command Does
-
-**`report`** — Fast status check:
-- Wallet USDC balance
-- Total trades, wins, losses, pending
-- Win rate and average edge on wins/losses
-
-**`analyze`** — Deep analysis + recommendations:
-- Everything in `report`
-- Scans all active CLOB markets for opportunities
-- Flags skewed markets (YES < 15% or > 85%)
-- Flags arbitrageable markets (YES + NO < 97%)
-- Flags markets expiring within 2 hours
-- Generates recommendations based on trade history patterns
-- Logs the iteration to `iteration-log.jsonl`
-
-**`markets`** — Pure market scan:
-- Lists all active CLOB markets with interesting characteristics
-- Groups by opportunity type (skewed, arb, expiring soon)
-
-### The Autonomous Iteration Cycle
-
-Set up a cron job or heartbeat to run this loop:
+### The Iteration Cycle
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  1. SCAN        npm run iterate:markets                 │
-│     → Find opportunities across all active markets      │
+│  1. DRY-RUN     npm run <strategy>  (DRY_RUN default)   │
+│     → Confirm it boots, scans, and would trade sanely   │
 │                                                         │
-│  2. EVALUATE    Query MCP for any unknown market types   │
-│     → Calculate fair values, edge sizes                 │
+│  2. GO LIVE     small size, watch the first minutes     │
+│     → DRY_RUN=false (or dry_run:false in the YAML)      │
 │                                                         │
-│  3. TRADE       npm run signal-sniper (or custom)       │
-│     → Execute on the best opportunities                 │
+│  3. ANALYZE     npm run cross-market-mm:analyze         │
+│     → Review fills, how flat it stayed, fees, PnL       │
 │                                                         │
-│  4. ANALYZE     npm run iterate:analyze                  │
-│     → Review what worked, what didn't                   │
+│  4. ADJUST      edit .env / the strategy's config       │
+│     → Tune thresholds, sizing, pair/market selection    │
 │                                                         │
-│  5. ADJUST      Edit .env or strategy config            │
-│     → Tune edge thresholds, bet sizes, asset list       │
-│                                                         │
-│  6. REPEAT      Wait for next cycle                     │
+│  5. REPEAT      run the next cycle                      │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -3036,37 +2868,18 @@ Set up a cron job or heartbeat to run this loop:
 - Unusual market conditions (extreme volatility, illiquidity)
 - Wallet balance drops below your minimum threshold
 
-### The learnings.jsonl Format
+### Run-data format
 
-Every trade is appended as a JSON line:
+Each run appends one JSON object per line to `./data/cross-market-mm-<ts>.jsonl`
+(run config, every order, per-tick exposure snapshot, every hedge). `npm run
+cross-market-mm:analyze` reads the latest file and summarizes orders, fills,
+how flat the book stayed, hedges, and net PnL.
 
-```json
-{
-  "timestamp": "2025-02-13T10:30:00.000Z",
-  "market": "btc-above-97000-feb-13-1030",
-  "asset": "BTC",
-  "strike": 97000,
-  "priceAtEntry": 97500,
-  "side": "YES",
-  "betSize": 0.50,
-  "edgePercent": 15.2,
-  "hoursToExpiry": 0.5,
-  "outcome": "WIN",
-  "priceAtResolution": 97800,
-  "pnl": 0.42
-}
-```
-
-Fields `outcome`, `priceAtResolution`, and `pnl` are filled in after resolution (manually or by a backfill script).
-
-### OpenClaw Cron Example
+### OpenClaw / cron example
 
 ```bash
-# Every 30 minutes: scan and analyze
-openclaw cron add "*/30 * * * *" "cd /path/to/agents-starter && npm run iterate:analyze"
-
-# Every 2 hours: run the signal sniper for one cycle
-openclaw cron add "0 */2 * * *" "cd /path/to/agents-starter && timeout 300 npm run signal-sniper"
+# Run the flagship continuously under a process manager, then summarize daily
+openclaw cron add "0 */6 * * *" "cd /path/to/agents-starter && npm run cross-market-mm:analyze"
 ```
 
 ### OpenClaw Heartbeat Integration
@@ -3075,10 +2888,9 @@ Add to your `HEARTBEAT.md`:
 
 ```markdown
 ## Trading Bot Checks
-- [ ] Run `npm run iterate` in agents-starter — check wallet balance and win rate
-- [ ] If win rate < 50% over last 20 trades, pause the strategy and investigate
-- [ ] If wallet < $5 USDC, notify me
-- [ ] Run `npm run iterate:markets` — any arb opportunities > 5%?
+- [ ] Run `npm run cross-market-mm:status` — confirm net delta ≈ 0 (delta-flat) on both venues
+- [ ] If equity is down near the max_loss_usd breaker, halt + `npm run cross-market-mm:close`
+- [ ] `npm run cross-market-mm:analyze` — review fills, hedges, PnL for the latest run
 ```
 
 ---
@@ -3121,15 +2933,9 @@ Prediction markets are inherently risky. Even with an edge, variance is real. Fu
 
 ### Scan All Markets and Find the Best Opportunity
 
-```bash
-npm run iterate:markets
-```
-
-Or programmatically:
-
 ```typescript
 const limitless = new LimitlessClient();
-const markets = await limitless.getActiveMarkets({ tradeType: 'clob', limit: 100 });
+const markets = await limitless.getActiveMarkets({ tradeType: 'clob', limit: 25 }); // API caps limit at 25
 
 const opportunities = markets
   .filter(m => m.prices && m.prices.length >= 2)
@@ -3185,43 +2991,28 @@ console.log('Weekly P&L:', pnl);
 ### Redeem All Resolved Winning Positions
 
 ```bash
-# From learnings.jsonl (all markets you've traded)
-npx tsx src/core/limitless/redeem.ts claim-all
+npm run redeem claim-all
 ```
 
-Or programmatically:
+Or programmatically, for a set of market slugs you've traded:
 
 ```typescript
 import { RedeemClient } from './core/limitless/redeem.js';
-import { readFileSync } from 'fs';
 
 const redeemer = new RedeemClient();
-const lines = readFileSync('./learnings.jsonl', 'utf-8').trim().split('\n');
-const slugs = [...new Set(lines.map(l => JSON.parse(l).market))];
-
-const result = await redeemer.claimAll(slugs);
+const result = await redeemer.claimAll(['market-slug-a', 'market-slug-b']);
 console.log(`Claimed ${result.claimed} positions, total: $${result.totalValue} USDC`);
 ```
 
-### Analyze My Last 50 Trades and Find Patterns
+### Analyze a run
 
 ```bash
-npm run iterate:analyze
+npm run cross-market-mm:analyze
 ```
 
-Or manually inspect `learnings.jsonl`:
-
-```typescript
-import { getLearnings, suggestAdjustments } from './strategies/signal-sniper/learnings.js';
-
-const stats = getLearnings();
-console.log(`Win rate: ${(stats.winRate * 100).toFixed(1)}%`);
-console.log(`Avg edge on wins: ${stats.avgEdgeOnWins.toFixed(1)}%`);
-console.log(`Avg edge on losses: ${stats.avgEdgeOnLosses.toFixed(1)}%`);
-
-const suggestions = suggestAdjustments();
-suggestions.forEach(s => console.log(`SUGGESTION: ${s}`));
-```
+Reads the latest `./data/cross-market-mm-*.jsonl` and prints orders placed, fills
+inferred from balance deltas, how delta-flat the book stayed, hedges fired, and
+net PnL. (Mirror the recorder + analyze pattern for your own strategy.)
 
 ### Approve Tokens for a New Market
 
@@ -3263,14 +3054,14 @@ await exec('cd ~/limitless-trader && npm install');
 // Create .env
 await writeFile('~/limitless-trader/.env', `
 PRIVATE_KEY=${walletPrivateKey}
-LIMITLESS_API_KEY=${apiKey}
+LMTS_TOKEN_ID=${tokenId}
+LMTS_TOKEN_SECRET=${tokenSecret}
 DRY_RUN=true
-ORACLE_BET_SIZE=2
 `);
 
-// Verify setup
-const { stdout } = await exec('cd ~/limitless-trader && npm run iterate');
-console.log(stdout); // Should show wallet balance
+// Verify setup with a dry run (logs intents, signs nothing)
+const { stdout } = await exec('cd ~/limitless-trader && timeout 20 npm run certainty-closer');
+console.log(stdout); // SDK client initializes + markets get scanned
 ```
 
 ### Pattern 2: Continuous Monitoring Loop
@@ -3344,12 +3135,8 @@ async function emergencyShutdown() {
   // Stop trading immediately
   await exec('pm2 stop oracle-live');
   
-  // Cancel all open orders
-  const dashboard = await fetch('http://localhost:3003/api/dashboard').then(r => r.json());
-  for (const order of dashboard.orders || []) {
-    // Cancel order via API
-    await trading.cancelOrder(order.marketSlug, order.id);
-  }
+  // Cancel all open orders + flatten to flat on both venues (cross-market-mm)
+  await exec('cd ~/limitless-trader && npm run cross-market-mm:close');
   
   // Claim any winnings
   await exec('cd ~/limitless-trader && npx tsx src/core/limitless/redeem.ts claim-all');
@@ -3381,12 +3168,10 @@ ORACLE_BET_SIZE=${strat.size}
   await exec(`cd ~/limitless-trader && PORT=${3000 + i} pm2 start --name ${strat.name} "npx tsx src/strategies/oracle-arb/run.ts" -- --env .env.${strat.name}`);
 }
 
-// Monitor and compare performance
+// Monitor and compare performance — each run records to ./data; summarize it
 setInterval(async () => {
-  for (const strat of strategies) {
-    const data = await fetch(`http://localhost:${3000 + i}/api/dashboard`).then(r => r.json());
-    console.log(`${strat.name}: ${data.overview.pnl} P&L, ${data.overview.winRate}% WR`);
-  }
+  const { stdout } = await exec('cd ~/limitless-trader && npm run cross-market-mm:analyze');
+  console.log(stdout); // orders, fills, delta-flatness, hedges, net PnL
 }, 60000);
 ```
 
@@ -3441,9 +3226,8 @@ This approves both USDC and CTF for the market's venue contracts.
 
 **Fix:**
 1. Add delays between API calls (the SDK doesn't throttle automatically)
-2. Use an API key for higher limits
-3. Cache responses where possible (market details, venue data)
-4. For CoinGecko, the free tier limits to ~30 req/min — use a demo API key
+2. Cache responses where possible (market details, venue data)
+3. For a high-frequency quoting loop, throttle re-quotes — cross-market-mm uses `min_requote_ms` to stay under the Cloudflare rate limit (429/1015)
 
 ### WebSocket Disconnection
 
@@ -3468,7 +3252,7 @@ This approves both USDC and CTF for the market's venue contracts.
 
 **Symptom:** Orders are being submitted even with `DRY_RUN=true`
 
-**Fix:** Make sure you're using the strategy runner (e.g., `npm run signal-sniper`) which respects the env var, or using the proxy pattern from `run.ts`. Direct `TradingClient.createOrder()` calls also check `process.env.DRY_RUN`.
+**Fix:** Make sure you're using the strategy runner (e.g., `npm run certainty-closer`) which respects the env var. `SDKTradingClient` reads `DRY_RUN` from settings/env and short-circuits before signing.
 
 ---
 
@@ -3492,9 +3276,10 @@ This approves both USDC and CTF for the market's venue contracts.
 - **USDC on Base:** [0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913](https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
 
 ### Dependencies
+- **@limitless-exchange/sdk:** the official Limitless TypeScript SDK (orders, market data, HMAC auth)
+- **@polymarket/clob-client-v2:** Polymarket v2 CLOB client (cross-market-mm hedge leg, pUSD)
 - **viem:** [viem.sh](https://viem.sh) — TypeScript Ethereum library (wallet, signing, contracts)
-- **CoinGecko API:** [coingecko.com/api](https://www.coingecko.com/en/api)
-- **Socket.IO:** [socket.io](https://socket.io) — WebSocket client for real-time data
+- **Pyth Hermes:** [hermes.pyth.network](https://hermes.pyth.network) — SSE oracle prices (oracle-arb)
 
 ### OpenClaw
 - **GitHub:** [github.com/openclaw/openclaw](https://github.com/openclaw/openclaw)

@@ -21,9 +21,10 @@
 import { pino } from 'pino';
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
 import type { QuoteFeed } from './quote-feed.js';
+import type { Recorder } from './recorder.js';
 import type { MarketPair, ReplicatorSettings } from './types.js';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'replicator' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'cross-market-mm' });
 
 /** Keep prices inside (0, 1) and rounded to Limitless tick (0.001). */
 export function clipPrice(p: number): number {
@@ -58,17 +59,26 @@ async function maybePlace(
   price: number,
   size: number,
   isYes: boolean,
+  recorder?: Recorder,
 ): Promise<void> {
   // Last-mile range gate. Same shape as the Python `_maybe_place`.
   if (!(price > 0 && price < 1) || size < 1) return;
   try {
-    await trading.createOrder({
+    const res = await trading.createOrder({
       marketSlug: pair.limitlessSlug,
       side: isYes ? 'YES' : 'NO',
       limitPriceCents: Math.round(price * 100),
       usdAmount: size * price, // contracts × price = USD notional
       orderType: 'GTC',
       postOnly: true,
+    });
+    recorder?.record({
+      kind: 'order',
+      pair: pair.limitlessSlug,
+      side: isYes ? 'YES' : 'NO',
+      price,
+      size,
+      orderId: (res as { order?: { id?: string } })?.order?.id,
     });
   } catch (err) {
     logger.warn({ err: (err as Error).message, slug: pair.limitlessSlug }, 'place_order failed');
@@ -81,6 +91,7 @@ async function replicateOnce(
   polyAsk: number,
   trading: SDKTradingClient,
   settings: ReplicatorSettings,
+  recorder?: Recorder,
 ): Promise<void> {
   const { yes: yesPrice, no: noPrice } = computeBuyPrices(polyBid, polyAsk, settings.marginBps);
 
@@ -90,8 +101,8 @@ async function replicateOnce(
   // Both sides fire concurrently. maybePlace logs (doesn't throw) on rejects
   // so a YES failure doesn't block the NO leg.
   await Promise.all([
-    maybePlace(trading, pair, yesPrice, settings.orderSize, true),
-    maybePlace(trading, pair, noPrice, settings.orderSize, false),
+    maybePlace(trading, pair, yesPrice, settings.orderSize, true, recorder),
+    maybePlace(trading, pair, noPrice, settings.orderSize, false, recorder),
   ]);
 }
 
@@ -105,25 +116,39 @@ export async function runReplicator(
   trading: SDKTradingClient,
   settings: ReplicatorSettings,
   signal: AbortSignal,
+  recorder?: Recorder,
 ): Promise<void> {
   const slug = pair.polymarketSlug;
   feed.ensureSlug(slug);
 
   logger.info(
     { polymarketSlug: pair.polymarketSlug, limitlessSlug: pair.limitlessSlug },
-    'replicator started',
+    'cross-market-mm started',
   );
 
+  let lastRequoteAt = 0;
   try {
     while (!signal.aborted) {
-      await feed.nextUpdate(slug);
+      await feed.nextUpdate(slug, signal);
       if (signal.aborted) break;
+
+      // Re-quote throttle: cancel-replace still fires every cycle, but at most
+      // once per minRequoteMs per pair. Poly ticks many times/sec; without this
+      // floor a multi-pair run trips the Limitless API rate-limit (429/1015) on
+      // sustained operation. We sleep off the remainder, then re-read so we
+      // always quote the FRESHEST book — coalescing the burst, not lagging it.
+      const sinceLast = Date.now() - lastRequoteAt;
+      if (sinceLast < settings.minRequoteMs) {
+        await new Promise((r) => setTimeout(r, settings.minRequoteMs - sinceLast));
+        if (signal.aborted) break;
+      }
 
       const quote = feed.getQuote(slug);
       if (!quote || quote.bid == null || quote.ask == null) continue;
 
+      lastRequoteAt = Date.now();
       try {
-        await replicateOnce(pair, quote.bid, quote.ask, trading, settings);
+        await replicateOnce(pair, quote.bid, quote.ask, trading, settings, recorder);
       } catch (err) {
         logger.warn({ err: (err as Error).message, slug }, 'replicate tick failed');
         // small backoff so we don't tight-loop on a persistent error
@@ -131,14 +156,21 @@ export async function runReplicator(
       }
     }
   } finally {
-    // Clean shutdown: cancel everything we may have placed on this slug.
+    // Clean shutdown: cancel everything on this slug AND verify it's gone —
+    // a single cancelAll has been seen to leave orders resting. Settle briefly
+    // first so any order placed in the final tick has propagated onto the book
+    // before we cancel + verify (else it lands after and orphans).
+    await new Promise((r) => setTimeout(r, 800));
     try {
-      await trading.cancelAll(pair.limitlessSlug);
-      logger.info({ slug: pair.limitlessSlug }, 'replicator shutdown: cancelAll done');
+      const res = await trading.cancelAllAndVerify(pair.limitlessSlug);
+      logger.info(
+        { slug: pair.limitlessSlug, remaining: res.remaining },
+        'cross-market-mm shutdown: cancelAll verified',
+      );
     } catch (err) {
-      logger.warn(
+      logger.error(
         { err: (err as Error).message, slug: pair.limitlessSlug },
-        'shutdown cancelAll failed',
+        'shutdown cancelAll failed — orders may still be resting',
       );
     }
   }

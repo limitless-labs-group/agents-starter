@@ -19,15 +19,19 @@
 import { pino } from 'pino';
 import { Client, HttpClient } from '@limitless-exchange/sdk';
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
+import { LimitlessClient } from '../../core/limitless/markets.js';
 import { PolymarketAdapter } from '../../core/polymarket/client.js';
 import { runPolyWs } from '../../core/polymarket/ws.js';
 import { QuoteFeed } from './quote-feed.js';
 import { runReplicator } from './index.js';
 import { runHedger } from './hedger.js';
+import { flattenBothVenues } from './flatten-positions.js';
 import { loadSettings } from './config.js';
+import { Recorder } from './recorder.js';
+import { RiskMonitor } from './risk.js';
 import type { MarketPair } from './types.js';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'replicator-main' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'cross-market-mm-main' });
 
 /**
  * Resolve Limitless market metadata for a pair: YES/NO token ids +
@@ -79,7 +83,7 @@ export async function main(): Promise<void> {
       hedgeIntervalSec: settings.hedgeIntervalSec,
       dryRun: settings.dryRun,
     },
-    'replicator boot',
+    'cross-market-mm boot',
   );
 
   // -- Limitless side --
@@ -93,6 +97,7 @@ export async function main(): Promise<void> {
   const trading = new SDKTradingClient({
     privateKey: settings.privateKey,
     ...limitlessAuth,
+    dryRun: settings.dryRun, // single source of truth — env OR yaml, decided in config.ts
   });
 
   // -- Polymarket side --
@@ -115,6 +120,17 @@ export async function main(): Promise<void> {
     await poly.resolveAssetIds(pair);
   }
 
+  // -- Boot clean: cancel any resting orders left by a prior run BEFORE
+  //    quoting. This is the real guarantee against orphan accumulation — a
+  //    shutdown can occasionally fail to cancel a just-placed order, but those
+  //    age out and cancel cleanly here, so every run starts from a flat book.
+  if (!settings.dryRun) {
+    for (const pair of settings.pairs) {
+      const res = await trading.cancelAllAndVerify(pair.limitlessSlug);
+      logger.info({ slug: pair.limitlessSlug, remaining: res.remaining }, 'boot: book clean');
+    }
+  }
+
   // -- Shared state for WS → replicator --
   const feed = new QuoteFeed();
   const assetToSlug = new Map<string, string>();
@@ -129,25 +145,57 @@ export async function main(): Promise<void> {
     yesAssets.add(pair.polyYesAssetId);
   }
 
-  // -- Spawn tasks under a shared AbortController --
+  // -- Data capture: one JSONL file per run (orders, snapshots, hedges) --
+  const recorder = new Recorder();
+  recorder.record({
+    kind: 'run',
+    dryRun: settings.dryRun,
+    pairs: settings.pairs.length,
+    orderSize: settings.orderSize,
+    marginBps: settings.marginBps,
+  });
+  logger.info({ file: recorder.filePath }, 'recording run data (npm run replicator:analyze)');
+
+  // -- Loss circuit breaker (live only). Tripping aborts everything; the
+  //    replicator tasks cancel-all in their finally{} on abort. --
   const ac = new AbortController();
+  const risk = new RiskMonitor(settings.maxLossUsd);
+  let killed = false;
+  const onKill = () => {
+    killed = true;
+    ac.abort();
+  };
+  if (!settings.dryRun) {
+    logger.warn({ maxLossUsd: settings.maxLossUsd }, 'circuit breaker armed (equity drawdown kill)');
+  }
+
+  // -- Spawn tasks under a shared AbortController --
   const tasks: Promise<void>[] = [
     runPolyWs(feed, assetToSlug, yesAssets, ac.signal),
-    runHedger(settings.pairs, feed, sdk, poly, settings, ac.signal),
+    runHedger(settings.pairs, feed, sdk, poly, settings, ac.signal, {
+      recorder,
+      risk,
+      walletAddress: trading.getWalletAddress(),
+      onKill,
+    }),
     ...settings.pairs.map((pair) =>
-      runReplicator(pair, feed, trading, settings, ac.signal),
+      runReplicator(pair, feed, trading, settings, ac.signal, recorder),
     ),
   ];
 
-  // -- Wait for Ctrl-C / SIGTERM --
+  // -- Wait for Ctrl-C / SIGTERM / circuit-breaker. Any abort (signal or
+  //    onKill → ac.abort()) resolves this so we proceed to clean shutdown. --
   const stop = new Promise<void>((resolve) => {
-    const onSignal = () => {
-      logger.info('shutdown signal received');
-      ac.abort();
-      resolve();
-    };
-    process.once('SIGINT', onSignal);
-    process.once('SIGTERM', onSignal);
+    process.once('SIGINT', () => ac.abort());
+    process.once('SIGTERM', () => ac.abort());
+    ac.signal.addEventListener(
+      'abort',
+      () => {
+        logger.info({ reason: killed ? 'circuit-breaker' : 'signal' }, 'shutting down');
+        resolve();
+      },
+      { once: true },
+    );
   });
 
   logger.info('bot running. Ctrl-C to stop.');
@@ -155,11 +203,47 @@ export async function main(): Promise<void> {
 
   // Let all tasks settle their finally{} blocks (replicator cancelAll on shutdown)
   await Promise.allSettled(tasks);
+
+  // -- Flatten to flat on the way out (live only). Cancelling orders (above)
+  //    stops new exposure, but a fill that already hedged leaves directional
+  //    inventory on BOTH venues. flattenBothVenues sells/redeems it back to
+  //    flat so a stop — Ctrl-C OR a tripped breaker — never walks away with an
+  //    open position. Idempotent; re-run `npm run replicator:close` if a thin
+  //    book leaves a remainder. --
+  if (!settings.dryRun && settings.flattenOnStop) {
+    logger.warn({ reason: killed ? 'circuit-breaker' : 'signal' }, 'flattening inventory on both venues');
+    try {
+      const md = new LimitlessClient();
+      const results = await flattenBothVenues(trading, md, poly, settings.pairs);
+      for (const r of results) {
+        logger.info(
+          {
+            slug: r.slug,
+            limitless: `YES ${r.limitless.yes.toFixed(2)} / NO ${r.limitless.no.toFixed(2)}`,
+            polymarket: `YES ${r.polymarket.yes.toFixed(2)} / NO ${r.polymarket.no.toFixed(2)}`,
+            flat: r.flat,
+          },
+          r.flat ? 'flat on both venues' : 'NOT fully flat — run `npm run replicator:close` to retry',
+        );
+      }
+      if (results.some((r) => !r.flat)) {
+        logger.error('some pairs left inventory (thin book?) — run `npm run replicator:close`');
+      }
+    } catch (e) {
+      logger.error(
+        { err: e instanceof Error ? e.message : e },
+        'flatten-on-stop failed — run `npm run replicator:close` manually',
+      );
+    }
+  }
+
+  recorder.close();
+  logger.info({ file: recorder.filePath }, 'run data saved');
   logger.info('bye.');
 }
 
 main().catch((err) => {
   // eslint-disable-next-line no-console
-  console.error('replicator failed to start:', err);
+  console.error('cross-market-mm failed to start:', err);
   process.exitCode = 1;
 });

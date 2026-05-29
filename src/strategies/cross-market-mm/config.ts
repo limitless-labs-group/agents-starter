@@ -1,8 +1,8 @@
 /**
- * Config loader for the replicator strategy.
+ * Config loader for the cross-market-mm strategy.
  *
  * Secrets come from `.env` (process env). Trading params + market pairs
- * come from a YAML file (default `./replicator.config.yaml`).
+ * come from a YAML file (default `./cross-market-mm.config.yaml`).
  *
  * Port of `config.py` from limitless-replicator.
  */
@@ -43,6 +43,14 @@ interface YamlConfig {
   hedgeThreshold?: number;
   hedge_interval?: number;
   hedgeIntervalSec?: number;
+  hedge_settle_ms?: number;
+  hedgeSettleMs?: number;
+  min_requote_ms?: number;
+  minRequoteMs?: number;
+  max_loss_usd?: number;
+  maxLossUsd?: number;
+  flatten_on_stop?: boolean;
+  flattenOnStop?: boolean;
   dry_run?: boolean;
   dryRun?: boolean;
   market_pairs?: YamlPair[];
@@ -72,14 +80,14 @@ export function loadSettings(): ReplicatorSettings {
     );
   }
 
-  const configPath = process.env.REPLICATOR_CONFIG_PATH || './replicator.config.yaml';
+  const configPath = process.env.CROSS_MARKET_MM_CONFIG_PATH || './cross-market-mm.config.yaml';
 
   const resolved = path.resolve(configPath);
   if (!fs.existsSync(resolved)) {
     throw new Error(
-      `replicator config file not found at ${resolved}. ` +
-        `Copy src/strategies/replicator/config.example.yaml and edit it, ` +
-        `or set REPLICATOR_CONFIG_PATH.`,
+      `cross-market-mm config file not found at ${resolved}. ` +
+        `Copy src/strategies/cross-market-mm/config.example.yaml and edit it, ` +
+        `or set CROSS_MARKET_MM_CONFIG_PATH.`,
     );
   }
 
@@ -87,28 +95,41 @@ export function loadSettings(): ReplicatorSettings {
 
   const pairsRaw = raw.market_pairs ?? raw.marketPairs ?? [];
   if (pairsRaw.length === 0) {
-    throw new Error(`replicator config has no market_pairs`);
+    throw new Error(`cross-market-mm config has no market_pairs`);
   }
   const pairs: MarketPair[] = pairsRaw.map((p) => {
     const poly = p.polymarket_slug ?? p.polymarketSlug;
     const lmts = p.limitless_slug ?? p.limitlessSlug;
     if (!poly || !lmts) {
       throw new Error(
-        `replicator config: each market_pair needs polymarket_slug + limitless_slug`,
+        `cross-market-mm config: each market_pair needs polymarket_slug + limitless_slug`,
       );
     }
     return { polymarketSlug: poly, limitlessSlug: lmts };
   });
 
-  const sigTypeRaw = raw.poly_signature_type ?? raw.polySignatureType ?? 2;
+  // Default 3 (POLY_1271 deposit wallet) — what new Polymarket API users get.
+  // Existing Gnosis Safe users set 2.
+  const sigTypeRaw = raw.poly_signature_type ?? raw.polySignatureType ?? 3;
   if (sigTypeRaw !== 2 && sigTypeRaw !== 3) {
     throw new Error(
-      `poly_signature_type must be 2 (legacy Safe) or 3 (new deposit wallet), got ${sigTypeRaw}`,
+      `poly_signature_type must be 2 (existing Gnosis Safe) or 3 (deposit wallet / POLY_1271), got ${sigTypeRaw}`,
     );
   }
 
   // Env DRY_RUN overrides YAML; sensible default = false.
   const dryRun = isTruthyEnv(process.env.DRY_RUN) || (raw.dry_run ?? raw.dryRun ?? false);
+
+  // SIMULATE_FILL=YES:5 (DRY_RUN-only) — inject a synthetic fill to exercise
+  // the hedge pipeline end-to-end without a live taker.
+  let simulateFill: ReplicatorSettings['simulateFill'];
+  const simRaw = process.env.SIMULATE_FILL;
+  if (simRaw) {
+    const [sideStr, sharesStr] = simRaw.split(':');
+    const side = sideStr?.toUpperCase() === 'NO' ? 'NO' : 'YES';
+    const shares = Number(sharesStr ?? 5);
+    if (shares > 0) simulateFill = { side, shares };
+  }
 
   return {
     privateKey,
@@ -120,7 +141,23 @@ export function loadSettings(): ReplicatorSettings {
     marginBps: Number(raw.margin_bps ?? raw.marginBps ?? 100),
     hedgeThreshold: Number(raw.hedge_threshold ?? raw.hedgeThreshold ?? 2),
     hedgeIntervalSec: Number(raw.hedge_interval ?? raw.hedgeIntervalSec ?? 5),
+    // Default 12s: ~2× the observed Polymarket data-api settle lag. Prevents the
+    // hedger from re-hedging a pair on a stale (pre-hedge) position read.
+    hedgeSettleMs: Number(raw.hedge_settle_ms ?? raw.hedgeSettleMs ?? 12000),
+    // Default 2s/pair: keeps a 3-pair run well under the Limitless API rate
+    // limit while staying responsive. Lower it only if a single pair needs
+    // tighter tracking and you've confirmed you're not getting 429s.
+    minRequoteMs: Number(raw.min_requote_ms ?? raw.minRequoteMs ?? 2000),
+    maxLossUsd: Number(
+      process.env.REPLICATOR_MAX_LOSS_USD ?? raw.max_loss_usd ?? raw.maxLossUsd ?? 10,
+    ),
+    // Default ON: a stop (Ctrl-C or breaker) sells inventory to flat on both
+    // venues, not just cancels resting orders. Set flatten_on_stop: false to
+    // leave inventory in place (only orders are cancelled) — rarely wanted,
+    // since it leaves unhedged directional risk.
+    flattenOnStop: raw.flatten_on_stop ?? raw.flattenOnStop ?? true,
     dryRun,
+    simulateFill,
     pairs,
   };
 }

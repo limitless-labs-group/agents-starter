@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { clipPrice, computeBuyPrices } from '../../src/strategies/replicator/index.js';
+import { clipPrice, computeBuyPrices } from '../../src/strategies/cross-market-mm/index.js';
 
 describe('clipPrice', () => {
   it('keeps prices in the open interval (0, 1)', () => {

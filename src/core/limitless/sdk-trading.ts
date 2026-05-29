@@ -65,6 +65,14 @@ export interface SDKTradingConfig {
    */
   apiKey?: string;
   apiBaseUrl?: string;
+  /**
+   * Log-only mode: no orders signed or sent. Single source of truth — pass
+   * the caller's resolved dry-run decision (e.g. settings.dryRun). Falls back
+   * to `process.env.DRY_RUN === 'true'` so standalone callers still work, but
+   * passing it explicitly avoids the trap where env and config disagree and
+   * the client trades live while the rest of the system thinks it's dry.
+   */
+  dryRun?: boolean;
 }
 
 /**
@@ -114,11 +122,13 @@ export class SDKTradingClient {
   private readonly client: Client;
   private readonly orderClient: OrderClient;
   private readonly wallet: ethers.Wallet;
+  private readonly dryRun: boolean;
 
   constructor(config: SDKTradingConfig) {
     if (!config.privateKey) {
       throw new Error('SDKTradingClient: privateKey is required');
     }
+    this.dryRun = config.dryRun ?? process.env.DRY_RUN === 'true';
 
     const auth = resolveAuth(config);
     if (!auth.hmacCredentials && !auth.apiKey) {
@@ -205,7 +215,7 @@ export class SDKTradingClient {
 
     const price = limitPriceCents / 100;
 
-    if (process.env.DRY_RUN === 'true') {
+    if (this.dryRun) {
       logger.info(
         { marketSlug, side, price, usdAmount, orderType },
         '[DRY_RUN] would createOrder via SDK'
@@ -237,19 +247,25 @@ export class SDKTradingClient {
     // Map our orderType string → SDK OrderType enum + branch on shape.
     // FOK uses USD notional (makerAmount as dollars); GTC/FAK use price+size.
     if (orderType === 'FOK') {
-      return await this.orderClient.createOrder({
+      const res = await this.orderClient.createOrder({
         tokenId,
         side: Side.BUY,
         orderType: OrderType.FOK,
         makerAmount: usdAmount, // SDK handles micro-USDC scaling internally
         marketSlug,
       } as any);
+      logger.info(
+        { marketSlug, side, price, usdAmount, orderType, orderId: (res as OrderResponse)?.order?.id },
+        'createOrder placed',
+      );
+      return res;
     }
 
-    // GTC / FAK: size in contracts, price as decimal.
-    // SDK's OrderBuilder tick-aligns automatically.
-    const size = usdAmount / price;
-    return await this.orderClient.createOrder({
+    // GTC / FAK: size in contracts, price as decimal. Round to the 0.001
+    // share step — the SDK validates size divisibility and rejects raw float
+    // divisions like usdAmount/price (e.g. 4.9597) that miss the grid.
+    const size = Math.round((usdAmount / price) * 1000) / 1000;
+    const res = await this.orderClient.createOrder({
       tokenId,
       price,
       size,
@@ -258,11 +274,110 @@ export class SDKTradingClient {
       marketSlug,
       ...(orderType === 'GTC' && postOnly ? { postOnly: true } : {}),
     } as any);
+    logger.info(
+      { marketSlug, side, price, size, orderType, orderId: (res as OrderResponse)?.order?.id },
+      'createOrder placed',
+    );
+    return res;
+  }
+
+  /** Read held YES/NO token balances (in shares) for a market. */
+  async getPositionTokens(marketSlug: string): Promise<{ yes: number; no: number }> {
+    const positions = (await this.client.portfolio.getCLOBPositions()) as unknown as Array<{
+      market?: { slug?: string };
+      tokensBalance?: { yes?: string | number; no?: string | number };
+    }>;
+    for (const p of positions ?? []) {
+      if (p.market?.slug === marketSlug) {
+        return {
+          yes: Number(p.tokensBalance?.yes ?? 0) / 1e6,
+          no: Number(p.tokensBalance?.no ?? 0) / 1e6,
+        };
+      }
+    }
+    return { yes: 0, no: 0 };
+  }
+
+  /**
+   * Like getPositionTokens but waits for the balance to SETTLE — polls until
+   * two consecutive reads agree (within the 0.001 share grid) or maxTries is
+   * hit. Use before acting on a fill so a lagged backend read (which once made
+   * an FOK look killed when it had actually filled → double-fill) can't cause
+   * stacking. Returns the last (most settled) read.
+   */
+  async getPositionTokensSettled(
+    marketSlug: string,
+    opts: { maxTries?: number; delayMs?: number } = {},
+  ): Promise<{ yes: number; no: number }> {
+    const maxTries = Math.max(2, opts.maxTries ?? 4);
+    const delayMs = opts.delayMs ?? 2500;
+    let prev = await this.getPositionTokens(marketSlug);
+    for (let i = 1; i < maxTries; i++) {
+      await new Promise((r) => setTimeout(r, delayMs));
+      const cur = await this.getPositionTokens(marketSlug);
+      if (Math.abs(cur.yes - prev.yes) < 0.001 && Math.abs(cur.no - prev.no) < 0.001) return cur;
+      prev = cur;
+    }
+    return prev;
+  }
+
+  /**
+   * SELL `shares` of a side to CLOSE inventory — the programmatic exit the
+   * BUY-only quoting loop lacks. Defaults to FAK at an aggressive limit so it
+   * takes resting bid liquidity and fills immediately (use to flatten a
+   * position the hedger couldn't keep neutral, or on manual close).
+   *
+   * Requires CTF `setApprovalForAll` for the market's exchange (selling moves
+   * your conditional tokens) — see `npm start approve <slug>`.
+   */
+  async sellShares(params: {
+    marketSlug: string;
+    side: 'YES' | 'NO';
+    shares: number;
+    /** Limit price in CENTS; sell fills at this price or higher. */
+    limitPriceCents: number;
+    orderType?: 'GTC' | 'FAK';
+  }): Promise<OrderResponse> {
+    const { marketSlug, side, shares, limitPriceCents, orderType = 'FAK' } = params;
+    const price = limitPriceCents / 100;
+    // Floor (never round up) — rounding the held balance up asks to sell more
+    // than you own → "Insufficient conditional token balance".
+    const size = Math.floor(shares * 1000) / 1000; // 0.001 share grid
+
+    if (this.dryRun) {
+      logger.info({ marketSlug, side, price, size, orderType }, '[DRY_RUN] would SELL to close');
+      return { order: { id: `dry-run-sell-${Date.now()}` } } as unknown as OrderResponse;
+    }
+
+    const market = (await this.client.markets.getMarket(marketSlug)) as unknown as {
+      positionIds?: string[];
+      tokens?: { yes?: string; no?: string };
+    };
+    const yesToken = market.positionIds?.[0] ?? market.tokens?.yes;
+    const noToken = market.positionIds?.[1] ?? market.tokens?.no;
+    if (!yesToken || !noToken) {
+      throw new Error(`SDKTradingClient: market ${marketSlug} has no valid yes/no token ids`);
+    }
+    const tokenId = side === 'YES' ? yesToken : noToken;
+
+    const res = await this.orderClient.createOrder({
+      tokenId,
+      price,
+      size,
+      side: Side.SELL,
+      orderType: orderType === 'GTC' ? OrderType.GTC : OrderType.FAK,
+      marketSlug,
+    } as any);
+    logger.info(
+      { marketSlug, side, price, size, orderType, orderId: (res as OrderResponse)?.order?.id },
+      'sellShares (close) placed',
+    );
+    return res;
   }
 
   /** Cancel a single order by ID. */
   async cancelOrder(orderId: string): Promise<{ message: string }> {
-    if (process.env.DRY_RUN === 'true') {
+    if (this.dryRun) {
       logger.info({ orderId }, '[DRY_RUN] would cancelOrder');
       return { message: 'dry-run' };
     }
@@ -271,10 +386,68 @@ export class SDKTradingClient {
 
   /** Cancel every live order on a market. */
   async cancelAll(marketSlug: string): Promise<{ message: string }> {
-    if (process.env.DRY_RUN === 'true') {
+    if (this.dryRun) {
       logger.info({ marketSlug }, '[DRY_RUN] would cancelAll');
       return { message: 'dry-run' };
     }
-    return await this.orderClient.cancelAll(marketSlug);
+    const res = await this.orderClient.cancelAll(marketSlug);
+    logger.debug({ marketSlug }, 'cancelAll done');
+    return res;
+  }
+
+  /** Count live (resting) orders on a market. Returns -1 if the read fails. */
+  async countLiveOrders(marketSlug: string): Promise<number> {
+    try {
+      const positions = (await this.client.portfolio.getCLOBPositions()) as unknown as Array<{
+        market?: { slug?: string };
+        orders?: { liveOrders?: unknown[] };
+      }>;
+      let n = 0;
+      for (const p of positions ?? []) {
+        if (p.market?.slug === marketSlug) n += p.orders?.liveOrders?.length ?? 0;
+      }
+      return n;
+    } catch (err) {
+      logger.warn({ err: (err as Error).message, marketSlug }, 'countLiveOrders read failed');
+      return -1;
+    }
+  }
+
+  /**
+   * Cancel-all, then VERIFY nothing is still resting and retry if so. A single
+   * cancelAll has been observed to silently leave orders on the book — for an
+   * unattended bot that means orphaned live orders on shutdown. Retries up to
+   * `attempts` times with a short backoff; logs loudly if it can't confirm clean.
+   */
+  async cancelAllAndVerify(
+    marketSlug: string,
+    attempts = 6,
+  ): Promise<{ message: string; remaining: number }> {
+    if (this.dryRun) {
+      logger.info({ marketSlug }, '[DRY_RUN] would cancelAllAndVerify');
+      return { message: 'dry-run', remaining: 0 };
+    }
+    for (let i = 1; i <= attempts; i++) {
+      await this.orderClient.cancelAll(marketSlug).catch((err) => {
+        logger.warn({ err: (err as Error).message, marketSlug, attempt: i }, 'cancelAll call failed');
+      });
+      const remaining = await this.countLiveOrders(marketSlug);
+      if (remaining === 0) {
+        logger.info({ marketSlug, attempt: i }, 'cancelAll verified clean');
+        return { message: 'ok', remaining: 0 };
+      }
+      logger.warn(
+        { marketSlug, remaining, attempt: i },
+        remaining < 0 ? 'cancelAll could not verify (read failed) — retrying' : 'cancelAll left orders — retrying',
+      );
+      // Escalating backoff — outlast backend place/cancel propagation lag,
+      // which is what was leaving orphans with a fixed short retry.
+      await new Promise((r) => setTimeout(r, 400 * i));
+    }
+    const remaining = await this.countLiveOrders(marketSlug);
+    if (remaining !== 0) {
+      logger.error({ marketSlug, remaining }, 'cancelAllAndVerify could NOT confirm a clean book');
+    }
+    return { message: remaining === 0 ? 'ok' : 'incomplete', remaining };
   }
 }
