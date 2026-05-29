@@ -2,7 +2,7 @@
 
 Autonomous trading agents for [Limitless Exchange](https://limitless.exchange), the prediction market on Base.
 
-Feed `SKILL.md` to any coding agent with shell + file access and it handles the rest — setup, trading, iteration.
+Point any coding agent with shell + file access at `SKILL.md` and it drives the workflow — install, market selection, running, monitoring, iteration. You supply what it can't: your credentials in `.env` (private key + API tokens) and funds in the wallet.
 
 **Docs:** [Build a trading agent](https://docs.limitless.exchange/developers/build-a-trading-agent) is the companion guide for this repo on [docs.limitless.exchange](https://docs.limitless.exchange) — alongside the full API reference, market structure, and SDKs. Also available as a live MCP server at `https://docs.limitless.exchange/mcp` for AI agents that need up-to-date context.
 
@@ -24,9 +24,10 @@ This repo is designed to be operated by AI agents, not just read by humans.
 
 1. Clone this repo
 2. Read `SKILL.md` — it contains the full SDK reference, setup guide, and strategy documentation
-3. The agent handles: environment setup, wallet configuration, strategy selection, deployment, monitoring, and iteration
+3. The agent handles: scaffolding `.env`, strategy selection, deployment, monitoring, and iteration
+4. You handle: the private key + API tokens it writes into `.env`, and funding the wallet — secrets and money it can't (and shouldn't) supply for you
 
-The `SKILL.md` acts as a complete operating manual. An agent with file access and a shell can go from zero to live trading by following it.
+The `SKILL.md` acts as a complete operating manual. Once your credentials and funds are in place, an agent with file access and a shell can take it from clone to live trading by following it.
 
 ## For Humans
 
