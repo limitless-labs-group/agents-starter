@@ -444,7 +444,7 @@ capital ≈ `order_size × 1` USDC (the two prices sum to ~$1). So `order_size: 
 **Asymmetric markets** (e.g. ~6% YES / ~93% NO) split lopsidedly — the NO BUY
 alone can lock ~93% of capital. Size down or pick a balanced market.
 
-### Economics — be honest
+### Economics
 
 **On Limitless you are the maker, and makers pay no fee.** Limitless charges
 fees on takers only (limit orders that rest on the book are free — see

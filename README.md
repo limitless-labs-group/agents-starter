@@ -11,8 +11,8 @@ Feed `SKILL.md` to any coding agent with shell + file access and it handles the 
 | Strategy | Run | What it does | Guides |
 |---|---|---|---|
 | **Cross-market MM** | `npm run cross-market-mm` | Quote on Limitless, hedge fills on Polymarket → delta-neutral. Earns the cross-venue spread + Limitless maker rebates / LP rewards. | [QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md) · [SKILL](src/strategies/cross-market-mm/SKILL.md) |
-| Oracle Arb | `npm run oracle-arb` | Pyth (Hermes SSE) oracle vs Limitless pricing; fires FOK when the market is mispriced. | [`src/strategies/oracle-arb/`](src/strategies/oracle-arb/) |
-| Certainty Closer | `npm run certainty-closer` | SDK-only, no feeds: buy near-resolution favourites, sized via fractional Kelly. The simplest example. | [`src/strategies/certainty-closer/`](src/strategies/certainty-closer/) |
+| Oracle Arb | `npm run oracle-arb` | Pyth (Hermes SSE) oracle vs Limitless pricing; fires FOK when the market is mispriced. | [QUICKSTART](src/strategies/oracle-arb/QUICKSTART.md) · [SKILL](src/strategies/oracle-arb/SKILL.md) |
+| Certainty Closer | `npm run certainty-closer` | SDK-only, no feeds: buy near-resolution favourites, sized via fractional Kelly. The simplest example. | [QUICKSTART](src/strategies/certainty-closer/QUICKSTART.md) · [SKILL](src/strategies/certainty-closer/SKILL.md) |
 
 All three default to `DRY_RUN` (logs intents, signs nothing) so you can boot them risk-free first. **New here?** Start with **[QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md)** — it takes you all the way to cross-venue market-making live on both chains in ~20–30 min.
 

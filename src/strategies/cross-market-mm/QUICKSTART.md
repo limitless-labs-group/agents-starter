@@ -18,11 +18,13 @@ setup, not running commands. Full reference + troubleshooting: **[SKILL.md](./SK
 - **Two API tokens** (not wallet keys):
   - **Limitless scoped HMAC token** — limitless.exchange → connect wallet → API
     token modal → *API Tokens* → Derive → `LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET`.
-  - **Polymarket relayer API key** — from the Polymarket builder dashboard →
-    `RELAYER_API_KEY` + `RELAYER_API_KEY_ADDRESS` (your EOA address). Gasless
-    setup only.
+    Full flow: [Limitless Authentication](https://docs.limitless.exchange/developers/authentication).
+  - **Polymarket relayer API key** — from the [Polymarket builder dashboard](https://docs.polymarket.com/builders/overview)
+    → `RELAYER_API_KEY` + `RELAYER_API_KEY_ADDRESS` (your EOA address). For the
+    [gasless](https://docs.polymarket.com/trading/gasless) setup only.
 - **Funds:** Base **USDC** (collateral) + ~$1–2 **ETH** (gas) on your EOA;
-  **pUSD** on Polygon held **in the deposit wallet** (deployed in step 2).
+  [**pUSD**](https://docs.polymarket.com/concepts/pusd) on Polygon held **in the
+  deposit wallet** (deployed in step 2).
 
 ## 1. Install + credentials
 
@@ -36,7 +38,8 @@ cp .env.example .env && chmod 600 .env
 ## 2. Deploy your Polymarket deposit wallet (gasless, ~1 min)
 
 Polymarket's CLOB rejects a Gnosis Safe maker, so API trading uses a key-less
-**deposit wallet** (POLY_1271, signature type 3) derived from your EOA:
+[**deposit wallet**](https://docs.polymarket.com/trading/deposit-wallets)
+(POLY_1271, signature type 3) derived from your EOA:
 
 ```bash
 npm run cross-market-mm:setup-poly
@@ -82,7 +85,8 @@ enough.
 npm start approve <your-limitless-slug>
 ```
 
-Approves USDC (buy) + CTF (sell) for that market's exchange. Neg-risk
+Approves USDC (buy) + CTF (sell) for that market's exchange.
+[Neg-risk](https://docs.limitless.exchange/user-guide/negrisk-overview)
 (grouped/winner) markets use a separate exchange and need their own approve —
 preflight tells you if it's missing.
 
@@ -132,9 +136,10 @@ resting orders **and** sells inventory to flat on both venues (`flatten_on_stop`
 default on). `cross-market-mm:close` is the deliberate wind-down (idempotent).
 If anything looks wrong: **halt, flatten, check `status`** — don't keep bleeding.
 
-## Economics — be honest
+## Economics
 
-On Limitless you're the **maker**, and makers pay **no fee** — your only direct
+On Limitless you're the **maker**, and makers pay
+[**no fee**](https://docs.limitless.exchange/user-guide/fees) — your only direct
 cost is the Polymarket hedge's taker fee. Profit comes from the cross-venue
 spread + two daily-USDC reward programs:
 [maker rebates](https://docs.limitless.exchange/user-guide/maker-rebates) (on
