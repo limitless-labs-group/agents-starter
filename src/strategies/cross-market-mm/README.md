@@ -1,8 +1,9 @@
 # Cross-market MM strategy
 
-Cross-venue market-making: mirror Polymarket orderbook liquidity onto Limitless
-as resting BUY quotes, hedge fills back on Polymarket. Net delta stays ~flat;
-you earn the spread between the two venues plus any Limitless maker rebates.
+Cross-venue market-making: rest BUY quotes on Limitless, priced off a reference
+book on another venue, and hedge any fills there to keep net delta ~flat. The
+reference/hedge venue here is Polymarket. You earn the spread between the two
+venues plus any Limitless maker rebates.
 
 > [!WARNING]
 > **Moves real money on two chains** (Base + Polygon). Reference implementation,
