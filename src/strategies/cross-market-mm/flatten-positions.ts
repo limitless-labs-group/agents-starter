@@ -1,6 +1,6 @@
 /**
  * flattenBothVenues — sell/redeem all held inventory on Limitless AND
- * Polymarket back to flat. Shared by `replicator:close` (manual) and the bot's
+ * Polymarket back to flat. Shared by `cross-market-mm:close` (manual) and the bot's
  * shutdown/circuit-breaker path (so a stop never leaves unhedged directional
  * inventory behind).
  *

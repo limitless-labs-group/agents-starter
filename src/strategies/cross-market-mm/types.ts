@@ -1,5 +1,5 @@
 /**
- * Replicator strategy types.
+ * Cross-market MM strategy types.
  *
  * Port of `config.py` from limitless-labs-group/limitless-replicator.
  * Strategy invariants (see README):

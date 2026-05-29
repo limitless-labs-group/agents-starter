@@ -59,7 +59,7 @@ function main(): void {
   const hedges = events.filter((e) => e.kind === 'hedge') as Array<Logged & { kind: 'hedge' }>;
   const equities = events.filter((e) => e.kind === 'equity') as Array<Logged & { kind: 'equity' }>;
 
-  console.log(`\n=== Replicator run: ${path.basename(file)} ===`);
+  console.log(`\n=== Cross-market MM run: ${path.basename(file)} ===`);
   if (run) {
     console.log(
       `mode: ${run.dryRun ? 'DRY_RUN' : 'LIVE'} | pairs: ${run.pairs} | order_size: ${run.orderSize} | margin_bps: ${run.marginBps}`,

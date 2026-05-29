@@ -1,5 +1,5 @@
 /**
- * find-pairs — shortlist liquid cross-venue market pairs for the replicator.
+ * find-pairs — shortlist liquid cross-venue market pairs for the cross-market-mm.
  *
  * Queries Limitless's active CLOB markets and Polymarket's active binary
  * markets, matches them by title-token similarity, then **filters and ranks
@@ -11,12 +11,12 @@
  * Limitless market has some traded volume (so your resting quotes can fill).
  *
  * Usage:
- *   npm run replicator:find-pairs
+ *   npm run cross-market-mm:find-pairs
  *
  * No auth required — both venues' active-market listings are public
  * (Limitless /markets/active and Polymarket's gamma-api).
  *
- * ⚠ Title similarity is a starting hint. The replicator only hedges
+ * ⚠ Title similarity is a starting hint. The cross-market-mm only hedges
  * correctly when BOTH markets resolve on identical criteria — same asset,
  * same threshold, same time, same data source. Manually verify before
  * running live.
@@ -283,7 +283,7 @@ async function main(): Promise<void> {
   console.log('# Same asset, same threshold, same UTC moment, same data source.');
   console.log('# Title similarity is a hint, not a guarantee of identical resolution.');
   console.log('#');
-  console.log('# Paste your chosen pair under `market_pairs:` in ./replicator.config.yaml');
+  console.log('# Paste your chosen pair under `market_pairs:` in ./cross-market-mm.config.yaml');
   console.log();
 
   if (liquid.length > 0) {

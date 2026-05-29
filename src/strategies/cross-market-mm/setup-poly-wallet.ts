@@ -1,7 +1,7 @@
 /**
  * setup-poly-wallet — one-time Polymarket deposit-wallet setup for API trading.
  *
- *   npm run replicator:setup-poly
+ *   npm run cross-market-mm:setup-poly
  *
  * Polymarket's CLOB rejects orders from a Gnosis Safe maker ("use the deposit
  * wallet flow"). New API users trade via a POLY_1271 *deposit wallet* (sig type
@@ -12,7 +12,7 @@
  *   3. approve pUSD (the CLOB collateral) for the Polymarket v2 exchanges so it
  *      can place orders.
  *
- * Then set in replicator.config.yaml:
+ * Then set in cross-market-mm.config.yaml:
  *   poly_funder: <the printed deposit-wallet address>
  *   poly_signature_type: 3
  * and transfer your pUSD into that deposit wallet (pUSD held elsewhere is not
@@ -145,9 +145,9 @@ async function main(): Promise<void> {
   const pusdBal = (await pub.readContract({ address: PUSD, abi: ERC20, functionName: 'balanceOf', args: [dw] })) as bigint;
   console.log(`\n✅ Deposit wallet ready. pUSD balance: $${(Number(pusdBal) / 1e6).toFixed(2)}`);
   console.log('\nNext:');
-  console.log(`  • set  poly_funder: "${dw}"  and  poly_signature_type: 3  in replicator.config.yaml`);
+  console.log(`  • set  poly_funder: "${dw}"  and  poly_signature_type: 3  in cross-market-mm.config.yaml`);
   if (pusdBal === 0n) console.log('  • transfer pUSD into the deposit wallet (pUSD held elsewhere is not CLOB buying power)');
-  console.log('  • run  npm run replicator:preflight');
+  console.log('  • run  npm run cross-market-mm:preflight');
 }
 
 main().catch((e: unknown) => {

@@ -1,7 +1,7 @@
 /**
  * close — flatten held POSITIONS on BOTH venues for the configured pairs.
  *
- *   npm run replicator:close
+ *   npm run cross-market-mm:close
  *
  * The programmatic exit the BUY-only quoting loop otherwise lacks. For each
  * pair it cancels all resting Limitless orders, then SELLS held inventory on
@@ -10,7 +10,7 @@
  * leave a stranded leg.
  *
  * Requires the one-time approvals: `npm start approve <slug>` (Limitless) and
- * `npm run replicator:setup-poly` (Poly deposit wallet, incl. CTF sell-approval).
+ * `npm run cross-market-mm:setup-poly` (Poly deposit wallet, incl. CTF sell-approval).
  */
 
 import 'dotenv/config';
