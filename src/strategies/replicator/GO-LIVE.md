@@ -7,8 +7,9 @@ funds and waiting for transfers, not running commands. Full reference and
 troubleshooting live in **[SKILL.md](./SKILL.md)**.
 
 > Real money on Base + Polygon. Dedicated wallet only. Start with `order_size:
-> 5`. The default config is a slight net loss per round-trip (see SKILL §9) —
-> the point of a first live run is to prove the machinery, not to profit.
+> 5`. At this smoke-test size you earn ~nothing from the reward programs (LP
+> rewards have a per-market minimum size) — the point of a first live run is to
+> prove the machinery, not to profit. See SKILL §9 for the real economics.
 
 ## What "live" requires that dry-run didn't
 
@@ -95,6 +96,8 @@ If anything looks wrong: **halt, flatten, check `status`** — don't keep bleedi
 ## First-run cost expectation
 
 A tiny live run (`order_size: 5`, one pair, a few fills) is a smoke test, not a
-profit run — expect a few dollars of fees as the cost of proving fills + hedges
-+ exit work end to end. See **SKILL.md §9** for the economics and the levers
-(maker rebate, fee tier) that flip it positive.
+profit run — expect a few dollars of net cost (the Polymarket hedge taker fee +
+cross-venue slippage) as the price of proving fills + hedges + exit end to end.
+Your Limitless maker fills are fee-free. See **SKILL.md §9** for the real
+economics and the two reward programs (maker rebates + LP rewards) that drive
+profit at proper size.

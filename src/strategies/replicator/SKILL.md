@@ -14,9 +14,9 @@ validation run uses, see **[DEMO.md](./DEMO.md)**.
 > [!WARNING]
 > **Moves real money on two chains** (Base + Polygon). This is a reference
 > implementation, not production trading infrastructure. **Use a dedicated
-> wallet**, keep `order_size` small, and always start with `DRY_RUN=true`. The
-> default config is a slight net loss per round-trip — read "Economics" before
-> expecting profit.
+> wallet**, keep `order_size` small, and always start with `DRY_RUN=true`.
+> Profitability depends on fill rate and the Limitless reward programs, not on
+> the bot alone — read "Economics" (§9) before expecting profit.
 
 ---
 
@@ -448,24 +448,70 @@ alone can lock ~93% of capital. Size down or pick a balanced market.
 
 ### Economics — be honest
 
-Default config (Bronze Limitless tier, ~100bps Poly FAK fee) is a **slight net
-loss per round-trip**:
+**On Limitless you are the maker, and makers pay no fee.** Limitless charges
+fees on takers only (limit orders that rest on the book are free — see
+[docs.limitless.exchange/user-guide/fees](https://docs.limitless.exchange/user-guide/fees)).
+The replicator quotes `postOnly`, so every Limitless fill is a maker fill at
+zero fee. Your only direct cost is the **Polymarket FAK hedge**, which is a
+taker order on Polymarket and pays whatever Polymarket's current taker fee is
+for that market — verify it against Polymarket's live schedule rather than
+assuming a number.
+
+So the per-round-trip ledger is:
 
 ```
-Gross spread captured:                    ~$1.00 / 100 shares
-Limitless taker fee (300bps Bronze):      −$1.35
-Polymarket FAK taker fee (~100bps):       −$0.54
-─────────────────────────────────────────
-Net per round-trip:                       ≈ −$0.89  (~−89 bps notional)
+Revenue:
+  + cross-venue spread   the margin you quote inside the Poly book, captured
+                         when both legs fill (locks 1 − P_yes − Q_no at resolution)
+  + maker rebate         in eligible markets (see below) — fill-gated
+  + LP rewards           for qualifying resting size near midpoint — quote-presence
+Costs:
+  − Polymarket hedge     the FAK taker fee on the hedge leg (per Poly's schedule)
+  − adverse selection    you tend to get filled when the price is moving against you;
+                         cross-venue divergence between quote and hedge is real slippage
 ```
 
-Levers to flip positive: **Limitless maker rebate program** (biggest single
-lever — see docs.limitless.exchange/user-guide/maker-rebates), higher Limitless
-fee tier (Silver/Gold/Diamond, volume-gated), wider `margin_bps` (fewer but
-profitable fills), better pair selection (cross-venue spread > fee stack). The
-dual-purpose use is **volume farming** — every hedge is a Polymarket FAK taker
-order, ~$1 of Polymarket volume per $1 of Limitless fill — where the fee cost is
-the entry ticket.
+There's no Limitless fee term and no fee "tier" — Limitless fees are dynamic by
+price + a loyalty discount, but they apply to *takers*, so they don't touch a
+maker bot. The real levers are the two reward programs and pair selection, not a
+tier upgrade.
+
+### Earning the reward programs (this is where the money is)
+
+Two separate, stackable Limitless programs reward exactly what this bot does —
+provide maker liquidity. Both pay daily in USDC.
+
+- **[Maker rebates](https://docs.limitless.exchange/user-guide/maker-rebates):**
+  when a taker hits your resting order and pays a taker fee, a share of that fee
+  is rebated to makers, pro-rata, daily. **Only executed fills earn** — resting
+  unfilled orders earn nothing here. As of this writing the rebate rate is
+  **100% of eligible taker fees** on **Daily, Hourly Crypto, and 15-minute
+  Crypto** markets (current program config — may change; check the page).
+- **[LP rewards](https://docs.limitless.exchange/user-guide/lp-rewards):** daily
+  USDC for limit orders resting **within a spread of the midpoint** and **above
+  a per-market minimum size** — paid for quote *presence*, not fills. Closer to
+  mid + more size = larger share.
+
+Two consequences for how you run this:
+
+1. **Size to qualify.** `order_size: 5` is a smoke-test size. LP rewards have a
+   per-market minimum-shares threshold (often ~100); below it you earn nothing
+   from LP rewards and little rebate credit. To actually farm rewards, quote
+   larger size within the reward spread of midpoint.
+2. **Target eligible + cross-venue-liquid markets.** Short-window crypto
+   (Hourly / 15-minute) is both at 100% rebate *and* the cleanest cross-venue
+   match — the sweet spot. Far-dated winner futures are eligible-uncertain and
+   have thin taker flow (so few fills → little rebate).
+
+The dual-purpose use is **volume farming**: every hedge is a Polymarket taker
+order (~$1 Poly volume per $1 Limitless fill), so the hedge cost doubles as the
+entry ticket for Polymarket points/airdrop eligibility.
+
+> [!NOTE]
+> The binding constraint on profit is **fill rate**, not fees. Rebates and LP
+> rewards only pay when your maker liquidity is actually used, which needs
+> eligible markets with real taker flow on both venues. Validated live, this is
+> the hard part — not the unit economics.
 
 ### Strategy invariants (load-bearing — re-derive the math before changing)
 
