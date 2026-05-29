@@ -29,7 +29,7 @@ SDK quick reference for TypeScript, Python, and Go.
 
 ## Quick Start Prompt
 
-Paste this into Claude Code / OpenClaw (or any coding agent with shell access)
+Paste this into any coding agent with shell access)
 to go from zero to a dry run. The agent clones the repo, reads this file, and
 handles the rest.
 
@@ -40,7 +40,7 @@ Then ask me for:
 → PRIVATE_KEY — Base chain private key (dedicated trading wallet, never my main)
 → LMTS_TOKEN_ID + LMTS_TOKEN_SECRET — Limitless scoped HMAC token (limitless.exchange → connect wallet → API token modal → API Tokens → Derive)
 
-Once I give you those: dry-run a strategy first (start with `npm run certainty-closer` — SDK-only, no extra setup), then walk me through the three strategies so I can pick one. The flagship is cross-market-mm — if I pick it, read src/strategies/cross-market-mm/SKILL.md for its full lifecycle.
+Once I give you those: dry-run a strategy first (start with `npm run certainty-closer` — SDK-only, no extra setup), then walk me through the three strategies so I can pick one. For cross-market-mm (cross-venue market making), read src/strategies/cross-market-mm/SKILL.md for its full lifecycle.
 
 Keep me posted. Fix problems quietly.
 ```
@@ -117,7 +117,7 @@ npm run redeem claim-all
 Three strategies ship, spanning distinct archetypes. All authenticate via the
 scoped HMAC token and default to `DRY_RUN`.
 
-- **`cross-market-mm`** (flagship) — cross-venue market making: quote on
+- **`cross-market-mm`** — cross-venue market making: quote on
   Limitless, hedge fills on Polymarket to stay delta-neutral. Earns the
   cross-venue spread + Limitless maker rebates / LP rewards. Has its own full
   operating manual: **`src/strategies/cross-market-mm/SKILL.md`** (setup →
@@ -148,7 +148,7 @@ runtime rather than `BaseStrategy`.)
 | `src/core/polymarket/` | Polymarket clob-client-v2 adapter + WS (cross-market-mm hedge leg) |
 | `src/core/price-feeds/hermes.ts` | Pyth Hermes SSE price streaming (oracle-arb) |
 | `src/core/kelly.ts` | Fractional-Kelly position sizing |
-| `src/strategies/cross-market-mm/` | Flagship + its own SKILL.md / QUICKSTART / GO-LIVE / DEMO |
+| `src/strategies/cross-market-mm/` | Cross-venue MM strategy + its own SKILL.md + QUICKSTART |
 | `src/strategies/oracle-arb/`, `certainty-closer/` | Example strategies (extend `BaseStrategy`) |
 
 ---
@@ -453,7 +453,7 @@ src/
 │       └── hermes.ts                  # Pyth Hermes SSE oracle prices (oracle-arb)
 ├── strategies/
 │   ├── base-strategy.ts               # BaseStrategy abstract class — tick loop, trade execution
-│   ├── cross-market-mm/               # FLAGSHIP: cross-venue MM (own SKILL.md/QUICKSTART/GO-LIVE/DEMO)
+│   ├── cross-market-mm/               # cross-venue MM (own SKILL.md + QUICKSTART)
 │   ├── oracle-arb/                    # Pyth oracle edge-detection (extends BaseStrategy)
 │   └── certainty-closer/              # SDK-only near-resolution example (extends BaseStrategy)
 ```
@@ -582,7 +582,7 @@ npm run certainty-closer
 
 You should see the SDK client initialize, markets get scanned, and
 `[DRY_RUN] would createOrder` lines — it logs what it *would* trade without
-signing or posting anything. (For the flagship, `npm run cross-market-mm` is the
+signing or posting anything. (For cross-market-mm, `npm run cross-market-mm` is the
 equivalent dry-run; see `src/strategies/cross-market-mm/QUICKSTART.md`.)
 
 ### Step 6: Market Approval (CRITICAL for AI Agents)
@@ -2612,13 +2612,13 @@ Three strategies ship, spanning distinct archetypes (see also the overview near
 the top of this file). All authenticate via the scoped HMAC token and default to
 `DRY_RUN`.
 
-### `cross-market-mm` (flagship — cross-venue market making)
+### `cross-market-mm` (cross-venue market making)
 
 Quote on Limitless, hedge fills on Polymarket to stay delta-neutral; earn the
 cross-venue spread + Limitless maker rebates / LP rewards. This is the deepest
 strategy and has its **own complete operating manual** —
 `src/strategies/cross-market-mm/SKILL.md` (setup → find-pairs → preflight → run
-→ status → close), plus QUICKSTART / GO-LIVE / DEMO. Run: `npm run cross-market-mm`.
+→ status → close). Run: `npm run cross-market-mm`.
 
 ### `oracle-arb` (Pyth oracle edge-detection)
 
@@ -2875,16 +2875,17 @@ Each run appends one JSON object per line to `./data/cross-market-mm-<ts>.jsonl`
 cross-market-mm:analyze` reads the latest file and summarizes orders, fills,
 how flat the book stayed, hedges, and net PnL.
 
-### OpenClaw / cron example
+### Cron example
 
 ```bash
-# Run the flagship continuously under a process manager, then summarize daily
-openclaw cron add "0 */6 * * *" "cd /path/to/agents-starter && npm run cross-market-mm:analyze"
+# Run cross-market-mm continuously under a process manager (pm2/systemd/etc.),
+# then summarize daily via your agent's scheduler or plain cron:
+0 */6 * * * cd /path/to/agents-starter && npm run cross-market-mm:analyze
 ```
 
-### OpenClaw Heartbeat Integration
+### Heartbeat / periodic checks
 
-Add to your `HEARTBEAT.md`:
+If your agent runs a heartbeat, add:
 
 ```markdown
 ## Trading Bot Checks
@@ -3042,7 +3043,7 @@ console.log('Midpoint:', book.midpoint);
 
 ## 21. Agent Integration Patterns
 
-This skill is designed for AI agents operating through OpenClaw. Here are specific patterns for autonomous operation:
+This is for any AI agent with shell + file access. Here are specific patterns for autonomous operation:
 
 ### Pattern 1: Setup from Scratch
 
@@ -3281,10 +3282,6 @@ This approves both USDC and CTF for the market's venue contracts.
 - **viem:** [viem.sh](https://viem.sh) — TypeScript Ethereum library (wallet, signing, contracts)
 - **Pyth Hermes:** [hermes.pyth.network](https://hermes.pyth.network) — SSE oracle prices (oracle-arb)
 
-### OpenClaw
-- **GitHub:** [github.com/openclaw/openclaw](https://github.com/openclaw/openclaw)
-- **Docs:** OpenClaw AI agent platform for autonomous operation
-
 ---
 
-*Built for [OpenClaw](https://github.com/openclaw/openclaw). Query the MCP. Iterate fast. Track everything. Scale winners.*
+*Built for any coding agent with shell + file access. Query the MCP. Iterate fast. Track everything. Scale winners.*

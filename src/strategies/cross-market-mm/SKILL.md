@@ -5,11 +5,9 @@ live orderbook onto **Limitless** as resting BUY quotes, and hedge any fill
 straight back on **Polymarket** so net delta stays ~flat. You earn the spread
 between the venues (plus any Limitless maker rebate), not a directional bet.
 
-This file is the canonical operating manual for the skill. An agent with shell
-access and this file can take it from clone → dry-run → live → flat. For the two
-fast paths, see **[QUICKSTART.md](./QUICKSTART.md)** (dry-run, <10 min) and
-**[GO-LIVE.md](./GO-LIVE.md)** (real money, ~20–30 min). For the exact commands a
-validation run uses, see **[DEMO.md](./DEMO.md)**.
+This file is the canonical operating manual. Any agent with shell access and
+this file can take it from clone → live → flat. For the fast onboarding path
+(install → fund → setup → run live → close), see **[QUICKSTART.md](./QUICKSTART.md)**.
 
 > [!WARNING]
 > **Moves real money on two chains** (Base + Polygon). This is a reference
