@@ -19,11 +19,13 @@
 import { pino } from 'pino';
 import { Client, HttpClient } from '@limitless-exchange/sdk';
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
+import { LimitlessClient } from '../../core/limitless/markets.js';
 import { PolymarketAdapter } from '../../core/polymarket/client.js';
 import { runPolyWs } from '../../core/polymarket/ws.js';
 import { QuoteFeed } from './quote-feed.js';
 import { runReplicator } from './index.js';
 import { runHedger } from './hedger.js';
+import { flattenBothVenues } from './flatten-positions.js';
 import { loadSettings } from './config.js';
 import { Recorder } from './recorder.js';
 import { RiskMonitor } from './risk.js';
@@ -201,6 +203,40 @@ export async function main(): Promise<void> {
 
   // Let all tasks settle their finally{} blocks (replicator cancelAll on shutdown)
   await Promise.allSettled(tasks);
+
+  // -- Flatten to flat on the way out (live only). Cancelling orders (above)
+  //    stops new exposure, but a fill that already hedged leaves directional
+  //    inventory on BOTH venues. flattenBothVenues sells/redeems it back to
+  //    flat so a stop — Ctrl-C OR a tripped breaker — never walks away with an
+  //    open position. Idempotent; re-run `npm run replicator:close` if a thin
+  //    book leaves a remainder. --
+  if (!settings.dryRun && settings.flattenOnStop) {
+    logger.warn({ reason: killed ? 'circuit-breaker' : 'signal' }, 'flattening inventory on both venues');
+    try {
+      const md = new LimitlessClient();
+      const results = await flattenBothVenues(trading, md, poly, settings.pairs);
+      for (const r of results) {
+        logger.info(
+          {
+            slug: r.slug,
+            limitless: `YES ${r.limitless.yes.toFixed(2)} / NO ${r.limitless.no.toFixed(2)}`,
+            polymarket: `YES ${r.polymarket.yes.toFixed(2)} / NO ${r.polymarket.no.toFixed(2)}`,
+            flat: r.flat,
+          },
+          r.flat ? 'flat on both venues' : 'NOT fully flat — run `npm run replicator:close` to retry',
+        );
+      }
+      if (results.some((r) => !r.flat)) {
+        logger.error('some pairs left inventory (thin book?) — run `npm run replicator:close`');
+      }
+    } catch (e) {
+      logger.error(
+        { err: e instanceof Error ? e.message : e },
+        'flatten-on-stop failed — run `npm run replicator:close` manually',
+      );
+    }
+  }
+
   recorder.close();
   logger.info({ file: recorder.filePath }, 'run data saved');
   logger.info('bye.');

@@ -45,6 +45,8 @@ interface YamlConfig {
   hedgeIntervalSec?: number;
   max_loss_usd?: number;
   maxLossUsd?: number;
+  flatten_on_stop?: boolean;
+  flattenOnStop?: boolean;
   dry_run?: boolean;
   dryRun?: boolean;
   market_pairs?: YamlPair[];
@@ -138,6 +140,11 @@ export function loadSettings(): ReplicatorSettings {
     maxLossUsd: Number(
       process.env.REPLICATOR_MAX_LOSS_USD ?? raw.max_loss_usd ?? raw.maxLossUsd ?? 10,
     ),
+    // Default ON: a stop (Ctrl-C or breaker) sells inventory to flat on both
+    // venues, not just cancels resting orders. Set flatten_on_stop: false to
+    // leave inventory in place (only orders are cancelled) — rarely wanted,
+    // since it leaves unhedged directional risk.
+    flattenOnStop: raw.flatten_on_stop ?? raw.flattenOnStop ?? true,
     dryRun,
     simulateFill,
     pairs,

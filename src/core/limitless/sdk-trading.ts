@@ -299,6 +299,29 @@ export class SDKTradingClient {
   }
 
   /**
+   * Like getPositionTokens but waits for the balance to SETTLE — polls until
+   * two consecutive reads agree (within the 0.001 share grid) or maxTries is
+   * hit. Use before acting on a fill so a lagged backend read (which once made
+   * an FOK look killed when it had actually filled → double-fill) can't cause
+   * stacking. Returns the last (most settled) read.
+   */
+  async getPositionTokensSettled(
+    marketSlug: string,
+    opts: { maxTries?: number; delayMs?: number } = {},
+  ): Promise<{ yes: number; no: number }> {
+    const maxTries = Math.max(2, opts.maxTries ?? 4);
+    const delayMs = opts.delayMs ?? 2500;
+    let prev = await this.getPositionTokens(marketSlug);
+    for (let i = 1; i < maxTries; i++) {
+      await new Promise((r) => setTimeout(r, delayMs));
+      const cur = await this.getPositionTokens(marketSlug);
+      if (Math.abs(cur.yes - prev.yes) < 0.001 && Math.abs(cur.no - prev.no) < 0.001) return cur;
+      prev = cur;
+    }
+    return prev;
+  }
+
+  /**
    * SELL `shares` of a side to CLOSE inventory — the programmatic exit the
    * BUY-only quoting loop lacks. Defaults to FAK at an aggressive limit so it
    * takes resting bid liquidity and fills immediately (use to flatten a

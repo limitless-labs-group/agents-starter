@@ -70,7 +70,7 @@ Three strategies are included as starting points. They demonstrate different app
 
 **Signal Sniper** (`npm run signal-sniper`) — Simpler approach using CoinGecko price data. Finds prediction markets where the current spot price creates an edge against market odds. Good starting point for understanding the strategy framework.
 
-**Replicator** (`npm run replicator`) — Cross-venue market-making: mirrors Polymarket's live orderbook onto Limitless as resting BUY quotes and hedges fills back on Polymarket (FAK) to stay delta-flat. Earns the spread between venues. See [`src/strategies/replicator/TUTORIAL.md`](src/strategies/replicator/TUTORIAL.md).
+**Replicator** (`npm run replicator`) — Cross-venue market-making: mirrors Polymarket's live orderbook onto Limitless as resting BUY quotes and hedges fills back on Polymarket (FAK) to stay delta-flat. Earns the spread between venues. Start with [`src/strategies/replicator/QUICKSTART.md`](src/strategies/replicator/QUICKSTART.md) (dry-run, no money) or the canonical [`SKILL.md`](src/strategies/replicator/SKILL.md).
 
 **Build your own** — Extend `BaseStrategy` with a `tick()` method that returns trade decisions. The base class handles the execution loop, order submission, and PM2 lifecycle. See `src/strategies/oracle-arb/` for the most complete example.
 

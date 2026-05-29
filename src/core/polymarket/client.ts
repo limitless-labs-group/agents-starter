@@ -297,4 +297,53 @@ export class PolymarketAdapter {
       return false;
     }
   }
+
+  /**
+   * SELL `shares` of an asset on Polymarket (market FAK) — closes hedge
+   * inventory back to flat. For a market SELL, `amount` is the number of
+   * SHARES (not USDC, unlike hedgeBuy). The exit-side mirror of hedgeBuy.
+   */
+  async sellShares(assetId: string, shares: number): Promise<boolean> {
+    if (this.dryRun) {
+      logger.info(
+        { assetId: assetId.slice(0, 8) + '…', shares: shares.toFixed(2) },
+        '[DRY_RUN] would SELL to close',
+      );
+      return true;
+    }
+    if (!this.clob) {
+      throw new Error('PolymarketAdapter: sellShares called before authProbe()');
+    }
+    try {
+      const [tickSize, negRisk] = await Promise.all([
+        this.clob.getTickSize(assetId),
+        this.clob.getNegRisk(assetId),
+      ]);
+      const resp = await this.clob.createAndPostMarketOrder(
+        {
+          tokenID: assetId,
+          side: Side.SELL,
+          amount: shares, // SELL: amount is SHARES
+          orderType: OrderType.FAK,
+          ...(this.builderCode ? { builderCode: this.builderCode } : {}),
+        },
+        { tickSize, negRisk },
+        OrderType.FAK,
+      );
+      const success =
+        typeof resp === 'object' && resp !== null && (resp as { success?: boolean }).success === true;
+      if (success) {
+        logger.info({ assetId: assetId.slice(0, 8) + '…', shares: shares.toFixed(2) }, 'poly close sell filled');
+      } else {
+        logger.info({ resp }, 'poly close sell rejected');
+      }
+      return success;
+    } catch (err) {
+      logger.warn(
+        { assetId: assetId.slice(0, 8) + '…', err: (err as Error).message },
+        'poly sellShares failed',
+      );
+      return false;
+    }
+  }
 }

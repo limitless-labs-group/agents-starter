@@ -36,6 +36,7 @@ export interface ReplicatorSettings {
   hedgeThreshold: number; // min |net shares| before triggering a hedge
   hedgeIntervalSec: number; // seconds between hedge checks
   maxLossUsd: number; // circuit breaker: halt + cancel-all if equity drawdown ≥ this
+  flattenOnStop: boolean; // on Ctrl-C/breaker, also SELL inventory to flat (both venues), not just cancel orders
   dryRun: boolean; // log intents, don't sign or POST
   /**
    * DRY_RUN-only: inject a synthetic Limitless fill on the first pair so the

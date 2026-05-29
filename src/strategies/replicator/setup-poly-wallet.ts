@@ -44,10 +44,17 @@ const POLY_EXCHANGES = {
   negRiskExchangeV2: '0xe2222d279d744050d28e00520010520000310F59',
   negRiskAdapter: '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296',
 };
+// Polymarket ConditionalTokens (CTF) on Polygon mainnet — selling outcome
+// tokens needs setApprovalForAll on this for the exchange operators.
+const CTFS = ['0x4D97DCd97eC945f40cF65F87097ACe5EA0476045'];
 const ERC20 = parseAbi([
   'function approve(address,uint256) returns (bool)',
   'function allowance(address,address) view returns (uint256)',
   'function balanceOf(address) view returns (uint256)',
+]);
+const CTF_ABI = parseAbi([
+  'function setApprovalForAll(address,bool)',
+  'function isApprovedForAll(address,address) view returns (bool)',
 ]);
 const CONFIRMED = [RelayerTransactionState.STATE_CONFIRMED, RelayerTransactionState.STATE_MINED];
 
@@ -88,8 +95,10 @@ async function main(): Promise<void> {
     console.log(`  deploy: ${final?.state}`);
   }
 
-  // 3. Approve pUSD for the v2 exchanges (skip any already approved)
-  const calls = [];
+  // 3. Approvals (skip any already set). Two kinds, both needed:
+  //    • pUSD ERC-20 approve  → BUY (place hedge orders)
+  //    • CTF setApprovalForAll → SELL (close inventory back to flat)
+  const calls: Array<{ target: string; value: string; data: string }> = [];
   for (const [name, spender] of Object.entries(POLY_EXCHANGES)) {
     const allowance = (await pub.readContract({
       address: PUSD,
@@ -97,23 +106,40 @@ async function main(): Promise<void> {
       functionName: 'allowance',
       args: [dw, spender as `0x${string}`],
     })) as bigint;
-    if (allowance > 0n) {
-      console.log(`  ✅ pUSD already approved for ${name}`);
-      continue;
+    if (allowance > 0n) console.log(`  ✅ pUSD approved (buy): ${name}`);
+    else
+      calls.push({
+        target: PUSD,
+        value: '0',
+        data: encodeFunctionData({ abi: ERC20, functionName: 'approve', args: [spender as `0x${string}`, maxUint256] }),
+      });
+  }
+  for (const ctf of CTFS) {
+    for (const [name, op] of Object.entries(POLY_EXCHANGES)) {
+      const approved = (await pub.readContract({
+        address: ctf as `0x${string}`,
+        abi: CTF_ABI,
+        functionName: 'isApprovedForAll',
+        args: [dw, op as `0x${string}`],
+      })) as boolean;
+      if (approved) console.log(`  ✅ CTF ${ctf.slice(0, 8)}… approved (sell): ${name}`);
+      else
+        calls.push({
+          target: ctf,
+          value: '0',
+          data: encodeFunctionData({ abi: CTF_ABI, functionName: 'setApprovalForAll', args: [op as `0x${string}`, true] }),
+        });
     }
-    calls.push({
-      target: PUSD,
-      value: '0',
-      data: encodeFunctionData({ abi: ERC20, functionName: 'approve', args: [spender as `0x${string}`, maxUint256] }),
-    });
   }
   if (calls.length > 0) {
-    console.log(`  approving pUSD for ${calls.length} exchange(s) via relayer…`);
+    console.log(`  submitting ${calls.length} approval(s) via relayer (gasless)…`);
     const deadline = String(Math.floor(Date.now() / 1000) + 3600);
     const resp = (await relayer.executeDepositWalletBatch(calls, dw, deadline)) as { transactionID?: string; transactionId?: string };
     const txId = resp.transactionID ?? resp.transactionId;
     const final = await relayer.pollUntilState(txId as string, CONFIRMED, RelayerTransactionState.STATE_FAILED);
     console.log(`  approvals: ${final?.state}`);
+  } else {
+    console.log('  ✅ all approvals already set');
   }
 
   const pusdBal = (await pub.readContract({ address: PUSD, abi: ERC20, functionName: 'balanceOf', args: [dw] })) as bigint;

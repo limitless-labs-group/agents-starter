@@ -6,7 +6,7 @@
 #
 # Strategy: mirror Polymarket orderbook liquidity onto Limitless as
 # BUY-only YES + NO limit orders. Hedge accumulated exposure with FAK
-# orders on Polymarket. See src/strategies/replicator/README.md for the
+# orders on Polymarket. See src/strategies/replicator/SKILL.md for the
 # full architecture + invariants.
 
 # --- Polymarket wallet ------------------------------------------------------
@@ -31,6 +31,13 @@ hedge_interval: 5      # seconds between hedge ticks
 # value) drops this many dollars below the run's starting equity, the bot
 # cancels all orders and halts. Also settable via REPLICATOR_MAX_LOSS_USD.
 max_loss_usd: 10
+
+# On a stop (Ctrl-C OR a tripped breaker), also SELL held inventory back to flat
+# on BOTH venues, not just cancel resting orders. Default true: a fill that
+# already hedged leaves a position on each venue, and cancelling orders alone
+# would walk away with unhedged directional inventory. Set false only if you
+# deliberately want to leave positions in place on stop.
+flatten_on_stop: true
 
 # dry_run: true logs intents and signs nothing. Keep it true until you've run
 # `npm run replicator:preflight` and watched a dry run. NOTE: the DRY_RUN env
