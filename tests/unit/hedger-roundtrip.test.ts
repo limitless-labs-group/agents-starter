@@ -89,4 +89,33 @@ describe('fill → hedge round-trip (hedgeOnce)', () => {
 
     expect(hedgeBuy).not.toHaveBeenCalled();
   });
+
+  it('settle gate: a stale (pre-hedge) re-read does NOT re-fire the same hedge', async () => {
+    // Live bug this guards: hedgeIntervalSec (5s) < Poly data-api settle lag, so
+    // the next tick re-reads the OLD position (hedge not yet reflected) and
+    // would stack a duplicate hedge. The gate must suppress that within
+    // hedgeSettleMs, then allow it once the window passes.
+    const settings = { hedgeThreshold: 2, marginBps: 100, orderSize: 5, hedgeSettleMs: 12000 } as unknown as ReplicatorSettings;
+    const hedgeBuy = vi.fn().mockResolvedValue(true);
+    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const lastHedgeAt = new Map<string, number>(); // shared across ticks, like runHedger
+
+    // The fill: long 5 YES, Poly still flat (lagged read shows no hedge yet).
+    const lmts = { [PAIR.limitlessSlug]: { yes: 5, no: 0 } };
+    const stalePoly = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
+
+    // Tick 1: fires the NO hedge.
+    await hedgeOnce([PAIR], feedWithQuote(0.6, 0.62), lmts, stalePoly, poly, settings, undefined, lastHedgeAt);
+    expect(hedgeBuy).toHaveBeenCalledTimes(1);
+
+    // Tick 2 (immediately): same stale read → would re-hedge, but gate holds it.
+    await hedgeOnce([PAIR], feedWithQuote(0.6, 0.62), lmts, stalePoly, poly, settings, undefined, lastHedgeAt);
+    expect(hedgeBuy).toHaveBeenCalledTimes(1); // still 1 — not stacked
+
+    // Once the settle window passes and the position is genuinely still exposed,
+    // hedging is allowed again.
+    lastHedgeAt.set(PAIR.polymarketSlug, Date.now() - 13_000);
+    await hedgeOnce([PAIR], feedWithQuote(0.6, 0.62), lmts, stalePoly, poly, settings, undefined, lastHedgeAt);
+    expect(hedgeBuy).toHaveBeenCalledTimes(2);
+  });
 });

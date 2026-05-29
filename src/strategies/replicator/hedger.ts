@@ -116,6 +116,11 @@ export async function hedgeOnce(
   poly: PolymarketAdapter,
   settings: ReplicatorSettings,
   recorder?: Recorder,
+  // Per-pair timestamp of the last fired hedge (epoch ms). Owned by the caller
+  // so it persists across ticks; defaults to an ephemeral map (tests/one-offs).
+  // Gates re-hedging within settings.hedgeSettleMs so a lagged Poly position
+  // read can't make us fire the same hedge twice (stale-read stacking).
+  lastHedgeAt: Map<string, number> = new Map(),
 ): Promise<void> {
   for (const pair of pairs) {
     const lm = lmtsPositions[pair.limitlessSlug] ?? { yes: 0, no: 0 };
@@ -153,6 +158,18 @@ export async function hedgeOnce(
 
     if (!decision.shouldHedge) continue;
 
+    // Settle gate: if we hedged this pair within hedgeSettleMs, the Poly
+    // position read above may not yet reflect that hedge — re-hedging now would
+    // stack a duplicate. Wait for the read to settle before acting again.
+    const since = Date.now() - (lastHedgeAt.get(pair.polymarketSlug) ?? 0);
+    if (since < settings.hedgeSettleMs) {
+      logger.info(
+        { slug: pair.polymarketSlug, net: net.toFixed(2), waitMs: settings.hedgeSettleMs - since },
+        'hedge held: awaiting prior-hedge settle',
+      );
+      continue;
+    }
+
     const assetId = decision.buyYes ? pair.polyYesAssetId : pair.polyNoAssetId;
     if (!assetId) {
       logger.warn({ slug: pair.polymarketSlug }, 'hedge skipped: asset id missing');
@@ -171,6 +188,9 @@ export async function hedgeOnce(
       'HEDGE',
     );
     const ok = await poly.hedgeBuy(assetId, decision.notionalUsdc);
+    // Start the settle window from the fire so the next tick can't re-stack
+    // before the data-api reflects this hedge.
+    lastHedgeAt.set(pair.polymarketSlug, Date.now());
     recorder?.record({
       kind: 'hedge',
       pair: pair.polymarketSlug,
@@ -249,6 +269,10 @@ export async function runHedger(
   let simTick = 0;
   let simHedged = false;
 
+  // Persistent across ticks: last hedge time per pair, for the settle gate that
+  // prevents stale-read hedge stacking.
+  const lastHedgeAt = new Map<string, number>();
+
   while (!signal.aborted) {
     await new Promise<void>((resolve) => {
       const t = setTimeout(resolve, settings.hedgeIntervalSec * 1000);
@@ -295,7 +319,7 @@ export async function runHedger(
         }
       }
 
-      await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder);
+      await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder, lastHedgeAt);
       // After the first post-fill tick, the hedge has been decided+recorded.
       if (sim && simTick >= 2) simHedged = true;
 

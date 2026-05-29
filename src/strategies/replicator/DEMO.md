@@ -102,18 +102,26 @@ exchange approval.
 Record of runs used to validate this skill (newest first). Each line: date,
 pair(s), what was proven.
 
-- 2026-05-29 — 3 neg-risk "winner" pairs (Hurricanes/Spurs/Knicks),
-  `order_size: 5`, `margin_bps: 30`. Live ENTER proven: ~7k real orders placed
-  via the skill across all 3, Hurricanes quote resting at the touch (0.55/0.56);
-  Knicks rejected as post-only-cross (venues mispriced — expected). EXIT proven:
-  Ctrl-C → flatten-on-stop cancelled all + confirmed flat on both venues, then
-  `replicator:flatten` + `replicator:status` verified 0 orders / 0 positions /
-  net 0.00. **Zero fills, zero loss** ($29.43 USDC + $19.74 pUSD unchanged) — no
-  organic Limitless taker hit the resting quotes (winner-futures have thin
-  overnight flow). Finding: a sustained unthrottled multi-pair run trips the
-  Limitless API rate-limit (429/1015) → added the `min_requote_ms` throttle
-  (default 2000ms/pair). Hedge-fill on these pairs still pending a higher-flow
-  window or market.
+- 2026-05-29 (2nd run, throttled) — same 3 pairs, `min_requote_ms: 2000`.
+  **Full enter→hedge→exit proven live on Knicks** (2nd distinct pair): the
+  resting Limitless quote filled **+4.93 YES**, the hedger bought the offsetting
+  NO on Polymarket, and the pair held delta-flat (avg net exposure |0.02|, flat
+  89% of ticks). Closed to flat on both venues via flatten-on-stop +
+  `replicator:close`; `replicator:status` verified 0 positions / 0 orders / net
+  0.00. analyze: 3 pairs, 78m, **net PnL −$0.10** (worst −$3.48), captured in
+  `./data`. Throttle confirmed: 429s ~1967/1.75h (unthrottled) → a residual
+  burst + ~1–3/min (throttled). Finding: the hedger **stale-read stacked** —
+  one 4.9 fill drew 3 hedges ($8.4 Poly buys for a ~$3.4 need) because
+  `hedge_interval` (5s) < the Poly data-api settle lag → added the
+  `hedge_settle_ms` gate (default 12s, with a unit test). Net still ended flat;
+  the gate prevents the over-trade.
+- 2026-05-29 (1st run, unthrottled) — 3 neg-risk "winner" pairs
+  (Hurricanes/Spurs/Knicks), `order_size: 5`, `margin_bps: 30`. Live ENTER
+  proven: ~7k real orders across all 3, Hurricanes resting at the touch
+  (0.55/0.56). EXIT proven: Ctrl-C → flatten-on-stop + `replicator:flatten` +
+  `replicator:status` → 0 orders / 0 positions / net 0.00, **zero fills, zero
+  loss**. Finding: a sustained unthrottled multi-pair run trips the Limitless
+  API rate-limit (429/1015) → added the `min_requote_ms` throttle.
 - 2026-05-28 — UCL "Arsenal to win" (Limitless `arsenal-…` ↔ Polymarket
   `will-arsenal-win-the-202526-champions-league`), `order_size: 5`. First real
   cross-venue hedge filled live (Limitless YES maker fill → Polymarket NO FAK

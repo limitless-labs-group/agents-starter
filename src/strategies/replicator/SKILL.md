@@ -357,6 +357,16 @@ re-reads + a settle delay; if you wrote a custom exit, re-read the *settled*
 position before acting again, or a lagged read makes a filled order look killed
 and you double-sell.
 
+### The hedger fired multiple times for one fill (over-hedged, then corrected)
+Same lagged-read root cause, on the hedge side: the Polymarket data-api position
+read trails a hedge by several seconds, so if `hedge_interval` is shorter than
+that lag, the next tick re-reads the pre-hedge position and fires the same hedge
+again — over-shooting, then buying the other side to correct. The
+`hedge_settle_ms` gate (default 12s) suppresses re-hedging a pair until its read
+can reflect the prior hedge. Keep `hedge_settle_ms` > your observed data-api
+lag. (Seen live: one 4.9-share fill drew 3 hedges, ~$8.4 of Poly buys for a
+~$3.4 need; net still ended flat, but it over-traded. The gate fixes it.)
+
 ### Quotes rest forever, no fills
 Either the pair is illiquid on Limitless (no takers hitting your book — pick a
 higher-volume pair) or `margin_bps` is too wide and your quotes are off-touch

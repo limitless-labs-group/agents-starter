@@ -35,6 +35,11 @@ export interface ReplicatorSettings {
   marginBps: number; // bps inside the Poly price (100 = 1%)
   hedgeThreshold: number; // min |net shares| before triggering a hedge
   hedgeIntervalSec: number; // seconds between hedge checks
+  // After a hedge fires on a pair, don't hedge that pair again for this long.
+  // The Polymarket data-api position read lags a fill by several seconds, so
+  // without this the hedger re-reads a stale (pre-hedge) position and fires the
+  // SAME hedge again, over-trading. Must exceed the data-api settle lag.
+  hedgeSettleMs: number;
   // Floor on re-quote frequency per pair (ms). Cancel-replace still fires every
   // tick, but coalesces bursts to at most one cycle per this interval, always
   // quoting the freshest book. Prevents the Limitless API Cloudflare rate-limit

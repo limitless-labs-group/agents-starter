@@ -43,6 +43,8 @@ interface YamlConfig {
   hedgeThreshold?: number;
   hedge_interval?: number;
   hedgeIntervalSec?: number;
+  hedge_settle_ms?: number;
+  hedgeSettleMs?: number;
   min_requote_ms?: number;
   minRequoteMs?: number;
   max_loss_usd?: number;
@@ -139,6 +141,9 @@ export function loadSettings(): ReplicatorSettings {
     marginBps: Number(raw.margin_bps ?? raw.marginBps ?? 100),
     hedgeThreshold: Number(raw.hedge_threshold ?? raw.hedgeThreshold ?? 2),
     hedgeIntervalSec: Number(raw.hedge_interval ?? raw.hedgeIntervalSec ?? 5),
+    // Default 12s: ~2× the observed Polymarket data-api settle lag. Prevents the
+    // hedger from re-hedging a pair on a stale (pre-hedge) position read.
+    hedgeSettleMs: Number(raw.hedge_settle_ms ?? raw.hedgeSettleMs ?? 12000),
     // Default 2s/pair: keeps a 3-pair run well under the Limitless API rate
     // limit while staying responsive. Lower it only if a single pair needs
     // tighter tracking and you've confirmed you're not getting 429s.

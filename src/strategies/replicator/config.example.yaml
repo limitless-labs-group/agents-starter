@@ -25,6 +25,13 @@ order_size: 5          # shares per order (same N on YES and NO sides) — start
 margin_bps: 100        # how much *inside* the Poly price we quote (100 = 1%)
 hedge_threshold: 2.0   # hedge when |net exposure| in shares exceeds this
 hedge_interval: 5      # seconds between hedge ticks
+# After a hedge fires on a pair, don't hedge that pair again for this long. The
+# Polymarket data-api position read lags a fill by several seconds, so without
+# this the hedger re-reads a stale (pre-hedge) position and fires the SAME hedge
+# again — over-trading, then over-correcting. Must exceed the settle lag; 12s
+# (~2× observed) is safe. Seen live: a single 4.9-share fill triggered 3 hedges
+# ($8.4 of Poly buys for a ~$3.4 need) before this gate was added.
+hedge_settle_ms: 12000
 # Floor on re-quote frequency PER PAIR (ms). Cancel-replace still fires every
 # tick, but coalesces bursts to at most one cycle per this interval (always
 # quoting the freshest book). The Polymarket book ticks many times/sec, so
