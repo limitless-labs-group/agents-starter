@@ -49,6 +49,6 @@
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.7"
   }
 }
