@@ -4,7 +4,7 @@ Autonomous trading agents for [Limitless Exchange](https://limitless.exchange), 
 
 Feed `SKILL.md` to any coding agent with shell + file access and it handles the rest — setup, trading, iteration.
 
-**Docs:** [docs.limitless.exchange](https://docs.limitless.exchange) — API reference, market structure, and guides. Also available as a live MCP server at `https://docs.limitless.exchange/mcp` for AI agents that need up-to-date context.
+**Docs:** [Build a trading agent](https://docs.limitless.exchange/developers/build-a-trading-agent) is the companion guide for this repo on [docs.limitless.exchange](https://docs.limitless.exchange) — alongside the full API reference, market structure, and SDKs. Also available as a live MCP server at `https://docs.limitless.exchange/mcp` for AI agents that need up-to-date context.
 
 ## Strategies
 
