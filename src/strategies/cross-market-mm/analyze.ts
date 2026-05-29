@@ -1,8 +1,8 @@
 /**
- * analyze — summarize a recorded replicator run.
+ * analyze — summarize a recorded cross-market-mm run.
  *
- *   npm run replicator:analyze            # latest file in ./data
- *   npm run replicator:analyze <file>     # a specific JSONL
+ *   npm run cross-market-mm:analyze            # latest file in ./data
+ *   npm run cross-market-mm:analyze <file>     # a specific JSONL
  *
  * Reads the JSONL written by recorder.ts and prints: run config, duration,
  * orders placed, fills inferred from Limitless balance deltas between
@@ -19,7 +19,7 @@ function latestFile(dir: string): string | null {
   if (!fs.existsSync(dir)) return null;
   const files = fs
     .readdirSync(dir)
-    .filter((f) => f.startsWith('replicator-') && f.endsWith('.jsonl'))
+    .filter((f) => f.startsWith('cross-market-mm-') && f.endsWith('.jsonl'))
     .map((f) => path.join(dir, f));
   if (files.length === 0) return null;
   return files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
@@ -35,7 +35,7 @@ function main(): void {
   const arg = process.argv[2];
   const file = arg || latestFile(process.env.REPLICATOR_DATA_DIR || './data');
   if (!file || !fs.existsSync(file)) {
-    console.error('No run data found. Run `npm run replicator` first (it writes ./data/*.jsonl).');
+    console.error('No run data found. Run `npm run cross-market-mm` first (it writes ./data/*.jsonl).');
     process.exit(1);
   }
 

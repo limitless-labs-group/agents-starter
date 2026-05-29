@@ -1,12 +1,12 @@
-# Replicator strategy config.
+# Cross-market MM strategy config.
 #
-# Copy this to ./replicator.config.yaml (or set REPLICATOR_CONFIG_PATH) and
+# Copy this to ./cross-market-mm.config.yaml (or set REPLICATOR_CONFIG_PATH) and
 # edit. Secrets live in .env, never here: PRIVATE_KEY + a Limitless scoped
 # HMAC token (LMTS_TOKEN_ID + LMTS_TOKEN_SECRET). See .env.example.
 #
 # Strategy: mirror Polymarket orderbook liquidity onto Limitless as
 # BUY-only YES + NO limit orders. Hedge accumulated exposure with FAK
-# orders on Polymarket. See src/strategies/replicator/SKILL.md for the
+# orders on Polymarket. See src/strategies/cross-market-mm/SKILL.md for the
 # full architecture + invariants.
 
 # --- Polymarket wallet ------------------------------------------------------
@@ -54,7 +54,7 @@ max_loss_usd: 10
 flatten_on_stop: true
 
 # dry_run: true logs intents and signs nothing. Keep it true until you've run
-# `npm run replicator:preflight` and watched a dry run. NOTE: the DRY_RUN env
+# `npm run cross-market-mm:preflight` and watched a dry run. NOTE: the DRY_RUN env
 # var (e.g. in .env) OVERRIDES this — to go live, set dry_run: false AND make
 # sure DRY_RUN is not set/true in your environment.
 dry_run: true
@@ -65,7 +65,7 @@ dry_run: true
 # threshold, same UTC moment, same data source. Title overlap is NOT
 # enough; verify resolution criteria match before going live.
 #
-# Discover candidates: `npm run replicator:find-pairs`
+# Discover candidates: `npm run cross-market-mm:find-pairs`
 #
 # The pair below is a placeholder — REPLACE before running. Run find-pairs.
 market_pairs:

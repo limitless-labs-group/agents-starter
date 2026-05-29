@@ -35,7 +35,7 @@ import {
 import { createWalletClient, http as viemHttp, type WalletClient } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { polygon } from 'viem/chains';
-import type { MarketPair } from '../../strategies/replicator/types.js';
+import type { MarketPair } from '../../strategies/cross-market-mm/types.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',

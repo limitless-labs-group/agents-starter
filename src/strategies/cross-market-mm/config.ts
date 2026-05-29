@@ -1,8 +1,8 @@
 /**
- * Config loader for the replicator strategy.
+ * Config loader for the cross-market-mm strategy.
  *
  * Secrets come from `.env` (process env). Trading params + market pairs
- * come from a YAML file (default `./replicator.config.yaml`).
+ * come from a YAML file (default `./cross-market-mm.config.yaml`).
  *
  * Port of `config.py` from limitless-replicator.
  */
@@ -80,14 +80,14 @@ export function loadSettings(): ReplicatorSettings {
     );
   }
 
-  const configPath = process.env.REPLICATOR_CONFIG_PATH || './replicator.config.yaml';
+  const configPath = process.env.CROSS_MARKET_MM_CONFIG_PATH || './cross-market-mm.config.yaml';
 
   const resolved = path.resolve(configPath);
   if (!fs.existsSync(resolved)) {
     throw new Error(
-      `replicator config file not found at ${resolved}. ` +
-        `Copy src/strategies/replicator/config.example.yaml and edit it, ` +
-        `or set REPLICATOR_CONFIG_PATH.`,
+      `cross-market-mm config file not found at ${resolved}. ` +
+        `Copy src/strategies/cross-market-mm/config.example.yaml and edit it, ` +
+        `or set CROSS_MARKET_MM_CONFIG_PATH.`,
     );
   }
 
@@ -95,14 +95,14 @@ export function loadSettings(): ReplicatorSettings {
 
   const pairsRaw = raw.market_pairs ?? raw.marketPairs ?? [];
   if (pairsRaw.length === 0) {
-    throw new Error(`replicator config has no market_pairs`);
+    throw new Error(`cross-market-mm config has no market_pairs`);
   }
   const pairs: MarketPair[] = pairsRaw.map((p) => {
     const poly = p.polymarket_slug ?? p.polymarketSlug;
     const lmts = p.limitless_slug ?? p.limitlessSlug;
     if (!poly || !lmts) {
       throw new Error(
-        `replicator config: each market_pair needs polymarket_slug + limitless_slug`,
+        `cross-market-mm config: each market_pair needs polymarket_slug + limitless_slug`,
       );
     }
     return { polymarketSlug: poly, limitlessSlug: lmts };

@@ -11,7 +11,7 @@
  */
 
 import { pino } from 'pino';
-import { QuoteFeed } from '../../strategies/replicator/quote-feed.js';
+import { QuoteFeed } from '../../strategies/cross-market-mm/quote-feed.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'poly-ws' });
 

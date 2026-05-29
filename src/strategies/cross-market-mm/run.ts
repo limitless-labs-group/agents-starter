@@ -31,7 +31,7 @@ import { Recorder } from './recorder.js';
 import { RiskMonitor } from './risk.js';
 import type { MarketPair } from './types.js';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'replicator-main' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'cross-market-mm-main' });
 
 /**
  * Resolve Limitless market metadata for a pair: YES/NO token ids +
@@ -83,7 +83,7 @@ export async function main(): Promise<void> {
       hedgeIntervalSec: settings.hedgeIntervalSec,
       dryRun: settings.dryRun,
     },
-    'replicator boot',
+    'cross-market-mm boot',
   );
 
   // -- Limitless side --
@@ -244,6 +244,6 @@ export async function main(): Promise<void> {
 
 main().catch((err) => {
   // eslint-disable-next-line no-console
-  console.error('replicator failed to start:', err);
+  console.error('cross-market-mm failed to start:', err);
   process.exitCode = 1;
 });

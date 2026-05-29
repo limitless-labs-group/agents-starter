@@ -24,7 +24,7 @@ import type { QuoteFeed } from './quote-feed.js';
 import type { Recorder } from './recorder.js';
 import type { MarketPair, ReplicatorSettings } from './types.js';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'replicator' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'cross-market-mm' });
 
 /** Keep prices inside (0, 1) and rounded to Limitless tick (0.001). */
 export function clipPrice(p: number): number {
@@ -123,7 +123,7 @@ export async function runReplicator(
 
   logger.info(
     { polymarketSlug: pair.polymarketSlug, limitlessSlug: pair.limitlessSlug },
-    'replicator started',
+    'cross-market-mm started',
   );
 
   let lastRequoteAt = 0;
@@ -165,7 +165,7 @@ export async function runReplicator(
       const res = await trading.cancelAllAndVerify(pair.limitlessSlug);
       logger.info(
         { slug: pair.limitlessSlug, remaining: res.remaining },
-        'replicator shutdown: cancelAll verified',
+        'cross-market-mm shutdown: cancelAll verified',
       );
     } catch (err) {
       logger.error(

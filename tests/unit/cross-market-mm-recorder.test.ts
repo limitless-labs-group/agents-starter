@@ -6,7 +6,7 @@ import { afterEach, describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Recorder } from '../../src/strategies/replicator/recorder.js';
+import { Recorder } from '../../src/strategies/cross-market-mm/recorder.js';
 
 describe('Recorder', () => {
   const dirs: string[] = [];
@@ -20,11 +20,11 @@ describe('Recorder', () => {
     return d;
   }
 
-  it('creates the data dir + a replicator-*.jsonl file', () => {
+  it('creates the data dir + a cross-market-mm-*.jsonl file', () => {
     const dir = path.join(tmp(), 'nested');
     const r = new Recorder(dir);
     expect(fs.existsSync(dir)).toBe(true);
-    expect(path.basename(r.filePath)).toMatch(/^replicator-.*\.jsonl$/);
+    expect(path.basename(r.filePath)).toMatch(/^cross-market-mm-.*\.jsonl$/);
     r.close();
   });
 

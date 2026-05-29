@@ -17,5 +17,6 @@ data/*-backup-*
 # Runtime data (user-specific)
 data/oracle-arb-positions.json
 
-# Replicator strategy: user's local YAML config (see config.example.yaml)
+# cross-market-mm strategy: user's local YAML config (see config.example.yaml)
+cross-market-mm.config.yaml
 replicator.config.yaml

@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { applyBook, applyPriceChange } from '../../src/core/polymarket/ws.js';
-import { QuoteFeed } from '../../src/strategies/replicator/quote-feed.js';
+import { QuoteFeed } from '../../src/strategies/cross-market-mm/quote-feed.js';
 
 describe('applyBook', () => {
   it('YES asset book passes through unchanged', () => {

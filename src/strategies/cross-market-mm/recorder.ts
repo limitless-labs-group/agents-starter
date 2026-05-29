@@ -1,10 +1,10 @@
 /**
- * Recorder — append-only JSONL data capture for a replicator run.
+ * Recorder — append-only JSONL data capture for a cross-market-mm run.
  *
- * Writes one JSON object per line to `data/replicator-<timestamp>.jsonl`
+ * Writes one JSON object per line to `data/cross-market-mm-<timestamp>.jsonl`
  * (override the dir with REPLICATOR_DATA_DIR). Every line is `{ t, kind, ... }`
  * where `t` is epoch ms. Cheap, structured, and trivially analyzable — see
- * `analyze.ts` (`npm run replicator:analyze`).
+ * `analyze.ts` (`npm run cross-market-mm:analyze`).
  *
  * What gets recorded:
  *   - `run`      once at boot (config + dryRun flag)
@@ -56,7 +56,7 @@ export class Recorder {
   constructor(dir: string = process.env.REPLICATOR_DATA_DIR || './data') {
     fs.mkdirSync(dir, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    this.filePath = path.join(dir, `replicator-${ts}.jsonl`);
+    this.filePath = path.join(dir, `cross-market-mm-${ts}.jsonl`);
     this.stream = fs.createWriteStream(this.filePath, { flags: 'a' });
     // The stream opens the fd asynchronously; a failed open/write (disk full,
     // dir removed) emits 'error'. Without a listener that's an uncaught

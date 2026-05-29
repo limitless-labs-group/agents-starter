@@ -1,4 +1,4 @@
-# Replicator — cross-venue market-making skill
+# Cross-market MM — cross-venue market-making skill
 
 Quote the **same** prediction market on two venues at once: mirror Polymarket's
 live orderbook onto **Limitless** as resting BUY quotes, and hedge any fill
@@ -27,10 +27,10 @@ validation run uses, see **[DEMO.md](./DEMO.md)**.
    Polymarket WS ───▶ │  core/polymarket/  │  best bid/ask per slug → QuoteFeed
                       │  ws.ts             │  (everything in YES-frame)
                       └─────────┬──────────┘
-                                │ updates wake the replicator
+                                │ updates wake the cross-market-mm
                                 ▼
               ┌─────────────────────────────────────────────┐
-              │  replicator/index.ts (one task per pair)    │
+              │  cross-market-mm/index.ts (one task per pair)    │
               │   • cancel ALL open Limitless orders        │
               │   • place YES BUY @ (poly_bid − margin)     │
               │   • place NO  BUY @ (1 − poly_ask) − margin │
@@ -38,7 +38,7 @@ validation run uses, see **[DEMO.md](./DEMO.md)**.
                                 │ a Limitless taker fills a quote
                                 ▼
               ┌─────────────────────────────────────────────┐
-              │  replicator/hedger.ts (one task)            │
+              │  cross-market-mm/hedger.ts (one task)            │
               │   • read net exposure on BOTH venues / 5s   │
               │   • if |net| > threshold:                   │
               │       FAK BUY the offsetting side on Poly   │
@@ -69,7 +69,7 @@ Key facts that trip people up:
 - **The Polymarket deposit wallet is key-less.** It's a deterministic CREATE2
   proxy (`POLY_1271`, signature type 3) whose only authorized signer is your
   EOA. You never get a separate private key for it — your `PRIVATE_KEY` controls
-  it via ERC-1271 signature validation. `npm run replicator:setup-poly` derives
+  it via ERC-1271 signature validation. `npm run cross-market-mm:setup-poly` derives
   and deploys it.
 - **pUSD must live IN the deposit wallet.** Polymarket's CLOB v2 settles in
   **pUSD**, and your CLOB buying power is the pUSD balance *of the deposit
@@ -77,7 +77,7 @@ Key facts that trip people up:
   UI login address is **not** buying power — transfer it into the deposit wallet.
 - **The deposit wallet is invisible in the Polymarket UI.** It's a different
   address from your Polymarket login, so the UI shows neither its balance nor
-  its positions. Use `npm run replicator:status` (and the on-chain links it
+  its positions. Use `npm run cross-market-mm:status` (and the on-chain links it
   prints) to see them.
 - **Existing Gnosis Safe users:** Polymarket's CLOB **rejects orders from a
   Safe maker** ("maker address not allowed, please use the deposit wallet
@@ -118,14 +118,14 @@ All from the repo root (`agents-starter/`). One-time setup commands are marked.
 
 | Command | What it does |
 |---|---|
-| `npm run replicator:find-pairs` | Scan both venues; print a liquidity-ranked shortlist of equivalent market pairs as paste-ready YAML |
-| `npm run replicator:setup-poly` | **(one-time)** Derive + deploy your Polymarket deposit wallet; approve pUSD (buy) + CTF (sell) on both v2 exchanges |
-| `npm run replicator:preflight` | Validate auth, funding, sig type, exchange approvals, and pair resolution on both venues. Exits non-zero on any critical failure — use as a gate |
-| `npm run replicator` | Run the bot (DRY_RUN by default). `DRY_RUN=false` to go live |
-| `npm run replicator:status` | Read-only cross-venue portfolio view: Limitless USDC + positions/orders, deposit-wallet pUSD + positions, and per-pair net delta |
-| `npm run replicator:close` | **Exit to flat:** cancel resting Limitless orders, then SELL held inventory on BOTH venues back to flat |
-| `npm run replicator:flatten` | Cancel resting Limitless orders only (does not touch positions). Lighter recovery tool |
-| `npm run replicator:analyze` | Summarize the latest run's JSONL log (orders, fills, how flat the book stayed, hedges fired) |
+| `npm run cross-market-mm:find-pairs` | Scan both venues; print a liquidity-ranked shortlist of equivalent market pairs as paste-ready YAML |
+| `npm run cross-market-mm:setup-poly` | **(one-time)** Derive + deploy your Polymarket deposit wallet; approve pUSD (buy) + CTF (sell) on both v2 exchanges |
+| `npm run cross-market-mm:preflight` | Validate auth, funding, sig type, exchange approvals, and pair resolution on both venues. Exits non-zero on any critical failure — use as a gate |
+| `npm run cross-market-mm` | Run the bot (DRY_RUN by default). `DRY_RUN=false` to go live |
+| `npm run cross-market-mm:status` | Read-only cross-venue portfolio view: Limitless USDC + positions/orders, deposit-wallet pUSD + positions, and per-pair net delta |
+| `npm run cross-market-mm:close` | **Exit to flat:** cancel resting Limitless orders, then SELL held inventory on BOTH venues back to flat |
+| `npm run cross-market-mm:flatten` | Cancel resting Limitless orders only (does not touch positions). Lighter recovery tool |
+| `npm run cross-market-mm:analyze` | Summarize the latest run's JSONL log (orders, fills, how flat the book stayed, hedges fired) |
 | `npm start approve <slug>` | **(one-time, per exchange)** Approve a Limitless market's exchange for USDC (buy) + CTF (sell) |
 
 ---
@@ -160,7 +160,7 @@ Get the **relayer key** from the Polymarket builder dashboard.
 ### 4.2 Polymarket deposit wallet (one command)
 
 ```bash
-npm run replicator:setup-poly
+npm run cross-market-mm:setup-poly
 ```
 
 This is gasless (the relayer pays). It:
@@ -171,7 +171,7 @@ This is gasless (the relayer pays). It:
    (`exchangeV2`, `negRiskExchangeV2`, `negRiskAdapter`).
 
 Both approvals matter: pUSD-approve lets you place hedge BUYs, CTF-approve lets
-`replicator:close` SELL the inventory back to flat. Skipping the CTF approval is
+`cross-market-mm:close` SELL the inventory back to flat. Skipping the CTF approval is
 why an early close attempt left a naked Polymarket leg — the sell reverted with
 allowance 0. setup-poly now does both and skips any already set.
 
@@ -191,17 +191,17 @@ poly_signature_type: 3
 | Polymarket | Polygon (137) | **pUSD** | **the deposit wallet** | collateral for FAK hedges |
 
 Transfer pUSD **into the deposit-wallet address** from 4.2 — not your EOA, not
-your Safe, not your Polymarket UI login. `replicator:status` will show the
+your Safe, not your Polymarket UI login. `cross-market-mm:status` will show the
 deposit wallet's pUSD so you can confirm it landed.
 
 ### 4.4 Configure the pair
 
 ```bash
-npm run replicator:find-pairs          # prints paste-ready YAML
-cp src/strategies/replicator/config.example.yaml ./replicator.config.yaml
+npm run cross-market-mm:find-pairs          # prints paste-ready YAML
+cp src/strategies/cross-market-mm/config.example.yaml ./cross-market-mm.config.yaml
 ```
 
-Edit `replicator.config.yaml`: paste a verified pair into `market_pairs`, set
+Edit `cross-market-mm.config.yaml`: paste a verified pair into `market_pairs`, set
 `order_size` small (start at `5`), confirm `poly_funder` + `poly_signature_type:
 3`. **Verify both markets resolve on identical criteria** — same asset,
 threshold, UTC moment, source. Title overlap is not enough (see §8).
@@ -219,21 +219,21 @@ so a neg-risk pair needs its own approve. Preflight tells you if it's missing.
 ### 4.6 Preflight
 
 ```bash
-npm run replicator:preflight
+npm run cross-market-mm:preflight
 ```
 
 Re-checks Limitless HMAC auth + Base USDC, Polymarket auth + sig type +
 deposit-wallet pUSD, the circuit-breaker setting, per-exchange USDC allowance on
 Base, that the funder is API-tradeable (fails fast if it's a Gnosis Safe), and
 that every configured pair resolves on both venues. Non-zero exit = don't go
-live yet. `npm run replicator:preflight && npm run replicator` is the safe gate.
+live yet. `npm run cross-market-mm:preflight && npm run cross-market-mm` is the safe gate.
 
 ---
 
 ## 5. Dry run
 
 ```bash
-npm run replicator          # DRY_RUN is the default
+npm run cross-market-mm          # DRY_RUN is the default
 ```
 
 DRY_RUN signs and sends nothing: cancel/place/hedge each short-circuit to a
@@ -250,8 +250,8 @@ Illiquid Limitless markets may not fill for a long time. To watch the full
 fill→hedge round-trip through the real pipeline (no real money):
 
 ```bash
-SIMULATE_FILL=YES:5 DRY_RUN=true npm run replicator   # Ctrl-C, then:
-npm run replicator:analyze
+SIMULATE_FILL=YES:5 DRY_RUN=true npm run cross-market-mm   # Ctrl-C, then:
+npm run cross-market-mm:analyze
 ```
 
 It injects a synthetic 5-share YES fill on the first pair; the real hedger
@@ -265,7 +265,7 @@ market-making that needs no Polymarket funding.
 
 ```bash
 # set dry_run: false in YAML AND ensure DRY_RUN isn't true in .env, then:
-npm run replicator
+npm run cross-market-mm
 ```
 
 Boot runs both auth probes before quoting, so a wrong sig type / funder / token
@@ -275,7 +275,7 @@ any orders a prior run left resting, so the book starts flat.
 **Monitor:**
 
 ```bash
-npm run replicator:status      # cross-venue portfolio + net delta any time
+npm run cross-market-mm:status      # cross-venue portfolio + net delta any time
 ```
 
 `status` is the only place to see the deposit wallet's pUSD + Polymarket
@@ -297,7 +297,7 @@ positions (the UI can't show them) and the per-pair net delta (≈0 = hedged).
 ### Manual exit to flat
 
 ```bash
-npm run replicator:close
+npm run cross-market-mm:close
 ```
 
 The deliberate wind-down. Per pair it cancels resting Limitless orders, then
@@ -307,7 +307,7 @@ orders on both. It uses settled re-reads with a settle delay between sells so a
 lagged balance can't trigger a re-sell of what already sold (the stale-read
 double-fill bug). Idempotent — re-run if a thin book leaves a remainder.
 
-`replicator:flatten` is the lighter tool: it only cancels resting orders and
+`cross-market-mm:flatten` is the lighter tool: it only cancels resting orders and
 does not touch positions. Use it when a run was killed ungracefully and you just
 want a clean book.
 
@@ -318,13 +318,13 @@ want a clean book.
 ### `Polymarket auth probe failed` / "maker address not allowed"
 Wrong `poly_signature_type`, or `poly_funder` isn't the deposit wallet. The CLOB
 **rejects Gnosis Safe makers** — even existing Safe users must use the
-deposit-wallet flow. Run `npm run replicator:setup-poly`, set the printed address
+deposit-wallet flow. Run `npm run cross-market-mm:setup-poly`, set the printed address
 as `poly_funder` with `poly_signature_type: 3`.
 
-### Hedge BUY works but `replicator:close` SELL reverts ("not enough balance / allowance ... allowance 0")
+### Hedge BUY works but `cross-market-mm:close` SELL reverts ("not enough balance / allowance ... allowance 0")
 Selling outcome tokens on Polymarket needs the **CTF `setApprovalForAll`**
 (token side), which is distinct from the pUSD `approve` (cash side). Re-run
-`npm run replicator:setup-poly` — it sets both. (This left a naked Poly leg once
+`npm run cross-market-mm:setup-poly` — it sets both. (This left a naked Poly leg once
 this session; the fix is the CTF approval, then re-run close.)
 
 ### "isApprovedForAll returned no data (0x)" during setup-poly
@@ -335,7 +335,7 @@ is `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` (already set in setup-poly).
 ### My pUSD / positions don't show up; CLOB says "insufficient balance"
 pUSD must be **in the deposit wallet**, not your EOA / Safe / UI login address.
 And only `@polymarket/clob-client-v2` trades pUSD — the old v1 client silently
-fails against a pUSD-funded account. Run `npm run replicator:status` to see the
+fails against a pUSD-funded account. Run `npm run cross-market-mm:status` to see the
 deposit wallet's actual pUSD balance and the polygonscan/data-api links.
 
 ### `Invalid or revoked API key` / `401` (Limitless)
@@ -352,7 +352,7 @@ auto-approve. Run `npm start approve <limitless-slug>`, then relaunch. Neg-risk
 markets use a separate exchange and need their own approve.
 
 ### Close looks like it sold but the position is still there next read
-Backend reads lag a fill. `replicator:close` already guards this with settled
+Backend reads lag a fill. `cross-market-mm:close` already guards this with settled
 re-reads + a settle delay; if you wrote a custom exit, re-read the *settled*
 position before acting again, or a lagged read makes a filled order look killed
 and you double-sell.
@@ -451,7 +451,7 @@ alone can lock ~93% of capital. Size down or pick a balanced market.
 **On Limitless you are the maker, and makers pay no fee.** Limitless charges
 fees on takers only (limit orders that rest on the book are free — see
 [docs.limitless.exchange/user-guide/fees](https://docs.limitless.exchange/user-guide/fees)).
-The replicator quotes `postOnly`, so every Limitless fill is a maker fill at
+The cross-market-mm quotes `postOnly`, so every Limitless fill is a maker fill at
 zero fee. Your only direct cost is the **Polymarket FAK hedge**, which is a
 taker order on Polymarket and pays whatever Polymarket's current taker fee is
 for that market — verify it against Polymarket's live schedule rather than

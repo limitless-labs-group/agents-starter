@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { RiskMonitor, totalEquity, markPairValue } from '../../src/strategies/replicator/risk.js';
+import { RiskMonitor, totalEquity, markPairValue } from '../../src/strategies/cross-market-mm/risk.js';
 
 describe('totalEquity', () => {
   it('sums pUSD + Base USDC + position value (locked is already in USDC)', () => {

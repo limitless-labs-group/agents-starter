@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { decideHedge } from '../../src/strategies/replicator/hedger.js';
+import { decideHedge } from '../../src/strategies/cross-market-mm/hedger.js';
 
 describe('decideHedge — direction', () => {
   it('net positive (long YES) → buy NO at 1 - polyBid', () => {

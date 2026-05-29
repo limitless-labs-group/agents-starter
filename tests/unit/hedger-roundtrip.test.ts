@@ -9,11 +9,11 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { hedgeOnce } from '../../src/strategies/replicator/hedger.js';
-import { QuoteFeed } from '../../src/strategies/replicator/quote-feed.js';
+import { hedgeOnce } from '../../src/strategies/cross-market-mm/hedger.js';
+import { QuoteFeed } from '../../src/strategies/cross-market-mm/quote-feed.js';
 import type { PolymarketAdapter } from '../../src/core/polymarket/client.js';
-import type { ReplicatorSettings, MarketPair } from '../../src/strategies/replicator/types.js';
-import type { ReplicatorEvent } from '../../src/strategies/replicator/recorder.js';
+import type { ReplicatorSettings, MarketPair } from '../../src/strategies/cross-market-mm/types.js';
+import type { ReplicatorEvent } from '../../src/strategies/cross-market-mm/recorder.js';
 
 const PAIR: MarketPair = {
   polymarketSlug: 'poly-x',

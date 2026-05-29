@@ -1,6 +1,6 @@
 # Demo — exact, reproducible end-to-end
 
-The precise command sequence to reproduce a full replicator run, twice: once
+The precise command sequence to reproduce a full cross-market-mm run, twice: once
 with **no money** (Part A, ~5 min) and once **live on a real pair** (Part B).
 Every command is copy-paste from the repo root (`agents-starter/`). Concepts and
 troubleshooting are in **[SKILL.md](./SKILL.md)**.
@@ -18,18 +18,18 @@ cp .env.example .env && chmod 600 .env
 #   set PRIVATE_KEY, LMTS_TOKEN_ID, LMTS_TOKEN_SECRET. Leave DRY_RUN=true.
 
 # 1. Pick a pair from the live shortlist and configure.
-npm run replicator:find-pairs
-cp src/strategies/replicator/config.example.yaml ./replicator.config.yaml
+npm run cross-market-mm:find-pairs
+cp src/strategies/cross-market-mm/config.example.yaml ./cross-market-mm.config.yaml
 #   paste one shortlisted pair into market_pairs; order_size: 5; dry_run: true
 
 # 2. Dry-run: watch cancel-replace quote inside the Polymarket book.
-npm run replicator
+npm run cross-market-mm
 #   expect: markets resolve → Poly WS connected → [DRY_RUN] would cancelAll /
 #   would createOrder (YES + NO) every tick. Ctrl-C to stop.
 
 # 3. Force the full round-trip through the real hedger and summarize it.
-SIMULATE_FILL=YES:5 DRY_RUN=true npm run replicator   # Ctrl-C after ~20s, then:
-npm run replicator:analyze
+SIMULATE_FILL=YES:5 DRY_RUN=true npm run cross-market-mm   # Ctrl-C after ~20s, then:
+npm run cross-market-mm:analyze
 #   expect: a synthetic 5-share YES fill → hedger fires offsetting NO hedge on
 #   Polymarket (logged) → book returns delta-flat. analyze prints orders placed,
 #   fills inferred, how flat the book stayed, hedges fired.
@@ -48,8 +48,8 @@ a real market. Requires real funds (see GO-LIVE.md). Keep `order_size: 5`.
 
 ```bash
 #   add RELAYER_API_KEY + RELAYER_API_KEY_ADDRESS to .env first.
-npm run replicator:setup-poly
-#   → prints deposit-wallet address. Set in replicator.config.yaml:
+npm run cross-market-mm:setup-poly
+#   → prints deposit-wallet address. Set in cross-market-mm.config.yaml:
 #       poly_funder: "0x…"   poly_signature_type: 3
 #   then fund: Base USDC+ETH → EOA; pUSD → the deposit wallet.
 
@@ -60,27 +60,27 @@ npm start approve <your-limitless-slug>     # one-time per exchange
 
 ```bash
 # 1. Confirm everything's wired.
-npm run replicator:preflight        # must exit 0
-npm run replicator:status           # confirm USDC on Base, pUSD in deposit wallet
+npm run cross-market-mm:preflight        # must exit 0
+npm run cross-market-mm:status           # confirm USDC on Base, pUSD in deposit wallet
 
 # 2. Go live small (dry_run: false in YAML, DRY_RUN unset/false in .env).
-npm run replicator
+npm run cross-market-mm
 #   let it quote and (ideally) take a fill; watch for a HEDGE log line.
 #   if no taker comes, that pair is illiquid on Limitless — try another.
 
 # 3. Verify it stayed hedged mid-run (separate terminal).
-npm run replicator:status
+npm run cross-market-mm:status
 #   per-pair "net … (flat)" means the hedge kept you delta-neutral.
 
 # 4. Exit to flat on BOTH venues.
 #    Either Ctrl-C the bot (flatten_on_stop sells to flat automatically), or:
-npm run replicator:close
+npm run cross-market-mm:close
 #   expect per pair: Limitless YES/NO → (FLAT), Polymarket YES/NO → (FLAT),
 #   ending "All configured pairs flat on both venues."
 
 # 5. Confirm flat and review.
-npm run replicator:status           # net ≈ 0, no live orders, dust positions only
-npm run replicator:analyze          # round-trip summary for the run
+npm run cross-market-mm:status           # net ≈ 0, no live orders, dust positions only
+npm run cross-market-mm:analyze          # round-trip summary for the run
 ```
 
 ### Acceptance criteria for a validated run
@@ -88,7 +88,7 @@ npm run replicator:analyze          # round-trip summary for the run
 - Quotes rested on Limitless and at least one filled (or `SIMULATE_FILL` for the
   hedge-path proof on an illiquid pair).
 - The hedger fired and `status` showed per-pair **net ≈ 0** (delta-flat).
-- `replicator:close` (or Ctrl-C flatten-on-stop) ended **flat on both venues**.
+- `cross-market-mm:close` (or Ctrl-C flatten-on-stop) ended **flat on both venues**.
 - Realized PnL for the run ≥ −$10 (the `max_loss_usd` breaker bound).
 
 Repeat across 2–3 distinct pairs (e.g. grouped/neg-risk winner markets) to
@@ -107,7 +107,7 @@ pair(s), what was proven.
   resting Limitless quote filled **+4.93 YES**, the hedger bought the offsetting
   NO on Polymarket, and the pair held delta-flat (avg net exposure |0.02|, flat
   89% of ticks). Closed to flat on both venues via flatten-on-stop +
-  `replicator:close`; `replicator:status` verified 0 positions / 0 orders / net
+  `cross-market-mm:close`; `cross-market-mm:status` verified 0 positions / 0 orders / net
   0.00. analyze: 3 pairs, 78m, **net PnL −$0.10** (worst −$3.48), captured in
   `./data`. Throttle confirmed: 429s ~1967/1.75h (unthrottled) → a residual
   burst + ~1–3/min (throttled). Finding: the hedger **stale-read stacked** —
@@ -118,12 +118,12 @@ pair(s), what was proven.
 - 2026-05-29 (1st run, unthrottled) — 3 neg-risk "winner" pairs
   (Hurricanes/Spurs/Knicks), `order_size: 5`, `margin_bps: 30`. Live ENTER
   proven: ~7k real orders across all 3, Hurricanes resting at the touch
-  (0.55/0.56). EXIT proven: Ctrl-C → flatten-on-stop + `replicator:flatten` +
-  `replicator:status` → 0 orders / 0 positions / net 0.00, **zero fills, zero
+  (0.55/0.56). EXIT proven: Ctrl-C → flatten-on-stop + `cross-market-mm:flatten` +
+  `cross-market-mm:status` → 0 orders / 0 positions / net 0.00, **zero fills, zero
   loss**. Finding: a sustained unthrottled multi-pair run trips the Limitless
   API rate-limit (429/1015) → added the `min_requote_ms` throttle.
 - 2026-05-28 — UCL "Arsenal to win" (Limitless `arsenal-…` ↔ Polymarket
   `will-arsenal-win-the-202526-champions-league`), `order_size: 5`. First real
   cross-venue hedge filled live (Limitless YES maker fill → Polymarket NO FAK
   hedge), held delta-flat, then **closed to flat on both venues** via
-  `replicator:close` after adding the CTF sell-approval. Neg-risk/grouped market.
+  `cross-market-mm:close` after adding the CTF sell-approval. Neg-risk/grouped market.

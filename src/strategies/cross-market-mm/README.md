@@ -1,4 +1,4 @@
-# Replicator strategy
+# Cross-market MM strategy
 
 Cross-venue market-making: mirror Polymarket orderbook liquidity onto Limitless
 as resting BUY quotes, hedge fills back on Polymarket. Net delta stays ~flat;
@@ -25,14 +25,14 @@ follow **[GO-LIVE.md](./GO-LIVE.md)**.
 ## Commands
 
 ```bash
-npm run replicator:find-pairs    # find equivalent market pairs on both venues
-npm run replicator:setup-poly    # one-time: deploy Polymarket deposit wallet + approvals
-npm run replicator:preflight     # validate auth/funding/approvals/pairs before live
-npm run replicator               # run the bot (DRY_RUN by default)
-npm run replicator:status        # cross-venue portfolio + net delta (read-only)
-npm run replicator:close         # exit to flat on BOTH venues
-npm run replicator:flatten       # cancel resting Limitless orders only
-npm run replicator:analyze       # summarize the latest run
+npm run cross-market-mm:find-pairs    # find equivalent market pairs on both venues
+npm run cross-market-mm:setup-poly    # one-time: deploy Polymarket deposit wallet + approvals
+npm run cross-market-mm:preflight     # validate auth/funding/approvals/pairs before live
+npm run cross-market-mm               # run the bot (DRY_RUN by default)
+npm run cross-market-mm:status        # cross-venue portfolio + net delta (read-only)
+npm run cross-market-mm:close         # exit to flat on BOTH venues
+npm run cross-market-mm:flatten       # cancel resting Limitless orders only
+npm run cross-market-mm:analyze       # summarize the latest run
 ```
 
 ## Tests

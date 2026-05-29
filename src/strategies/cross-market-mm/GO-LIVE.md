@@ -33,8 +33,8 @@ get wrong.
 #      RELAYER_API_KEY_ADDRESS=0x...   (your PRIVATE_KEY's address)
 
 # 2. Deploy the deposit wallet + approvals (gasless, ~1 min):
-npm run replicator:setup-poly
-#    Prints your deposit-wallet address. Put it in replicator.config.yaml:
+npm run cross-market-mm:setup-poly
+#    Prints your deposit-wallet address. Put it in cross-market-mm.config.yaml:
 #      poly_funder: "0x...that address"
 #      poly_signature_type: 3
 #    It approves BOTH pUSD (buy) and CTF (sell) so you can later exit to flat.
@@ -43,18 +43,18 @@ npm run replicator:setup-poly
 #    • Base:    USDC (collateral) + ~$1–2 ETH (gas) → your EOA
 #    • Polygon: pUSD → the DEPOSIT-WALLET address from step 2 (NOT your EOA/Safe/UI login)
 #    Confirm pUSD landed in the right place:
-npm run replicator:status
+npm run cross-market-mm:status
 
 # 4. Approve the Limitless market's exchange (one-time, per exchange, ~$0.01 gas):
 npm start approve <your-limitless-slug>
 #    Neg-risk (sports/election "winner") markets use a separate exchange → own approve.
 
 # 5. Gate on preflight — exits non-zero if anything's wrong:
-npm run replicator:preflight
+npm run cross-market-mm:preflight
 
 # 6. Go live, small:
 #    set dry_run: false in YAML AND ensure DRY_RUN isn't true in .env, then:
-npm run replicator
+npm run cross-market-mm
 ```
 
 ## What "working" looks like, live
@@ -75,7 +75,7 @@ an illiquid pair can sit for a while. Watch the first live minutes.
 ## Operating it
 
 ```bash
-npm run replicator:status      # cross-venue portfolio + per-pair net delta, any time
+npm run cross-market-mm:status      # cross-venue portfolio + per-pair net delta, any time
 ```
 
 `status` is the **only** way to see the deposit wallet's pUSD and Polymarket
@@ -86,9 +86,9 @@ positions — they don't appear in the Polymarket UI.
 - **Ctrl-C** (or a tripped `max_loss_usd` breaker) cancels all resting orders
   AND sells inventory to flat on **both venues** (`flatten_on_stop` is true by
   default) — a stop never leaves unhedged directional inventory.
-- **`npm run replicator:close`** — deliberate wind-down to flat on both venues,
+- **`npm run cross-market-mm:close`** — deliberate wind-down to flat on both venues,
   any time. Idempotent; re-run if a thin book leaves a remainder.
-- **`npm run replicator:flatten`** — cancel resting orders only (doesn't touch
+- **`npm run cross-market-mm:flatten`** — cancel resting orders only (doesn't touch
   positions); use after an ungraceful kill.
 
 If anything looks wrong: **halt, flatten, check `status`** — don't keep bleeding.
