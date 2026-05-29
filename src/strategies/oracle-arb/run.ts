@@ -38,8 +38,10 @@ async function main() {
         process.exit(1);
     }
 
-    if (!process.env.LIMITLESS_API_KEY) {
-        console.error('ERROR: LIMITLESS_API_KEY not set in .env');
+    // Auth: scoped HMAC token (preferred) or legacy X-API-Key. SDKTradingClient
+    // picks up LMTS_TOKEN_ID/LMTS_TOKEN_SECRET from env automatically.
+    if (!process.env.LIMITLESS_API_KEY && !(process.env.LMTS_TOKEN_ID && process.env.LMTS_TOKEN_SECRET)) {
+        console.error('ERROR: set LMTS_TOKEN_ID + LMTS_TOKEN_SECRET (scoped HMAC token) or legacy LIMITLESS_API_KEY in .env');
         process.exit(1);
     }
 

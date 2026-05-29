@@ -64,15 +64,15 @@ npm run redeem claim-all
 
 ## Example Strategies
 
-Three strategies are included as starting points. They demonstrate different approaches to finding edge in prediction markets — study them, modify them, or use them as templates for your own.
+Three strategies are included, spanning distinct archetypes. Study them, modify them, or use them as templates. All authenticate with the scoped HMAC token (`LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET`); all default to `DRY_RUN`.
 
-**Oracle Arb** (`npm run oracle-arb`) — The primary example. Connects to Pyth Hermes SSE for sub-second oracle prices and compares them against Limitless market pricing. When the oracle shows conviction the market hasn't priced in, it fires FOK orders at the actual orderbook ask. Includes orderbook validation, position tracking, and auto-approval.
+**Replicator** (`npm run replicator`) — the flagship. Cross-venue market-making: mirrors Polymarket's live orderbook onto Limitless as resting maker quotes and hedges fills back on Polymarket (FAK) to stay delta-flat. Earns the cross-venue spread plus Limitless [maker rebates](https://docs.limitless.exchange/user-guide/maker-rebates) + [LP rewards](https://docs.limitless.exchange/user-guide/lp-rewards). Start with [`QUICKSTART.md`](src/strategies/replicator/QUICKSTART.md) (dry-run, no money) or the canonical [`SKILL.md`](src/strategies/replicator/SKILL.md).
 
-**Signal Sniper** (`npm run signal-sniper`) — Simpler approach using CoinGecko price data. Finds prediction markets where the current spot price creates an edge against market odds. Good starting point for understanding the strategy framework.
+**Oracle Arb** (`npm run oracle-arb`) — connects to Pyth Hermes SSE for sub-second oracle prices and compares them against Limitless market pricing. When the oracle shows conviction the market hasn't priced in, it fires FOK orders at the actual orderbook ask. The price-feed / edge-detection archetype.
 
-**Replicator** (`npm run replicator`) — Cross-venue market-making: mirrors Polymarket's live orderbook onto Limitless as resting BUY quotes and hedges fills back on Polymarket (FAK) to stay delta-flat. Earns the spread between venues. Start with [`src/strategies/replicator/QUICKSTART.md`](src/strategies/replicator/QUICKSTART.md) (dry-run, no money) or the canonical [`SKILL.md`](src/strategies/replicator/SKILL.md).
+**Certainty Closer** (`npm run certainty-closer`) — the simplest on-ramp: SDK-only (no external feeds). Filters markets near resolution and buys the favourite, sized via fractional Kelly (`src/core/kelly.ts`). Honestly framed — on its own it has no independent edge; it teaches market-filtering + the `BaseStrategy` loop + disciplined sizing.
 
-**Build your own** — Extend `BaseStrategy` with a `tick()` method that returns trade decisions. The base class handles the execution loop, order submission, and PM2 lifecycle. See `src/strategies/oracle-arb/` for the most complete example.
+**Build your own** — Extend `BaseStrategy` with a `tick()` method that returns trade decisions. The base class handles the execution loop and order submission. See `src/strategies/certainty-closer/` for the simplest example.
 
 ## Architecture
 
@@ -80,13 +80,14 @@ Three strategies are included as starting points. They demonstrate different app
 src/
   core/
     limitless/          # Full Limitless API client (markets, trading, signing, redeem)
-    price-feeds/        # Pyth Hermes SSE, CoinGecko
+    polymarket/         # Polymarket clob-client-v2 adapter + WS (replicator hedge side)
+    price-feeds/        # Pyth Hermes SSE
+    kelly.ts            # Fractional-Kelly position sizing util
   strategies/
     base-strategy.ts    # Strategy base class with tick loop
-    oracle-arb/         # Oracle arbitrage strategy
-    signal-sniper/      # CoinGecko momentum strategy
-    replicator/         # Cross-venue market-making (Polymarket ↔ Limitless)
-  dashboard.ts          # Analytics dashboard server
+    replicator/         # Cross-venue market-making (Polymarket ↔ Limitless) — flagship
+    oracle-arb/         # Pyth oracle edge-detection
+    certainty-closer/   # SDK-only near-resolution example
 ```
 
 ## Contracts (Base)
