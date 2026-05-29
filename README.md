@@ -2,7 +2,7 @@
 
 Autonomous trading agents for [Limitless Exchange](https://limitless.exchange), the prediction market on Base.
 
-Built as an [OpenClaw](https://github.com/openclaw/openclaw) skill. Feed `SKILL.md` to your agent and it handles the rest — setup, trading, iteration.
+Feed `SKILL.md` to any coding agent with shell + file access and it handles the rest — setup, trading, iteration.
 
 **Docs:** [docs.limitless.exchange](https://docs.limitless.exchange) — API reference, market structure, and guides. Also available as a live MCP server at `https://docs.limitless.exchange/mcp` for AI agents that need up-to-date context.
 
@@ -10,17 +10,17 @@ Built as an [OpenClaw](https://github.com/openclaw/openclaw) skill. Feed `SKILL.
 
 | Strategy | Run | What it does | Guides |
 |---|---|---|---|
-| **Cross-market MM** &nbsp;*(flagship)* | `npm run cross-market-mm` | Quote on Limitless, hedge fills on Polymarket → delta-neutral. Earns the cross-venue spread + Limitless maker rebates / LP rewards. | [QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md) · [GO-LIVE](src/strategies/cross-market-mm/GO-LIVE.md) · [SKILL](src/strategies/cross-market-mm/SKILL.md) · [DEMO](src/strategies/cross-market-mm/DEMO.md) |
+| **Cross-market MM** | `npm run cross-market-mm` | Quote on Limitless, hedge fills on Polymarket → delta-neutral. Earns the cross-venue spread + Limitless maker rebates / LP rewards. | [QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md) · [SKILL](src/strategies/cross-market-mm/SKILL.md) |
 | Oracle Arb | `npm run oracle-arb` | Pyth (Hermes SSE) oracle vs Limitless pricing; fires FOK when the market is mispriced. | [`src/strategies/oracle-arb/`](src/strategies/oracle-arb/) |
 | Certainty Closer | `npm run certainty-closer` | SDK-only, no feeds: buy near-resolution favourites, sized via fractional Kelly. The simplest example. | [`src/strategies/certainty-closer/`](src/strategies/certainty-closer/) |
 
-All three default to `DRY_RUN` (logs intents, signs nothing). **New here?** Start with the flagship's **[QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md)** — see cross-venue market-making in <10 min with no real money.
+All three default to `DRY_RUN` (logs intents, signs nothing) so you can boot them risk-free first. **New here?** Start with **[QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md)** — it takes you all the way to cross-venue market-making live on both chains in ~20–30 min.
 
 ## For AI Agents
 
 This repo is designed to be operated by AI agents, not just read by humans.
 
-**Quick start with OpenClaw or any coding agent:**
+**Quick start with any coding agent:**
 
 1. Clone this repo
 2. Read `SKILL.md` — it contains the full SDK reference, setup guide, and strategy documentation
@@ -53,14 +53,14 @@ cp .env.example .env
 Pick one from the [Strategies](#strategies) table. They all default to `DRY_RUN`:
 
 ```bash
-# Flagship — cross-venue market making (dry-run by default)
+# Cross-venue market making (dry-run by default)
 npm run cross-market-mm
 # or the simplest example: npm run certainty-closer
 
 # Go live: set DRY_RUN=false in .env (or dry_run: false in the YAML for cross-market-mm)
 ```
 
-For the flagship's full lifecycle (find-pairs → preflight → run → status → close), follow [`src/strategies/cross-market-mm/SKILL.md`](src/strategies/cross-market-mm/SKILL.md).
+For the full cross-market-mm lifecycle (find-pairs → preflight → run → status → close), follow [`src/strategies/cross-market-mm/SKILL.md`](src/strategies/cross-market-mm/SKILL.md).
 
 ### Claim Winnings
 
@@ -70,7 +70,7 @@ npm run redeem claim-all
 
 ## Build your own strategy
 
-`oracle-arb` and `certainty-closer` extend `BaseStrategy` (`src/strategies/base-strategy.ts`): implement `tick()` to return `TradeDecision[]`, plus `initialize()`/`shutdown()`; the base class runs the loop and gates on `DRY_RUN`. `src/strategies/certainty-closer/` is the simplest template. (The flagship `cross-market-mm` has its own runtime loop rather than `BaseStrategy`.)
+`oracle-arb` and `certainty-closer` extend `BaseStrategy` (`src/strategies/base-strategy.ts`): implement `tick()` to return `TradeDecision[]`, plus `initialize()`/`shutdown()`; the base class runs the loop and gates on `DRY_RUN`. `src/strategies/certainty-closer/` is the simplest template. (`cross-market-mm` has its own runtime loop rather than `BaseStrategy`.)
 
 ## Architecture
 
@@ -83,7 +83,7 @@ src/
     kelly.ts            # Fractional-Kelly position sizing util
   strategies/
     base-strategy.ts    # Strategy base class with tick loop
-    cross-market-mm/         # Cross-venue market-making (Polymarket ↔ Limitless) — flagship
+    cross-market-mm/         # Cross-venue market-making (Polymarket ↔ Limitless)
     oracle-arb/         # Pyth oracle edge-detection
     certainty-closer/   # SDK-only near-resolution example
 ```
@@ -99,7 +99,6 @@ src/
 
 - [Limitless API Docs](https://docs.limitless.exchange)
 - [Limitless MCP Server](https://docs.limitless.exchange/mcp) — live docs for AI agents
-- [OpenClaw](https://github.com/openclaw/openclaw) — AI agent platform
 - [SKILL.md](./SKILL.md) — full agent operating manual
 
 ## License

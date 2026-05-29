@@ -20,3 +20,6 @@ data/oracle-arb-positions.json
 # cross-market-mm strategy: user's local YAML config (see config.example.yaml)
 cross-market-mm.config.yaml
 replicator.config.yaml
+
+# cross-market-mm DEMO.md — personal demo reference, not shipped
+src/strategies/cross-market-mm/DEMO.md

@@ -22,7 +22,7 @@ Commands:
   approve <market-slug>                Approve a market's exchange (USDC + CTF)
 
 Strategies have their own runners:
-  npm run cross-market-mm              Cross-venue market making (flagship)
+  npm run cross-market-mm              Cross-venue market making
   npm run oracle-arb                   Pyth oracle edge-detection
   npm run certainty-closer             SDK-only near-resolution example
 

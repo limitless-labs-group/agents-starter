@@ -6,21 +6,18 @@ you earn the spread between the two venues plus any Limitless maker rebates.
 
 > [!WARNING]
 > **Moves real money on two chains** (Base + Polygon). Reference implementation,
-> not production trading infrastructure. **Use a dedicated wallet** and always
-> start with `DRY_RUN=true`.
+> not production trading infrastructure. **Use a dedicated wallet**, start with a
+> small `order_size`, and the `-$10` loss breaker is on by default.
 
 ## Where to start
 
 | Doc | For |
 |---|---|
-| **[QUICKSTART.md](./QUICKSTART.md)** | See it work in <10 min, no real money (dry-run + simulated hedge) |
-| **[GO-LIVE.md](./GO-LIVE.md)** | Take it live on both venues — honest ~20–30 min path |
+| **[QUICKSTART.md](./QUICKSTART.md)** | The onboarding path: install → fund both venues → setup → run live → close (~20–30 min) |
 | **[SKILL.md](./SKILL.md)** | Canonical reference: wallet model, full lifecycle, capital math, economics, invariants, troubleshooting |
-| **[DEMO.md](./DEMO.md)** | Exact, reproducible end-to-end command sequence |
 
-New here? **[QUICKSTART.md](./QUICKSTART.md)**. Setting up real money? Read
-**[SKILL.md §2 (the wallet model)](./SKILL.md)** before funding anything, then
-follow **[GO-LIVE.md](./GO-LIVE.md)**.
+New here? Start with **[QUICKSTART.md](./QUICKSTART.md)**, and read
+**[SKILL.md §2 (the wallet model)](./SKILL.md)** before funding anything.
 
 ## Commands
 
