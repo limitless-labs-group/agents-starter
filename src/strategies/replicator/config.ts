@@ -43,6 +43,8 @@ interface YamlConfig {
   hedgeThreshold?: number;
   hedge_interval?: number;
   hedgeIntervalSec?: number;
+  min_requote_ms?: number;
+  minRequoteMs?: number;
   max_loss_usd?: number;
   maxLossUsd?: number;
   flatten_on_stop?: boolean;
@@ -137,6 +139,10 @@ export function loadSettings(): ReplicatorSettings {
     marginBps: Number(raw.margin_bps ?? raw.marginBps ?? 100),
     hedgeThreshold: Number(raw.hedge_threshold ?? raw.hedgeThreshold ?? 2),
     hedgeIntervalSec: Number(raw.hedge_interval ?? raw.hedgeIntervalSec ?? 5),
+    // Default 2s/pair: keeps a 3-pair run well under the Limitless API rate
+    // limit while staying responsive. Lower it only if a single pair needs
+    // tighter tracking and you've confirmed you're not getting 429s.
+    minRequoteMs: Number(raw.min_requote_ms ?? raw.minRequoteMs ?? 2000),
     maxLossUsd: Number(
       process.env.REPLICATOR_MAX_LOSS_USD ?? raw.max_loss_usd ?? raw.maxLossUsd ?? 10,
     ),

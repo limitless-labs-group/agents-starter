@@ -102,6 +102,18 @@ exchange approval.
 Record of runs used to validate this skill (newest first). Each line: date,
 pair(s), what was proven.
 
+- 2026-05-29 — 3 neg-risk "winner" pairs (Hurricanes/Spurs/Knicks),
+  `order_size: 5`, `margin_bps: 30`. Live ENTER proven: ~7k real orders placed
+  via the skill across all 3, Hurricanes quote resting at the touch (0.55/0.56);
+  Knicks rejected as post-only-cross (venues mispriced — expected). EXIT proven:
+  Ctrl-C → flatten-on-stop cancelled all + confirmed flat on both venues, then
+  `replicator:flatten` + `replicator:status` verified 0 orders / 0 positions /
+  net 0.00. **Zero fills, zero loss** ($29.43 USDC + $19.74 pUSD unchanged) — no
+  organic Limitless taker hit the resting quotes (winner-futures have thin
+  overnight flow). Finding: a sustained unthrottled multi-pair run trips the
+  Limitless API rate-limit (429/1015) → added the `min_requote_ms` throttle
+  (default 2000ms/pair). Hedge-fill on these pairs still pending a higher-flow
+  window or market.
 - 2026-05-28 — UCL "Arsenal to win" (Limitless `arsenal-…` ↔ Polymarket
   `will-arsenal-win-the-202526-champions-league`), `order_size: 5`. First real
   cross-venue hedge filled live (Limitless YES maker fill → Polymarket NO FAK

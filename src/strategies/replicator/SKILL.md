@@ -361,6 +361,30 @@ and you double-sell.
 Either the pair is illiquid on Limitless (no takers hitting your book — pick a
 higher-volume pair) or `margin_bps` is too wide and your quotes are off-touch
 (tighten it). Remember you need liquidity on **both** venues at once (§8).
+"Winner"/futures markets (championship, election) have deep books but little
+minute-to-minute taker flow — your quote can sit at the touch for hours.
+Higher-churn markets (actively-traded sports/crypto near an event) fill faster.
+
+### Many `place_order failed` with `429` / "Too Many Requests" (Cloudflare 1015)
+The Limitless API is IP-rate-limiting you. Cancel-replace fires every Polymarket
+tick, and the Poly book ticks several times/sec, so an unthrottled run —
+especially across multiple pairs — sends enough cancel+place calls to trip
+Cloudflare. Symptoms: `place_order failed` count climbs, ticks log `replicate
+tick failed`, quotes stop refreshing reliably (and a fill during a 429 window
+could go un-hedged). The fix is the `min_requote_ms` floor (default 2000ms/pair)
+— it coalesces bursts to one cancel-replace per interval while still quoting the
+freshest book. Raise it or run fewer pairs if you still see 429s; lower it only
+for a single pair you've confirmed stays under the limit. (Found the hard way on
+a sustained 3-pair live run: ~7k orders in under 2h tripped the limit.)
+
+### `place_order failed: Post-only order would execute immediately`
+Your computed BUY price crosses the Limitless book (your bid ≥ the best ask), so
+the post-only (maker) order is refused rather than taking. It means the two
+venues are mispriced for that market — your Poly-derived quote is *through* the
+Limitless touch. Harmless (the bot keeps quoting the other pairs); that pair just
+won't rest a maker order until the books re-converge. It's also a signal the
+cross-venue spread is inverted there — interesting, but the maker-only strategy
+(invariant §9.1) won't take it.
 
 ### `404` on Polymarket asset resolution
 `polymarket_slug` is wrong. Polymarket has *event* slugs and *market* slugs; the

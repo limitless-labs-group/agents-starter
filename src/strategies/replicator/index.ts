@@ -126,14 +126,27 @@ export async function runReplicator(
     'replicator started',
   );
 
+  let lastRequoteAt = 0;
   try {
     while (!signal.aborted) {
       await feed.nextUpdate(slug, signal);
       if (signal.aborted) break;
 
+      // Re-quote throttle: cancel-replace still fires every cycle, but at most
+      // once per minRequoteMs per pair. Poly ticks many times/sec; without this
+      // floor a multi-pair run trips the Limitless API rate-limit (429/1015) on
+      // sustained operation. We sleep off the remainder, then re-read so we
+      // always quote the FRESHEST book — coalescing the burst, not lagging it.
+      const sinceLast = Date.now() - lastRequoteAt;
+      if (sinceLast < settings.minRequoteMs) {
+        await new Promise((r) => setTimeout(r, settings.minRequoteMs - sinceLast));
+        if (signal.aborted) break;
+      }
+
       const quote = feed.getQuote(slug);
       if (!quote || quote.bid == null || quote.ask == null) continue;
 
+      lastRequoteAt = Date.now();
       try {
         await replicateOnce(pair, quote.bid, quote.ask, trading, settings, recorder);
       } catch (err) {

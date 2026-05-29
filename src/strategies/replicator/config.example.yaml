@@ -25,6 +25,13 @@ order_size: 5          # shares per order (same N on YES and NO sides) — start
 margin_bps: 100        # how much *inside* the Poly price we quote (100 = 1%)
 hedge_threshold: 2.0   # hedge when |net exposure| in shares exceeds this
 hedge_interval: 5      # seconds between hedge ticks
+# Floor on re-quote frequency PER PAIR (ms). Cancel-replace still fires every
+# tick, but coalesces bursts to at most one cycle per this interval (always
+# quoting the freshest book). The Polymarket book ticks many times/sec, so
+# without this an unthrottled multi-pair run trips the Limitless API's
+# Cloudflare rate-limit (429/1015) on sustained runs. 2000ms keeps a 3-pair run
+# comfortably under the limit. Lower only for a single pair, watching for 429s.
+min_requote_ms: 2000
 
 # --- Safety -----------------------------------------------------------------
 # Hard loss circuit-breaker: if marked equity (pUSD + Base USDC + position

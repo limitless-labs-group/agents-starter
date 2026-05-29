@@ -35,6 +35,11 @@ export interface ReplicatorSettings {
   marginBps: number; // bps inside the Poly price (100 = 1%)
   hedgeThreshold: number; // min |net shares| before triggering a hedge
   hedgeIntervalSec: number; // seconds between hedge checks
+  // Floor on re-quote frequency per pair (ms). Cancel-replace still fires every
+  // tick, but coalesces bursts to at most one cycle per this interval, always
+  // quoting the freshest book. Prevents the Limitless API Cloudflare rate-limit
+  // (429/1015) that an unthrottled multi-pair run trips on sustained operation.
+  minRequoteMs: number;
   maxLossUsd: number; // circuit breaker: halt + cancel-all if equity drawdown ≥ this
   flattenOnStop: boolean; // on Ctrl-C/breaker, also SELL inventory to flat (both venues), not just cancel orders
   dryRun: boolean; // log intents, don't sign or POST
