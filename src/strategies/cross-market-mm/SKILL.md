@@ -524,7 +524,7 @@ entry ticket for Polymarket points/airdrop eligibility.
 
 ---
 
-## 10. Tests and provenance
+## 10. Tests
 
 ```bash
 npm test
@@ -533,12 +533,3 @@ npm test
 Unit tests cover the quote math (`clipPrice`, `computeBuyPrices`), the hedger
 (`decideHedge` direction, notional, dust gate, cross-venue netting), the
 recorder, and the risk monitor.
-
-This is a TypeScript port of
-[limitless-labs-group/limitless-replicator](https://github.com/limitless-labs-group/limitless-replicator)
-(the Python original — the longer-form "everything visible" reference). Material
-differences: the Limitless side uses `@limitless-exchange/sdk` (venue routing
-automatic); the Polymarket side uses `@polymarket/clob-client-v2` (required —
-Polymarket migrated collateral to pUSD on a V2 exchange and only v2 trades it);
-and `poly_signature_type` (2 = Safe, 3 = deposit wallet) maps onto v2's
-`SignatureTypeV2`. Same quote math, same hedge logic, same cancel-on-shutdown.

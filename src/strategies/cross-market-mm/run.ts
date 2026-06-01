@@ -12,8 +12,6 @@
  *   6. Spawns Poly WS task + N cross-market-mm tasks + 1 hedger task.
  *   7. Awaits SIGINT/SIGTERM, then cancels everything (cross-market-mm tasks
  *      cancel-all on the way out).
- *
- * Port of `main.py` from limitless-replicator.
  */
 
 import { pino } from 'pino';

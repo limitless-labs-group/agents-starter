@@ -5,9 +5,8 @@
  * into a shared `QuoteFeed`. Every update fires per-slug waiters so the
  * cross-market-mm task wakes immediately.
  *
- * Port of `clients/poly_ws.py` from limitless-replicator. Strategy invariant:
- * everything in `QuoteFeed` is YES-frame. When a NO-asset update arrives we
- * invert: YES_ask = 1 - NO_bid, YES_bid = 1 - NO_ask.
+ * Strategy invariant: everything in `QuoteFeed` is YES-frame. When a NO-asset
+ * update arrives we invert: YES_ask = 1 - NO_bid, YES_bid = 1 - NO_ask.
  */
 
 import { pino } from 'pino';

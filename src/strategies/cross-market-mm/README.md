@@ -41,9 +41,3 @@ npm test
 
 Covers quote math (`computeBuyPrices`, `clipPrice`), the hedger (`decideHedge`,
 cross-venue netting, dust gate), the recorder, and the risk monitor.
-
-This is a TypeScript port of
-[limitless-labs-group/limitless-replicator](https://github.com/limitless-labs-group/limitless-replicator)
-(the Python original). See [SKILL.md §10](./SKILL.md) for the material
-differences (SDK-based Limitless side, `@polymarket/clob-client-v2` for pUSD,
-`poly_signature_type`).

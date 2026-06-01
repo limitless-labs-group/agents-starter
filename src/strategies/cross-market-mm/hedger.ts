@@ -10,8 +10,6 @@
  *
  * Strategy invariant: hedge always BUYs on Polymarket. Too much YES → buy NO.
  * Too much NO → buy YES. Never sell on Polymarket.
- *
- * Port of `hedger.py` from limitless-replicator.
  */
 
 import { pino } from 'pino';
