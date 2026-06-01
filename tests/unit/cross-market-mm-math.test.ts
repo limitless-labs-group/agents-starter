@@ -1,12 +1,10 @@
 /**
- * Replicator quote math.
+ * Cross-market MM quote math.
  *
  * Strategy invariants under test:
  *   - YES BUY @ poly_bid - margin
  *   - NO  BUY @ (1 - poly_ask) - margin
  *   - Prices clipped to (0.001, 0.999), rounded to 0.001 tick.
- *
- * Port of `tests/unit/test_replicator_math.py` from limitless-replicator.
  */
 
 import { describe, expect, it } from 'vitest';

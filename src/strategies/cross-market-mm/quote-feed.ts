@@ -1,10 +1,7 @@
 /**
  * Shared state between the Polymarket WS listener and the per-pair
- * cross-market-mm loops.
- *
- * Port of the QuoteFeed dataclass + per-slug asyncio.Event from
- * `clients/poly_ws.py` in the Python original. asyncio.Event semantics map
- * to a Promise-based primitive here ("waiter resolves on next update").
+ * cross-market-mm loops. Per-slug waiters resolve on the next update so
+ * consumers wake the moment new quotes arrive.
  *
  * Everything stored is in **YES-frame**: even if the WS update was for the
  * NO asset, the listener inverts to YES_ask = 1 - NO_bid, YES_bid = 1 - NO_ask

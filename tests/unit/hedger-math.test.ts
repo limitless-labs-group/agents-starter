@@ -6,8 +6,6 @@
  *   - net < 0 → too much NO  → BUY YES on Poly
  *   - notional = |net| × poly_price_of_side_we_buy
  *   - notional < $1.0 → skip (Poly rejects dust)
- *
- * Port of `tests/unit/test_hedger_math.py` from limitless-replicator.
  */
 
 import { describe, expect, it } from 'vitest';

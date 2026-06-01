@@ -3,8 +3,6 @@
  *
  * Secrets come from `.env` (process env). Trading params + market pairs
  * come from a YAML file (default `./cross-market-mm.config.yaml`).
- *
- * Port of `config.py` from limitless-replicator.
  */
 
 import fs from 'node:fs';

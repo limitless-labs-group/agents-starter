@@ -1,7 +1,7 @@
 /**
  * Per-pair replication loop.
  *
- * Strategy (port of replicator.py, intentionally dumb):
+ * Strategy (intentionally dumb):
  *   1. Wait for the WS to push a new quote for the pair's slug.
  *   2. Read latest YES-frame bid/ask.
  *   3. Cancel every open Limitless order on the pair.

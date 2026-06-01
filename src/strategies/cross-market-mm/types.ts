@@ -1,7 +1,6 @@
 /**
  * Cross-market MM strategy types.
  *
- * Port of `config.py` from limitless-labs-group/limitless-replicator.
  * Strategy invariants (see README):
  *   1. Both Limitless quotes are BUY (YES at poly_bid - margin, NO at (1 - poly_ask) - margin).
  *   2. Cancel-all + replace every tick (no diff optimizer).

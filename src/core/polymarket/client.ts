@@ -1,8 +1,6 @@
 /**
  * Polymarket adapter: Gamma + Data API + CLOB hedge orders.
  *
- * Port of `clients/polymarket.py` from limitless-replicator.
- *
  * Responsibilities:
  *   1. Resolve a polymarket_slug to its YES/NO clob asset ids (Gamma API).
  *   2. Read live positions across our configured pairs (Data API).
