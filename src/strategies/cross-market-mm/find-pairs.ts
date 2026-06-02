@@ -63,6 +63,39 @@ function jaccard(a: Set<string>, b: Set<string>): number {
   return inter / (a.size + b.size - inter);
 }
 
+// Negation/direction words are STOPWORDS (stripped before similarity), so
+// "OpenAI IPO by Dec 31" and "OpenAI will NOT IPO by Dec 31" tokenize
+// identically and score ~1.0 — yet they resolve OPPOSITE. Quoting a
+// polarity-flipped pair is catastrophic: the "hedge" doubles your exposure
+// instead of offsetting it. So check raw titles for a polarity mismatch the
+// token similarity can't see, and flag it loudly.
+const NEGATIONS = ["not", "no", "won't", "wont", "isn't", "isnt", "doesn't", "doesnt", "never", "without", "fail", "fails"];
+const DIRECTIONS: Array<[string, string]> = [
+  ['above', 'below'],
+  ['over', 'under'],
+  ['higher', 'lower'],
+  ['more', 'less'],
+  ['up', 'down'],
+  ['greater', 'fewer'],
+];
+
+function hasWord(title: string, word: string): boolean {
+  return new RegExp(`\\b${word.replace(/'/g, "'?")}\\b`, 'i').test(title);
+}
+
+/** Returns a reason string if the two titles look polarity-flipped, else null. */
+export function polarityRisk(a: string, b: string): string | null {
+  const aNeg = NEGATIONS.some((w) => hasWord(a, w));
+  const bNeg = NEGATIONS.some((w) => hasWord(b, w));
+  if (aNeg !== bNeg) return 'negation mismatch (one side says "not"/"no")';
+  for (const [lo, hi] of DIRECTIONS) {
+    const aDir = hasWord(a, lo) ? lo : hasWord(a, hi) ? hi : null;
+    const bDir = hasWord(b, lo) ? lo : hasWord(b, hi) ? hi : null;
+    if (aDir && bDir && aDir !== bDir) return `direction mismatch ("${aDir}" vs "${bDir}")`;
+  }
+  return null;
+}
+
 function num(v: unknown): number {
   const n = typeof v === 'string' ? parseFloat(v) : typeof v === 'number' ? v : NaN;
   return Number.isFinite(n) ? n : 0;
@@ -202,7 +235,12 @@ function isLiquid(c: Candidate): boolean {
 
 function printCandidate(c: Candidate): void {
   const mid = ((c.poly.bestBid + c.poly.bestAsk) / 2).toFixed(2);
+  const polarity = polarityRisk(c.lmtsTitle, c.polyTitle);
   console.log(`# ── sim=${c.score.toFixed(2)} ────────────────────────────────`);
+  if (polarity) {
+    console.log(`# 🛑 POLARITY RISK: ${polarity} — these may resolve OPPOSITE.`);
+    console.log(`#    Do NOT use this pair unless you confirm both resolve the SAME way.`);
+  }
   console.log(`# Limitless:  ${c.lmtsTitle}  (vol ${c.lmtsVolume.toFixed(0)})`);
   console.log(`# Polymarket: ${c.polyTitle}`);
   console.log(

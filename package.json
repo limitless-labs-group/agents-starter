@@ -10,6 +10,7 @@
     "certainty-closer": "tsx src/strategies/certainty-closer/run.ts",
     "redeem": "npx tsx src/core/limitless/redeem.ts",
     "cross-market-mm": "tsx src/strategies/cross-market-mm/run.ts",
+    "cross-market-mm:init": "tsx src/strategies/cross-market-mm/init.ts",
     "cross-market-mm:find-pairs": "tsx src/strategies/cross-market-mm/find-pairs.ts",
     "cross-market-mm:setup-poly": "tsx src/strategies/cross-market-mm/setup-poly-wallet.ts",
     "cross-market-mm:preflight": "tsx src/strategies/cross-market-mm/preflight.ts",
@@ -17,6 +18,7 @@
     "cross-market-mm:close": "tsx src/strategies/cross-market-mm/close.ts",
     "cross-market-mm:status": "tsx src/strategies/cross-market-mm/status.ts",
     "cross-market-mm:analyze": "tsx src/strategies/cross-market-mm/analyze.ts",
+    "cross-market-mm:telegram-test": "tsx src/strategies/cross-market-mm/telegram-test.ts",
     "derive-token": "tsx src/core/limitless/derive-token.ts",
     "test": "vitest run",
     "test:watch": "vitest"

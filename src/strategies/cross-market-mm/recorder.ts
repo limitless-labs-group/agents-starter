@@ -49,9 +49,13 @@ export type ReplicatorEvent =
       posValue: number;
     };
 
+/** An event with the epoch-ms timestamp the recorder stamps onto every line. */
+export type TimestampedEvent = ReplicatorEvent & { t: number };
+
 export class Recorder {
   readonly filePath: string;
   private stream: fs.WriteStream | null;
+  private subscribers: ((ev: TimestampedEvent) => void)[] = [];
 
   constructor(dir: string = process.env.REPLICATOR_DATA_DIR || './data') {
     fs.mkdirSync(dir, { recursive: true });
@@ -67,9 +71,29 @@ export class Recorder {
     });
   }
 
+  /**
+   * Subscribe to the event stream — every `record()` call fans out to each
+   * subscriber (e.g. a Telegram broadcaster) in addition to the JSONL write.
+   * Subscribers are best-effort and isolated: one throwing never breaks
+   * recording or another subscriber. The JSONL file is always the source of
+   * truth; subscribers are a live side-channel on top of it.
+   */
+  subscribe(fn: (ev: TimestampedEvent) => void): void {
+    this.subscribers.push(fn);
+  }
+
   record(ev: ReplicatorEvent): void {
-    if (!this.stream) return;
-    this.stream.write(`${JSON.stringify({ t: Date.now(), ...ev })}\n`);
+    const stamped: TimestampedEvent = { t: Date.now(), ...ev };
+    if (this.stream) {
+      this.stream.write(`${JSON.stringify(stamped)}\n`);
+    }
+    for (const fn of this.subscribers) {
+      try {
+        fn(stamped);
+      } catch {
+        // best-effort side-channel — never let a subscriber break the run
+      }
+    }
   }
 
   close(): void {

@@ -10,8 +10,13 @@ const API_BASE = process.env.LIMITLESS_API_URL || 'https://api.limitless.exchang
 // Build headers lazily to ensure env vars are loaded
 function getHeaders() {
     const apiKey = process.env.LIMITLESS_API_KEY;
-    if (!apiKey) {
-        logger.warn('LIMITLESS_API_KEY is not set. Some endpoints may fail.');
+    // Only warn if NO Limitless auth is configured at all. The scoped HMAC token
+    // (LMTS_TOKEN_ID/SECRET) is the preferred path and is applied by the SDK
+    // client elsewhere — its presence means this legacy X-API-Key isn't needed,
+    // so warning about it would be noise (public reads like find-pairs need none).
+    const hasHmacToken = !!(process.env.LMTS_TOKEN_ID && process.env.LMTS_TOKEN_SECRET);
+    if (!apiKey && !hasHmacToken) {
+        logger.warn('No Limitless auth set (LMTS_TOKEN_ID/SECRET or LIMITLESS_API_KEY). Authenticated endpoints may fail.');
     }
     return {
         'Content-Type': 'application/json',

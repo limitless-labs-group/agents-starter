@@ -34,7 +34,6 @@ import {
 } from 'viem';
 import { polygon } from 'viem/chains';
 import { RelayClient, RelayerTransactionState } from '@polymarket/builder-relayer-client';
-import { loadSettings } from './config.js';
 
 const RELAYER_URL = 'https://relayer-v2.polymarket.com';
 const PUSD = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
@@ -58,7 +57,18 @@ const CTF_ABI = parseAbi([
 ]);
 const CONFIRMED = [RelayerTransactionState.STATE_CONFIRMED, RelayerTransactionState.STATE_MINED];
 
-async function main(): Promise<void> {
+/**
+ * Derive + deploy the Polymarket deposit wallet and approve pUSD/CTF for the V2
+ * exchanges (all gasless via the relayer). Idempotent — skips anything already
+ * done. Returns the deposit-wallet address + its current pUSD balance so a
+ * caller (the CLI below, or `init`) can guide funding. Needs PRIVATE_KEY +
+ * RELAYER_API_KEY + RELAYER_API_KEY_ADDRESS in the environment; it does NOT
+ * need a config file or market pairs.
+ */
+export async function setupDepositWallet(): Promise<{
+  depositWallet: `0x${string}`;
+  pusdBalance: bigint;
+}> {
   const apiKey = process.env.RELAYER_API_KEY;
   const apiKeyAddr = process.env.RELAYER_API_KEY_ADDRESS;
   if (!apiKey || !apiKeyAddr) {
@@ -68,8 +78,9 @@ async function main(): Promise<void> {
     );
   }
 
-  const s = loadSettings();
-  const pk = (s.privateKey.startsWith('0x') ? s.privateKey : `0x${s.privateKey}`) as `0x${string}`;
+  const pkRaw = process.env.PRIVATE_KEY;
+  if (!pkRaw) throw new Error('PRIVATE_KEY not set in .env');
+  const pk = (pkRaw.startsWith('0x') ? pkRaw : `0x${pkRaw}`) as `0x${string}`;
   const wallet = createWalletClient({ account: privateKeyToAccount(pk), chain: polygon, transport: http() });
   const pub = createPublicClient({ chain: polygon, transport: http() });
 
@@ -144,13 +155,22 @@ async function main(): Promise<void> {
 
   const pusdBal = (await pub.readContract({ address: PUSD, abi: ERC20, functionName: 'balanceOf', args: [dw] })) as bigint;
   console.log(`\n✅ Deposit wallet ready. pUSD balance: $${(Number(pusdBal) / 1e6).toFixed(2)}`);
+  return { depositWallet: dw, pusdBalance: pusdBal };
+}
+
+async function main(): Promise<void> {
+  const { depositWallet: dw, pusdBalance: pusdBal } = await setupDepositWallet();
   console.log('\nNext:');
   console.log(`  • set  poly_funder: "${dw}"  and  poly_signature_type: 3  in cross-market-mm.config.yaml`);
   if (pusdBal === 0n) console.log('  • transfer pUSD into the deposit wallet (pUSD held elsewhere is not CLOB buying power)');
   console.log('  • run  npm run cross-market-mm:preflight');
 }
 
-main().catch((e: unknown) => {
-  console.error('setup-poly-wallet failed:', e instanceof Error ? e.message : e);
-  process.exit(1);
-});
+// Run as a CLI only when invoked directly (not when imported by init.ts).
+import { fileURLToPath } from 'node:url';
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((e: unknown) => {
+    console.error('setup-poly-wallet failed:', e instanceof Error ? e.message : e);
+    process.exit(1);
+  });
+}
