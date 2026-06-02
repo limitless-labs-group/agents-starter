@@ -10,6 +10,12 @@ setup, not running commands. Full reference + troubleshooting: **[SKILL.md](./SK
 > Start with a small `order_size` (5). A `-$10` loss circuit-breaker is on by
 > default; Ctrl-C and the breaker both flatten to flat on both venues.
 
+> **Fastest path:** `npm run cross-market-mm:init` is a guided, re-runnable
+> bootstrap — it scaffolds your config, checks credentials, deploys the deposit
+> wallet, writes its address into the config for you, and prints the exact
+> addresses to fund. Run it, do the one step it asks for, run it again. The
+> manual steps below are what it automates, in order.
+
 ## What you need
 
 - **One dedicated EOA private key** — it signs on both chains and controls
@@ -26,6 +32,17 @@ setup, not running commands. Full reference + troubleshooting: **[SKILL.md](./SK
   [**pUSD**](https://docs.polymarket.com/concepts/pusd) on Polygon held **in the
   deposit wallet** (deployed in step 2).
 
+The order matters: **create a wallet → get credentials → derive the deposit
+wallet → fund.** You can't fund the Polymarket side until step 2 prints the
+deposit-wallet address, and step 2 needs the credentials from step 1.
+
+## 0. Create a dedicated wallet
+
+Make a fresh EOA in any wallet app (MetaMask, Rabby, …) — **not** your main
+wallet. Export its private key (it goes in `.env` next). Its address is the same
+on Base and Polygon, and it's what you fund on the Base side. This one key
+controls everything; the Polymarket deposit wallet (step 2) is derived from it.
+
 ## 1. Install + credentials
 
 ```bash
@@ -34,6 +51,10 @@ cd agents-starter && npm install
 cp .env.example .env && chmod 600 .env
 # set PRIVATE_KEY, LMTS_TOKEN_ID, LMTS_TOKEN_SECRET, RELAYER_API_KEY, RELAYER_API_KEY_ADDRESS
 ```
+
+The Limitless HMAC token and the Polymarket relayer key both require the wallet
+from step 0 (you connect it / register it as the signer). `RELAYER_API_KEY` is
+used **only** by step 2 — the running bot never needs it.
 
 ## 2. Deploy your Polymarket deposit wallet (gasless, ~1 min)
 

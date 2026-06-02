@@ -1,8 +1,11 @@
 # Cross-market MM strategy config.
 #
-# Copy this to ./cross-market-mm.config.yaml (or set REPLICATOR_CONFIG_PATH) and
-# edit. Secrets live in .env, never here: PRIVATE_KEY + a Limitless scoped
+# Copy this to ./cross-market-mm.config.yaml (or set CROSS_MARKET_MM_CONFIG_PATH)
+# and edit. Secrets live in .env, never here: PRIVATE_KEY + a Limitless scoped
 # HMAC token (LMTS_TOKEN_ID + LMTS_TOKEN_SECRET). See .env.example.
+#
+# Easiest path: `npm run cross-market-mm:init` writes this file for you, fills in
+# poly_funder after deploying your deposit wallet, and walks the funding steps.
 #
 # Strategy: mirror Polymarket orderbook liquidity onto Limitless as
 # BUY-only YES + NO limit orders. Hedge accumulated exposure with FAK

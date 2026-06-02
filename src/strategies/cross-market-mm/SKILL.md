@@ -116,7 +116,8 @@ All from the repo root (`agents-starter/`). One-time setup commands are marked.
 
 | Command | What it does |
 |---|---|
-| `npm run cross-market-mm:find-pairs` | Scan both venues; print a liquidity-ranked shortlist of equivalent market pairs as paste-ready YAML |
+| `npm run cross-market-mm:init` | **(guided setup)** Re-runnable bootstrap: scaffolds `.env` + config, checks credentials, deploys the deposit wallet and writes its address into the config, then prints the exact addresses to fund. Run it, do the step it asks for, run it again |
+| `npm run cross-market-mm:find-pairs` | Scan both venues; print a liquidity-ranked shortlist of equivalent market pairs as paste-ready YAML. Flags polarity-flipped (negation/direction) candidates |
 | `npm run cross-market-mm:setup-poly` | **(one-time)** Derive + deploy your Polymarket deposit wallet; approve pUSD (buy) + CTF (sell) on both v2 exchanges |
 | `npm run cross-market-mm:preflight` | Validate auth, funding, sig type, exchange approvals, and pair resolution on both venues. Exits non-zero on any critical failure — use as a gate |
 | `npm run cross-market-mm` | Run the bot (DRY_RUN by default). `DRY_RUN=false` to go live |
