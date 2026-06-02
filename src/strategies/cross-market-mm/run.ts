@@ -26,6 +26,9 @@ import { runHedger } from './hedger.js';
 import { flattenBothVenues } from './flatten-positions.js';
 import { loadSettings } from './config.js';
 import { Recorder } from './recorder.js';
+import { StatusWriter } from './status-writer.js';
+import { TelegramClient } from '../../core/telegram/client.js';
+import { CrossMarketTelegram } from './telegram.js';
 import { RiskMonitor } from './risk.js';
 import type { MarketPair } from './types.js';
 
@@ -154,6 +157,36 @@ export async function main(): Promise<void> {
   });
   logger.info({ file: recorder.filePath }, 'recording run data (npm run cross-market-mm:analyze)');
 
+  // -- Live status surface: one always-current JSON file an orchestrating agent
+  //    reads to report status / drive a heartbeat. Always on (no creds needed). --
+  const statusWriter = new StatusWriter({
+    mode: settings.dryRun ? 'dry' : 'live',
+    pairs: settings.pairs.length,
+    orderSize: settings.orderSize,
+    maxLossUsd: settings.maxLossUsd,
+  });
+  recorder.subscribe((ev) => statusWriter.onEvent(ev));
+  logger.info({ file: statusWriter.filePath }, 'live status file (read by orchestrator)');
+
+  // -- Optional: direct Telegram push (fill pings + heartbeat) for standalone
+  //    runs without an orchestrating agent. No-op unless TELEGRAM_BOT_TOKEN +
+  //    TELEGRAM_CHAT_ID are set. --
+  const tgClient = TelegramClient.fromEnv();
+  const telegram = tgClient
+    ? new CrossMarketTelegram(tgClient, Number(process.env.TELEGRAM_HEARTBEAT_MS ?? 60_000))
+    : null;
+  if (telegram) {
+    recorder.subscribe((ev) => telegram.onEvent(ev));
+    await telegram.announceStart({
+      live: !settings.dryRun,
+      pairs: settings.pairs.length,
+      orderSize: settings.orderSize,
+      maxLossUsd: settings.maxLossUsd,
+    });
+    telegram.startHeartbeat();
+    logger.info('Telegram push active (optional)');
+  }
+
   // -- Loss circuit breaker (live only). Tripping aborts everything; the
   //    cross-market-mm tasks cancel-all in their finally{} on abort. --
   const ac = new AbortController();
@@ -161,6 +194,7 @@ export async function main(): Promise<void> {
   let killed = false;
   const onKill = () => {
     killed = true;
+    statusWriter.markTripped();
     ac.abort();
   };
   if (!settings.dryRun) {
@@ -208,6 +242,7 @@ export async function main(): Promise<void> {
   //    flat so a stop — Ctrl-C OR a tripped breaker — never walks away with an
   //    open position. Idempotent; re-run `npm run cross-market-mm:close` if a thin
   //    book leaves a remainder. --
+  let flatOnExit: boolean | null = null;
   if (!settings.dryRun && settings.flattenOnStop) {
     logger.warn({ reason: killed ? 'circuit-breaker' : 'signal' }, 'flattening inventory on both venues');
     try {
@@ -224,15 +259,24 @@ export async function main(): Promise<void> {
           r.flat ? 'flat on both venues' : 'NOT fully flat — run `npm run cross-market-mm:close` to retry',
         );
       }
-      if (results.some((r) => !r.flat)) {
+      flatOnExit = results.every((r) => r.flat);
+      if (!flatOnExit) {
         logger.error('some pairs left inventory (thin book?) — run `npm run cross-market-mm:close`');
       }
     } catch (e) {
+      flatOnExit = false;
       logger.error(
         { err: e instanceof Error ? e.message : e },
         'flatten-on-stop failed — run `npm run cross-market-mm:close` manually',
       );
     }
+  }
+
+  // -- Final state for readers + optional Telegram halt notice --
+  const stopReason = killed ? 'circuit-breaker' : 'signal';
+  statusWriter.markStopped(stopReason, flatOnExit);
+  if (telegram) {
+    await telegram.announceHalt(stopReason, flatOnExit);
   }
 
   recorder.close();

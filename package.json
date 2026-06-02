@@ -17,6 +17,7 @@
     "cross-market-mm:close": "tsx src/strategies/cross-market-mm/close.ts",
     "cross-market-mm:status": "tsx src/strategies/cross-market-mm/status.ts",
     "cross-market-mm:analyze": "tsx src/strategies/cross-market-mm/analyze.ts",
+    "cross-market-mm:telegram-test": "tsx src/strategies/cross-market-mm/telegram-test.ts",
     "derive-token": "tsx src/core/limitless/derive-token.ts",
     "test": "vitest run",
     "test:watch": "vitest"
