@@ -28,12 +28,9 @@ All three default to `DRY_RUN` (logs intents, signs nothing) so you can boot the
 
 ## For AI agents
 
-This repo is designed to be operated by an AI agent. Operating it is two lines — install, then follow the manual:
+This repo is designed to be operated by an AI agent, and it carries its own operating contract so you don't need a bespoke prompt. Point your agent at **[`AGENTS.md`](AGENTS.md)** (Claude Code reads it automatically) — it has the install one-liner, the safety contract, the command map, and the monitoring surface, and routes to `SKILL.md` for depth.
 
-> Run: `curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh | sh`
-> Then read `src/strategies/cross-market-mm/SKILL.md` and follow it.
-
-`SKILL.md` is a complete operating manual: the agent handles scaffolding, strategy selection, deployment, monitoring, and iteration. The human handles the one thing it can't — placing the private key + tokens in `.env` and funding the wallet. **Keep secrets out of the agent's chat context;** the `init` bootstrap is built to never read them.
+The human handles the one thing the agent can't: placing the private key + tokens in `.env` and funding the wallet. **Keep secrets out of the agent's chat context;** the `init` bootstrap is built to never read them.
 
 ## Manual setup
 

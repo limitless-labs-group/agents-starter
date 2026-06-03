@@ -45,16 +45,18 @@ controls everything; the Polymarket deposit wallet (step 2) is derived from it.
 
 ## 1. Install + credentials
 
-```bash
-git clone https://github.com/limitless-labs-group/agents-starter.git
-cd agents-starter && npm install
-cp .env.example .env && chmod 600 .env
-# set PRIVATE_KEY, LMTS_TOKEN_ID, LMTS_TOKEN_SECRET, RELAYER_API_KEY, RELAYER_API_KEY_ADDRESS
+One command — clones, installs, and scaffolds `.env` + config, then prints the
+exact credentials to add:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh | sh
 ```
 
-The Limitless HMAC token and the Polymarket relayer key both require the wallet
-from step 0 (you connect it / register it as the signer). `RELAYER_API_KEY` is
-used **only** by step 2 — the running bot never needs it.
+(Already cloned? Just `npm install && npm run cross-market-mm:init`.) Then set in
+`.env`: `PRIVATE_KEY`, `LMTS_TOKEN_ID`, `LMTS_TOKEN_SECRET`, `RELAYER_API_KEY`,
+`RELAYER_API_KEY_ADDRESS`. The Limitless HMAC token and the Polymarket relayer key
+both require the wallet from step 0 (you connect / register it as the signer).
+`RELAYER_API_KEY` is used **only** by step 2 — the running bot never needs it.
 
 ## 2. Deploy your Polymarket deposit wallet (gasless, ~1 min)
 
