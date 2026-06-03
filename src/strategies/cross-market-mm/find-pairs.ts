@@ -233,6 +233,28 @@ function isLiquid(c: Candidate): boolean {
   );
 }
 
+/** Structured form of a candidate for `--json` (an agent picks from these). */
+function candidateJson(c: Candidate): Record<string, unknown> {
+  return {
+    polymarket_slug: c.polySlug,
+    limitless_slug: c.lmtsSlug,
+    score: Number(c.score.toFixed(3)),
+    liquid: isLiquid(c),
+    polarityRisk: polarityRisk(c.lmtsTitle, c.polyTitle), // null when aligned
+    limitlessTitle: c.lmtsTitle,
+    polymarketTitle: c.polyTitle,
+    limitlessVolume: c.lmtsVolume,
+    poly: {
+      liquidity: c.poly.liquidity,
+      volume24hr: c.poly.volume24hr,
+      spread: c.poly.spread,
+      bestBid: c.poly.bestBid,
+      bestAsk: c.poly.bestAsk,
+      mid: Number(((c.poly.bestBid + c.poly.bestAsk) / 2).toFixed(4)),
+    },
+  };
+}
+
 function printCandidate(c: Candidate): void {
   const mid = ((c.poly.bestBid + c.poly.bestAsk) / 2).toFixed(2);
   const polarity = polarityRisk(c.lmtsTitle, c.polyTitle);
@@ -253,7 +275,13 @@ function printCandidate(c: Candidate): void {
 }
 
 async function main(): Promise<void> {
-  console.log('Fetching active markets from both venues…');
+  const asJson = process.argv.includes('--json');
+  // Progress/diagnostics go to stderr so `--json` stdout is pure JSON.
+  const progress = (msg = ''): void => {
+    if (asJson) console.error(msg);
+    else console.log(msg);
+  };
+  progress('Fetching active markets from both venues…');
   const limitless = new LimitlessClient();
   // Limitless API caps limit=25; paginate (page is 1-indexed).
   const lmtsMarkets: Array<{ title: string; slug: string; volumeFormatted?: string }> = [];
@@ -267,13 +295,13 @@ async function main(): Promise<void> {
   // — the deepest cross-venue overlap, which the `clob` listing omits.
   const groupSubs = await fetchLimitlessGroupSubMarkets(limitless);
   lmtsMarkets.push(...groupSubs);
-  console.log(
+  progress(
     `  Limitless:  ${lmtsMarkets.length} markets (${singleCount} single + ${groupSubs.length} grouped sub-markets)`,
   );
 
   const polyMarkets = await fetchPolymarketMarkets();
-  console.log(`  Polymarket: ${polyMarkets.length} active binary markets`);
-  console.log();
+  progress(`  Polymarket: ${polyMarkets.length} active binary markets`);
+  progress();
 
   const polyTokens = polyMarkets.map((m) => ({ market: m, tokens: tokenize(m.question) }));
 
@@ -302,6 +330,10 @@ async function main(): Promise<void> {
   }
 
   if (candidates.length === 0) {
+    if (asJson) {
+      console.log(JSON.stringify({ liquid: [], thin: [] }, null, 2));
+      return;
+    }
     console.log('No title matches found above the similarity threshold.');
     console.log(`  (threshold=${TITLE_SIMILARITY_THRESHOLD}; venues often list different events.)`);
     return;
@@ -316,6 +348,20 @@ async function main(): Promise<void> {
     b.score - a.score || b.poly.liquidity - a.poly.liquidity;
   const liquid = candidates.filter(isLiquid).sort(byMatchThenLiquidity);
   const thin = candidates.filter((c) => !isLiquid(c)).sort((a, b) => b.score - a.score);
+
+  if (asJson) {
+    console.log(
+      JSON.stringify(
+        {
+          liquid: liquid.slice(0, TOP_N).map(candidateJson),
+          thin: thin.slice(0, TOP_N).map(candidateJson),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
 
   console.log('# ⚠  VERIFY both markets resolve on the SAME criteria before going live.');
   console.log('# Same asset, same threshold, same UTC moment, same data source.');

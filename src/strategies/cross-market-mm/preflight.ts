@@ -172,18 +172,41 @@ async function main(): Promise<void> {
   }
 
   // -- Report --
-  console.log('\n── Cross-market MM preflight ──');
-  for (const c of checks) {
-    const mark = c.ok ? '✅' : c.critical ? '❌' : '⚠️ ';
-    console.log(`${mark} ${c.name}${c.detail ? `  (${c.detail})` : ''}`);
-  }
   const failed = checks.filter((c) => !c.ok && c.critical);
-  console.log('');
-  if (failed.length > 0) {
-    console.log(`FAILED: ${failed.length} critical check(s). Fix before running live.\n`);
-    process.exit(1);
+  const ok = failed.length === 0;
+
+  if (process.argv.includes('--json')) {
+    // Structured output for an orchestrating agent: the same checks, machine
+    // readable, plus a top-level go/no-go. Exit code still gates (non-zero on
+    // any critical failure), so `preflight --json && run` stays safe.
+    console.log(
+      JSON.stringify(
+        {
+          ok,
+          passed: checks.filter((c) => c.ok).length,
+          failedCritical: failed.length,
+          total: checks.length,
+          checks,
+        },
+        null,
+        2,
+      ),
+    );
+  } else {
+    console.log('\n── Cross-market MM preflight ──');
+    for (const c of checks) {
+      const mark = c.ok ? '✅' : c.critical ? '❌' : '⚠️ ';
+      console.log(`${mark} ${c.name}${c.detail ? `  (${c.detail})` : ''}`);
+    }
+    console.log('');
+    console.log(
+      ok
+        ? `All ${checks.length} checks passed. Safe to run (start with dry_run: true).\n`
+        : `FAILED: ${failed.length} critical check(s). Fix before running live.\n`,
+    );
   }
-  console.log(`All ${checks.length} checks passed. Safe to run (start with dry_run: true).\n`);
+
+  if (!ok) process.exit(1);
 }
 
 main().catch((e: unknown) => {
