@@ -4,6 +4,16 @@ Autonomous trading agents for [Limitless Exchange](https://limitless.exchange), 
 
 Feed `SKILL.md` to any coding agent with shell + file access and it handles the rest — setup, trading, iteration.
 
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh | sh
+```
+
+One command: checks prerequisites, clones the repo, installs, and scaffolds your config — then prints exactly which credentials to add. It **never touches a private key**; placing your key stays a step you take yourself. (Prefer to read before running? `curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh -o install.sh && less install.sh && sh install.sh`.)
+
+Then fill `.env` and run `npm run cross-market-mm:init` again — it derives your Polymarket deposit wallet and prints the exact addresses to fund. Full walkthrough: **[QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md)**.
+
 **Docs:** [Build a trading agent](https://docs.limitless.exchange/developers/build-a-trading-agent) is the companion guide for this repo on [docs.limitless.exchange](https://docs.limitless.exchange) — alongside the full API reference, market structure, and SDKs. Also available as a live MCP server at `https://docs.limitless.exchange/mcp` for AI agents that need up-to-date context.
 
 ## Strategies
@@ -16,29 +26,24 @@ Feed `SKILL.md` to any coding agent with shell + file access and it handles the 
 
 All three default to `DRY_RUN` (logs intents, signs nothing) so you can boot them risk-free first. **New here?** Start with **[QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md)** — it takes you all the way to cross-venue market-making live on both chains in ~20–30 min.
 
-## For AI Agents
+## For AI agents
 
-This repo is designed to be operated by AI agents, not just read by humans.
+This repo is designed to be operated by an AI agent. Operating it is two lines — install, then follow the manual:
 
-**Quick start with any coding agent:**
+> Run: `curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh | sh`
+> Then read `src/strategies/cross-market-mm/SKILL.md` and follow it.
 
-1. Clone this repo
-2. Read `SKILL.md` — it contains the full SDK reference, setup guide, and strategy documentation
-3. The agent handles: scaffolding `.env`, strategy selection, deployment, monitoring, and iteration
-4. You handle: the private key + API tokens it writes into `.env`, and funding the wallet — secrets and money it can't (and shouldn't) supply for you
+`SKILL.md` is a complete operating manual: the agent handles scaffolding, strategy selection, deployment, monitoring, and iteration. The human handles the one thing it can't — placing the private key + tokens in `.env` and funding the wallet. **Keep secrets out of the agent's chat context;** the `init` bootstrap is built to never read them.
 
-The `SKILL.md` acts as a complete operating manual. Once your credentials and funds are in place, an agent with file access and a shell can take it from clone to live trading by following it.
+## Manual setup
 
-## For Humans
-
-If you prefer to set things up manually:
+The installer above does this for you. To do it by hand instead:
 
 ```bash
 git clone https://github.com/limitless-labs-group/agents-starter.git
 cd agents-starter
 npm install
-cp .env.example .env
-# Add PRIVATE_KEY + a Limitless scoped HMAC token (LMTS_TOKEN_ID + LMTS_TOKEN_SECRET) to .env
+npm run cross-market-mm:init   # scaffolds .env + config, lists the credentials to add
 ```
 
 ### Get Your Credentials
