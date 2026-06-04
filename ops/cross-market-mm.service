@@ -1,0 +1,54 @@
+# cross-market-mm.service — run the cross-venue market maker persistently (systemd).
+#
+# Deploy (as the service user, e.g. `cosmos`, on a Linux server):
+#   1. Install into the user's home:
+#        curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh | sh
+#      (or copy an existing checkout). Adjust the paths below to match.
+#   2. Put your .env there (PRIVATE_KEY + LMTS token + relayer key). Ensure
+#      DRY_RUN is NOT set to true — it would override the yaml and stay dry.
+#   3. In cross-market-mm.config.yaml set: order_size, max_loss_usd,
+#      market_pairs, and dry_run: false.
+#   4. Fund the wallet, then gate on a green check:
+#        npm run cross-market-mm:preflight
+#   5. Install + start:
+#        sudo cp ops/cross-market-mm.service /etc/systemd/system/
+#        sudo systemctl daemon-reload
+#        sudo systemctl enable --now cross-market-mm     # enable = also start on boot
+#   6. Watch:
+#        journalctl -u cross-market-mm -f
+#        cat ~cosmos/agents-starter/data/cross-market-mm-status.json   # live heartbeat
+#   7. Stop to flat:
+#        sudo systemctl stop cross-market-mm    # SIGTERM → flatten_on_stop → flat
+#
+# SAFETY — why this is safe to leave running:
+#   Restart=on-failure restarts ONLY on a crash (non-zero exit). The circuit
+#   breaker flattens and exits cleanly (0) when it trips, so a tripped breaker
+#   is NOT auto-restarted — it stays down until you re-enable it. StartLimit*
+#   caps crash-loops (≤5 restarts / 5 min, then systemd gives up). On a clean
+#   `systemctl stop`, SIGTERM triggers flatten_on_stop; TimeoutStopSec gives it
+#   time to sell back to flat before SIGKILL.
+
+[Unit]
+Description=Limitless cross-market-mm (cross-venue market maker)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=cosmos
+# Adjust to your checkout location:
+WorkingDirectory=/home/cosmos/agents-starter
+ExecStart=/home/cosmos/agents-starter/node_modules/.bin/tsx src/strategies/cross-market-mm/run.ts
+# Restart on a CRASH only. A clean exit (Ctrl-C, breaker trip, or `systemctl
+# stop`) returns 0 and is NOT restarted — the breaker is never auto-bypassed.
+Restart=on-failure
+RestartSec=30
+# Let the bot cancel orders + flatten inventory on stop before SIGKILL.
+TimeoutStopSec=120
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
