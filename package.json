@@ -13,6 +13,7 @@
     "cross-market-mm:init": "tsx src/strategies/cross-market-mm/init.ts",
     "cross-market-mm:find-pairs": "tsx src/strategies/cross-market-mm/find-pairs.ts",
     "cross-market-mm:setup-poly": "tsx src/strategies/cross-market-mm/setup-poly-wallet.ts",
+    "cross-market-mm:deposit": "tsx src/strategies/cross-market-mm/deposit.ts",
     "cross-market-mm:preflight": "tsx src/strategies/cross-market-mm/preflight.ts",
     "cross-market-mm:flatten": "tsx src/strategies/cross-market-mm/flatten.ts",
     "cross-market-mm:close": "tsx src/strategies/cross-market-mm/close.ts",

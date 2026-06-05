@@ -79,10 +79,18 @@ poly_signature_type: 3
 
 ## 3. Fund (most of the wall-clock time)
 
-- **Base** → your EOA: USDC (collateral) + ~$1–2 ETH (gas).
-- **Polygon** → the **deposit-wallet address** from step 2: pUSD.
-  - pUSD anywhere else (your EOA, a Safe, your Polymarket UI login) is **not**
-    CLOB buying power. It must be in the deposit wallet.
+- **Base collateral** → your **EOA**: USDC (send directly) + ~$1–2 ETH (gas).
+- **Polygon hedge** → **pUSD in the deposit wallet** — but you can't get pUSD
+  there by sending USDC to the wallet. Get the Polymarket bridge address:
+
+  ```bash
+  npm run cross-market-mm:deposit   # prints the bridge address to send USDC to
+  ```
+
+  Send USDC on Base to that bridge address; it auto-wraps to **pUSD** and credits
+  your deposit wallet. **Do not** send USDC straight to the deposit-wallet address
+  (not buying power), and the Polymarket **app's deposit button credits a
+  different account**, not this wallet. Send a small test first.
 
 ```bash
 npm run cross-market-mm:status   # confirms Base USDC + the deposit wallet's pUSD landed

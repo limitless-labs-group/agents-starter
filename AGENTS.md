@@ -44,6 +44,7 @@ asset, threshold, UTC moment, source). Title similarity is not enough.
 | Command | Purpose |
 |---|---|
 | `npm run cross-market-mm:init` | Guided, re-runnable setup (scaffold → creds → deposit wallet → funding) |
+| `npm run cross-market-mm:deposit` | Print the Polymarket bridge address to fund the deposit wallet (send USDC there → auto-wraps to pUSD). NOT the deposit-wallet address directly |
 | `npm run cross-market-mm:find-pairs` | Liquidity-ranked equivalent-market shortlist; flags polarity risk (`-- --json` for machine output you can pick from) |
 | `npm run cross-market-mm:preflight` | Validate auth/funding/approvals/pairs — the gate before live (`-- --json` for structured go/no-go; non-zero exit on any critical fail) |
 | `npm run cross-market-mm` | Run the bot (`DRY_RUN` default; `dry_run: false` to go live) |
