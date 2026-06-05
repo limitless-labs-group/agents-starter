@@ -27,6 +27,7 @@ import { polygon } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 import { readBaseUsdc } from './risk.js';
 import { setupDepositWallet } from './setup-poly-wallet.js';
+import { getDepositAddresses } from './poly-bridge.js';
 
 const PUSD = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
 const ERC20 = parseAbi(['function balanceOf(address) view returns (uint256)']);
@@ -188,11 +189,29 @@ async function main(): Promise<void> {
   const [baseUsdc, pusd] = await Promise.all([readBaseUsdc(eoa), readPusd(depositWallet)]);
   const fmt = (n: number | null): string => (n == null ? 'read failed' : `$${n.toFixed(2)}`);
 
-  console.log('\nFund these exact addresses:');
-  console.log(`  Base    → ${eoa}`);
-  console.log(`            USDC (collateral) ${fmt(baseUsdc)}  + a little ETH for gas`);
-  console.log(`  Polygon → ${depositWallet}   (the deposit wallet — NOT your EOA, NOT the Polymarket UI address)`);
-  console.log(`            pUSD ${fmt(pusd)}   (gasless — no MATIC needed)`);
+  // The hedge side needs pUSD IN the deposit wallet — and you can't get it there
+  // by sending USDC to the wallet directly. Pull the Polymarket bridge address
+  // so we can tell the user exactly where to send USDC (it auto-wraps to pUSD).
+  let bridgeEvm: string | null = null;
+  try {
+    bridgeEvm = (await getDepositAddresses(depositWallet)).evm;
+  } catch {
+    /* non-fatal — fall back to a pointer at the deposit command */
+  }
+
+  console.log('\nFund both sides:');
+  console.log(`  • Base collateral → your EOA  ${eoa}`);
+  console.log(`      USDC ${fmt(baseUsdc)}  + a little ETH for gas. (send USDC here directly)`);
+  console.log(`  • Polygon hedge → pUSD in the deposit wallet  ${depositWallet}  (now ${fmt(pusd)})`);
+  if (bridgeEvm) {
+    console.log(`      Get pUSD there by sending USDC on Base to the bridge address:`);
+    console.log(`        ${bridgeEvm}`);
+    console.log(`      It auto-wraps to pUSD and credits the deposit wallet. Do NOT send`);
+    console.log(`      USDC straight to ${depositWallet} (not buying power), and the`);
+    console.log(`      Polymarket app's deposit button credits a different account.`);
+  } else {
+    console.log(`      To fund it: npm run cross-market-mm:deposit  (prints the bridge address)`);
+  }
 
   const fundedBase = (baseUsdc ?? 0) > 0;
   const fundedPoly = pusd > 0;
@@ -201,7 +220,7 @@ async function main(): Promise<void> {
     console.log('  npm run cross-market-mm:find-pairs   # pick a pair, verify identical resolution');
     console.log('  npm run cross-market-mm:preflight    # then dry run, then go live');
   } else {
-    console.log('\nFund the address(es) above (pUSD must be IN the deposit wallet), then run init again.');
+    console.log('\nFund the side(s) above, then run init again. (Send a small test first.)');
   }
 }
 
