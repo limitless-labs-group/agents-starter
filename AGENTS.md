@@ -62,20 +62,27 @@ want a fresh independent read from the venues instead.
 
 ### Operator panel (the bot emits a panel data contract)
 
-A run also emits the **Limitless Academy control panel's** data contract into `data/`, so
-that panel renders this bot unchanged — there is no panel in this repo, by design:
+A run emits the **Limitless Academy control panel's** data contract into `data/`, so the
+panel renders this bot unchanged — there is no panel in this repo, by design. The Market
+Maker Bootcamp's MM panel (`Academy/programs/market_maker_bootcamp/panel/`) reads all five:
 
+- `data/quotes.json` — quote board: per-pair two-sided quote (bid = YES buy, ask = 1 − NO
+  buy), mid/fair_value, spread vs target, net inventory, state (two_sided/one_sided/pulled/stopped).
 - `data/positions.json` — per-pair cross-venue net delta as positions.
-- `data/fills.ndjson` — append-only event log; successful hedges are fills, lifecycle/breaker are events.
+- `data/fills.ndjson` — append-only event log; successful hedges are fills (BUY/taker),
+  lifecycle/breaker are events.
 - `data/kill.flag` — the kill switch. The breaker writes it on a trip; the panel's kill
   button creates it; the bot reads it each loop and halts. Present == halted, and a fresh
   run refuses to start until it's cleared (`rm data/kill.flag` or the panel "Clear" button).
+- `data/pull.flag` — pause quoting without halting. The panel's "Pull quotes" button creates
+  it; the bot cancels resting quotes and stops placing new ones while the hedger keeps
+  managing inventory. Resumes when cleared.
 
-To watch a run, point the Academy control panel (canonical at
-`Academy/programs/limitless_trader_lab/bonus/CONTROL_PANEL.md`) at this `data/` dir:
+To watch a run, point the Academy MM control panel at this `data/` dir:
 
 ```
-POSITIONS_PATH=data/positions.json  AGENT_LOG=data/fills.ndjson  KILL_SWITCH=data/kill.flag
+QUOTES_PATH=data/quotes.json  POSITIONS_PATH=data/positions.json  AGENT_LOG=data/fills.ndjson
+KILL_SWITCH=data/kill.flag    PULL_SWITCH=data/pull.flag
 ```
 
 ## Other strategies
