@@ -18,6 +18,7 @@
  *   - On shutdown (AbortSignal), cancel-all so we don't leave orphans.
  */
 
+import fs from 'node:fs';
 import { pino } from 'pino';
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
 import type { QuoteFeed } from './quote-feed.js';
@@ -117,9 +118,11 @@ export async function runReplicator(
   settings: ReplicatorSettings,
   signal: AbortSignal,
   recorder?: Recorder,
+  pullFlagPath?: string,
 ): Promise<void> {
   const slug = pair.polymarketSlug;
   feed.ensureSlug(slug);
+  let pulled = false; // pull.flag latch: cancel quotes once on entering "pulled"
 
   logger.info(
     { polymarketSlug: pair.polymarketSlug, limitlessSlug: pair.limitlessSlug },
@@ -142,6 +145,19 @@ export async function runReplicator(
         await new Promise((r) => setTimeout(r, settings.minRequoteMs - sinceLast));
         if (signal.aborted) break;
       }
+
+      // pull.flag: pause quoting WITHOUT halting. Cancel resting quotes once on
+      // entering the pulled state and stop placing new ones; the hedger task is
+      // separate and keeps managing inventory. Resumes when the flag clears.
+      if (pullFlagPath && fs.existsSync(pullFlagPath)) {
+        if (!pulled) {
+          pulled = true;
+          await trading.cancelAllAndVerify(pair.limitlessSlug).catch(() => {});
+          logger.warn({ slug }, 'quotes pulled (pull.flag present) — holding; hedger still manages inventory');
+        }
+        continue;
+      }
+      pulled = false;
 
       const quote = feed.getQuote(slug);
       if (!quote || quote.bid == null || quote.ask == null) continue;

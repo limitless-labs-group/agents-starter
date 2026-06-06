@@ -190,7 +190,10 @@ export async function main(): Promise<void> {
   // -- Operator-panel feed: emit the Academy control panel's data contract
   //    (positions.json + fills.ndjson) so that panel renders this bot. The
   //    panel runs FROM the Academy, pointed at this data/ dir. --
-  const panel = new PanelWriter({ mode: settings.dryRun ? 'dry' : 'live', orderSize: settings.orderSize }, dataDir);
+  const panel = new PanelWriter(
+    { mode: settings.dryRun ? 'dry' : 'live', orderSize: settings.orderSize, marginBps: settings.marginBps },
+    dataDir,
+  );
   recorder.subscribe((ev) => panel.onEvent(ev));
   logger.info({ positions: panel.positionsPath, fills: panel.fillsPath }, 'operator-panel feed (point the Academy control panel here)');
 
@@ -247,7 +250,7 @@ export async function main(): Promise<void> {
       onKill,
     }),
     ...settings.pairs.map((pair) =>
-      runReplicator(pair, feed, trading, settings, ac.signal, recorder),
+      runReplicator(pair, feed, trading, settings, ac.signal, recorder, panel.pullFlagPath),
     ),
   ];
 
@@ -312,6 +315,7 @@ export async function main(): Promise<void> {
   clearInterval(killWatch);
   const stopReason = killed ? 'circuit-breaker' : 'signal';
   statusWriter.markStopped(stopReason, flatOnExit);
+  panel.markStopped();
   panel.appendEvent('stopped', { reason: stopReason, flat: flatOnExit });
   if (telegram) {
     await telegram.announceHalt(stopReason, flatOnExit);

@@ -1,28 +1,29 @@
 /**
- * PanelWriter — emit the Trader Lab control panel's data contract.
+ * PanelWriter — emit the Academy control panel's data contract.
  *
- * The Limitless Academy ships an operator panel (FastAPI + one HTML page) in
- * programs/limitless_trader_lab/bonus/CONTROL_PANEL.md. Rather than build a
- * second panel here, cross-market-mm just EMITS the three files that panel
- * reads, so the existing panel renders this bot unchanged:
+ * The Limitless Academy ships an operator panel (FastAPI + one HTML page). The
+ * Market Maker Bootcamp adds a market-maker variant of it
+ * (Academy/programs/market_maker_bootcamp/panel/, spec in CONTROL_PANEL_DELTAS.md)
+ * that reads five flat files. Rather than build a panel here, cross-market-mm
+ * EMITS those files so the existing panel renders this bot unchanged:
  *
- *   positions.json  - array of {slug,title,side,shares,avg_price,mark}
- *   fills.ndjson    - append-only; one JSON/line. A row is a fill iff it has
- *                     numeric price+shares; everything else is an {event} row.
- *   kill.flag       - present == halted. The breaker writes it; the bot reads
- *                     it (panel kill button). One mechanism, two triggers.
+ *   quotes.json     - quote board: per-market two-sided quote, spread, inventory
+ *   positions.json  - per-pair cross-venue net delta as positions
+ *   fills.ndjson    - append-only; a row is a fill iff numeric price+shares
+ *   kill.flag       - present == halted (breaker writes it; panel button toggles)
+ *   pull.flag       - present == quotes pulled (cancel quotes, keep inventory)
  *
- * Point the panel at these via POSITIONS_PATH / AGENT_LOG / KILL_SWITCH.
+ * Point the panel at these via QUOTES_PATH / POSITIONS_PATH / AGENT_LOG /
+ * KILL_SWITCH / PULL_SWITCH.
  *
- * Mapping choices (honest, not decorative):
- *  - Only a successful HEDGE is a fill. Quote placements (`order`) are
- *    cancel-replace churn every tick, not fills, so they are NOT emitted.
- *  - A pair's row shows its cross-venue NET DELTA as the position: side =
- *    direction of net, shares = |net|. avg_price = mark = 0.5, so per-row P&L
- *    is 0 — we don't fabricate a cost basis. Flat pair => ~0 shares. This
- *    surfaces the delta-neutral story directly in the positions table.
- *  - The panel's P&L curve is mark-to-fill over the hedge fills; the dollar
- *    equity/PnL truth stays in status.json + breaker events.
+ * Honest mappings (no fabricated data):
+ *  - quote board: bid = our YES buy; ask = 1 - our NO buy (YES-frame); mid =
+ *    fair_value = (bid+ask)/2, which equals the reference (poly) mid because the
+ *    +-margin cancels. target_spread = 2 x margin. net_inventory = net delta.
+ *  - positions: per-pair net delta (side = direction, shares = |net|); avg=mark
+ *    so per-row P&L is 0 (no fabricated cost basis).
+ *  - fills: only a successful HEDGE is a fill (quote cancel-replace churn is not).
+ *    Hedges are Polymarket buys -> action BUY, liquidity taker (honest).
  */
 
 import fs from 'node:fs';
@@ -30,10 +31,12 @@ import path from 'node:path';
 import type { ReplicatorEvent, TimestampedEvent } from './recorder.js';
 
 type HedgeEvent = Extract<ReplicatorEvent, { kind: 'hedge' }>;
+type OrderEvent = Extract<ReplicatorEvent, { kind: 'order' }>;
 
 export interface PanelInit {
   mode: 'live' | 'dry';
   orderSize: number;
+  marginBps: number;
 }
 
 interface PanelPosition {
@@ -45,21 +48,42 @@ interface PanelPosition {
   mark: number;
 }
 
+interface Leg {
+  price: number;
+  shares: number;
+  order_id?: string;
+}
+
+const r4 = (n: number): number => Number(n.toFixed(4));
+
 export class PanelWriter {
   readonly dir: string;
+  readonly quotesPath: string;
   readonly positionsPath: string;
   readonly fillsPath: string;
   readonly killFlagPath: string;
+  readonly pullFlagPath: string;
+
+  private readonly orderSize: number;
+  private readonly targetSpread: number;
   private readonly netByPair = new Map<string, number>();
+  private readonly yesOrderByPair = new Map<string, Leg>();
+  private readonly noOrderByPair = new Map<string, Leg>();
+  private stopped = false;
 
   constructor(init: PanelInit, dir: string = process.env.REPLICATOR_DATA_DIR || './data') {
     fs.mkdirSync(dir, { recursive: true });
     this.dir = dir;
+    this.quotesPath = path.join(dir, 'quotes.json');
     this.positionsPath = path.join(dir, 'positions.json');
     this.fillsPath = path.join(dir, 'fills.ndjson');
     this.killFlagPath = path.join(dir, 'kill.flag');
-    // Fresh display state per run (positions + fills). kill.flag is NOT cleared
-    // here — a tripped breaker must stay tripped across restarts (see run.ts).
+    this.pullFlagPath = path.join(dir, 'pull.flag');
+    this.orderSize = init.orderSize;
+    this.targetSpread = r4((2 * init.marginBps) / 10_000);
+    // Fresh display state per run (quotes/positions/fills). kill.flag is NOT
+    // cleared here — a tripped breaker must stay tripped across restarts.
+    this.writeQuotes();
     this.writePositions();
     fs.writeFileSync(this.fillsPath, '');
     this.appendEvent('run', { mode: init.mode, order_size: init.orderSize });
@@ -68,15 +92,19 @@ export class PanelWriter {
   /** Fold one recorder event into the panel files. */
   onEvent(ev: TimestampedEvent): void {
     switch (ev.kind) {
+      case 'order':
+        this.trackOrder(ev);
+        this.writeQuotes();
+        break;
       case 'snapshot':
         this.netByPair.set(ev.pair, ev.net);
         this.writePositions();
+        this.writeQuotes(); // refresh inventory + pull-state on every tick
         break;
       case 'hedge':
         if (ev.success) this.appendFill(ev);
         break;
-      // 'order' is cancel-replace churn (not a fill); 'equity'/'run' carried
-      // elsewhere. Nothing else lands in the fills feed by default.
+      // 'equity'/'run' carried elsewhere; nothing else lands by default.
     }
   }
 
@@ -85,9 +113,17 @@ export class PanelWriter {
     this.append({ ts: new Date().toISOString(), event, ...fields });
   }
 
-  /** kill.flag helpers (the panel toggles the same file). */
+  /** Final state: mark every quote stopped so the panel shows the halt. */
+  markStopped(): void {
+    this.stopped = true;
+    this.writeQuotes();
+  }
+
   killFlagExists(): boolean {
     return fs.existsSync(this.killFlagPath);
+  }
+  pullFlagExists(): boolean {
+    return fs.existsSync(this.pullFlagPath);
   }
   writeKillFlag(reason: string): void {
     try {
@@ -99,14 +135,23 @@ export class PanelWriter {
 
   // -- internals --
 
+  private trackOrder(ev: OrderEvent): void {
+    const leg: Leg = { price: r4(ev.price), shares: ev.size, order_id: ev.orderId };
+    if (ev.side === 'YES') this.yesOrderByPair.set(ev.pair, leg);
+    else this.noOrderByPair.set(ev.pair, leg);
+  }
+
   private appendFill(ev: HedgeEvent): void {
-    // Numeric price + shares => the panel renders this as a fill.
+    // Numeric price + shares => the panel renders this as a fill. Hedges are
+    // Polymarket buys: action BUY, liquidity taker (honest, not decorative).
     this.append({
       ts: new Date().toISOString(),
       slug: ev.pair,
       side: ev.buy,
+      action: 'BUY',
+      liquidity: 'taker',
       shares: Number(ev.shares.toFixed(2)),
-      price: Number(ev.price.toFixed(4)),
+      price: r4(ev.price),
       usdc: Number(ev.usdc.toFixed(2)),
     });
   }
@@ -119,19 +164,59 @@ export class PanelWriter {
     }
   }
 
+  private writeQuotes(): void {
+    const pulled = this.pullFlagExists();
+    const slugs = new Set([...this.yesOrderByPair.keys(), ...this.noOrderByPair.keys(), ...this.netByPair.keys()]);
+    const rows = [...slugs].map((slug) => {
+      const yes = this.yesOrderByPair.get(slug); // YES buy = bid
+      const no = this.noOrderByPair.get(slug); // NO buy => YES-frame ask at 1 - price
+      const bid: Leg | null = yes ? { price: yes.price, shares: yes.shares, order_id: yes.order_id } : null;
+      const ask: Leg | null = no ? { price: r4(1 - no.price), shares: no.shares, order_id: no.order_id } : null;
+      const mid = bid && ask ? r4((bid.price + ask.price) / 2) : (bid?.price ?? ask?.price ?? null);
+      const net = this.netByPair.get(slug) ?? 0;
+      const state = this.stopped
+        ? 'stopped'
+        : pulled
+          ? 'pulled'
+          : bid && ask
+            ? 'two_sided'
+            : 'one_sided';
+      return {
+        slug,
+        title: slug,
+        outcome: 'YES',
+        mid,
+        fair_value: mid, // we quote symmetrically around the reference mid
+        bid,
+        ask,
+        spread: bid && ask ? r4(ask.price - bid.price) : null,
+        target_spread: this.targetSpread,
+        net_inventory: Number(net.toFixed(2)),
+        inventory_cap: this.orderSize,
+        state,
+        reason: null,
+      };
+    });
+    this.atomicWrite(this.quotesPath, rows);
+  }
+
   private writePositions(): void {
     const rows: PanelPosition[] = [...this.netByPair.entries()].map(([pair, net]) => ({
       slug: pair,
       title: pair,
       side: net >= 0 ? 'YES' : 'NO',
       shares: Number(Math.abs(net).toFixed(2)),
-      avg_price: 0.5, // neutral: we don't fabricate a cost basis (per-row P&L = 0)
+      avg_price: 0.5, // neutral: no fabricated cost basis (per-row P&L = 0)
       mark: 0.5,
     }));
+    this.atomicWrite(this.positionsPath, rows);
+  }
+
+  private atomicWrite(file: string, data: unknown): void {
     try {
-      const tmp = `${this.positionsPath}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify(rows, null, 2));
-      fs.renameSync(tmp, this.positionsPath);
+      const tmp = `${file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+      fs.renameSync(tmp, file);
     } catch {
       /* best-effort */
     }
