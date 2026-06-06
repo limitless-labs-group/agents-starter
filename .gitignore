@@ -12,6 +12,8 @@ experiments/
 # Runtime data files (user-specific)
 data/*.json
 data/*.jsonl
+data/*.ndjson
+data/kill.flag
 data/*-backup-*
 
 # Runtime data (user-specific)

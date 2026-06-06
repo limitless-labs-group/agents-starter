@@ -14,6 +14,8 @@
  *      cancel-all on the way out).
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { pino } from 'pino';
 import { Client, HttpClient } from '@limitless-exchange/sdk';
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
@@ -27,6 +29,7 @@ import { flattenBothVenues } from './flatten-positions.js';
 import { loadSettings } from './config.js';
 import { Recorder } from './recorder.js';
 import { StatusWriter } from './status-writer.js';
+import { PanelWriter } from './panel-feed.js';
 import { TelegramClient } from '../../core/telegram/client.js';
 import { CrossMarketTelegram } from './telegram.js';
 import { RiskMonitor } from './risk.js';
@@ -86,6 +89,22 @@ export async function main(): Promise<void> {
     },
     'cross-market-mm boot',
   );
+
+  // -- Kill switch (fail fast). kill.flag present == halted. The breaker writes
+  //    it on a trip and the panel's kill button creates it; either way a fresh
+  //    run REFUSES to start until it's cleared, so a tripped breaker stays
+  //    tripped across restarts. Clear it via the panel "Clear" button or
+  //    `rm data/kill.flag`. --
+  const dataDir = process.env.REPLICATOR_DATA_DIR || './data';
+  const killFlagPath = path.join(dataDir, 'kill.flag');
+  if (fs.existsSync(killFlagPath)) {
+    logger.error(
+      { killFlagPath },
+      'kill switch is TRIPPED — refusing to start. Clear it (panel "Clear" button or `rm data/kill.flag`) to resume.',
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   // -- Limitless side --
   // Prefer scoped HMAC token; fall back to deprecated X-API-Key. The read
@@ -168,6 +187,13 @@ export async function main(): Promise<void> {
   recorder.subscribe((ev) => statusWriter.onEvent(ev));
   logger.info({ file: statusWriter.filePath }, 'live status file (read by orchestrator)');
 
+  // -- Operator-panel feed: emit the Academy control panel's data contract
+  //    (positions.json + fills.ndjson) so that panel renders this bot. The
+  //    panel runs FROM the Academy, pointed at this data/ dir. --
+  const panel = new PanelWriter({ mode: settings.dryRun ? 'dry' : 'live', orderSize: settings.orderSize }, dataDir);
+  recorder.subscribe((ev) => panel.onEvent(ev));
+  logger.info({ positions: panel.positionsPath, fills: panel.fillsPath }, 'operator-panel feed (point the Academy control panel here)');
+
   // -- Optional: direct Telegram push (fill pings + heartbeat) for standalone
   //    runs without an orchestrating agent. No-op unless TELEGRAM_BOT_TOKEN +
   //    TELEGRAM_CHAT_ID are set. --
@@ -193,13 +219,23 @@ export async function main(): Promise<void> {
   const risk = new RiskMonitor(settings.maxLossUsd);
   let killed = false;
   const onKill = () => {
+    if (killed) return;
     killed = true;
     statusWriter.markTripped();
+    panel.appendEvent('kill_switch_tripped');
+    panel.writeKillFlag('cross-market-mm halt'); // so the panel shows TRIPPED + it persists across restarts
     ac.abort();
   };
   if (!settings.dryRun) {
     logger.warn({ maxLossUsd: settings.maxLossUsd }, 'circuit breaker armed (equity drawdown kill)');
   }
+
+  // -- Manual kill from the panel: the panel's kill button creates kill.flag.
+  //    Poll for it so the breaker and the panel button share one halt path. --
+  const killWatch = setInterval(() => {
+    if (panel.killFlagExists()) onKill();
+  }, 3000);
+  killWatch.unref?.();
 
   // -- Spawn tasks under a shared AbortController --
   const tasks: Promise<void>[] = [
@@ -273,8 +309,10 @@ export async function main(): Promise<void> {
   }
 
   // -- Final state for readers + optional Telegram halt notice --
+  clearInterval(killWatch);
   const stopReason = killed ? 'circuit-breaker' : 'signal';
   statusWriter.markStopped(stopReason, flatOnExit);
+  panel.appendEvent('stopped', { reason: stopReason, flat: flatOnExit });
   if (telegram) {
     await telegram.announceHalt(stopReason, flatOnExit);
   }

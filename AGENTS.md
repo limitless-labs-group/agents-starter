@@ -60,6 +60,24 @@ PnL, equity, per-pair net delta, hedge count, last fill, breaker + stop state. P
 a heartbeat and relay it to the operator. Use `cross-market-mm:status -- --json` when you
 want a fresh independent read from the venues instead.
 
+### Operator panel (the bot emits a panel data contract)
+
+A run also emits the **Limitless Academy control panel's** data contract into `data/`, so
+that panel renders this bot unchanged — there is no panel in this repo, by design:
+
+- `data/positions.json` — per-pair cross-venue net delta as positions.
+- `data/fills.ndjson` — append-only event log; successful hedges are fills, lifecycle/breaker are events.
+- `data/kill.flag` — the kill switch. The breaker writes it on a trip; the panel's kill
+  button creates it; the bot reads it each loop and halts. Present == halted, and a fresh
+  run refuses to start until it's cleared (`rm data/kill.flag` or the panel "Clear" button).
+
+To watch a run, point the Academy control panel (canonical at
+`Academy/programs/limitless_trader_lab/bonus/CONTROL_PANEL.md`) at this `data/` dir:
+
+```
+POSITIONS_PATH=data/positions.json  AGENT_LOG=data/fills.ndjson  KILL_SWITCH=data/kill.flag
+```
+
 ## Other strategies
 
 `oracle-arb` (Pyth oracle vs market) and `certainty-closer` (SDK-only, the simplest
