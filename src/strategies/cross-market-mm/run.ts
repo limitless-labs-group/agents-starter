@@ -31,7 +31,7 @@ import { Recorder } from './recorder.js';
 import { StatusWriter } from './status-writer.js';
 import { PanelWriter } from './panel-feed.js';
 import { TelegramClient } from '../../core/telegram/client.js';
-import { CrossMarketTelegram } from './telegram.js';
+import { CrossMarketTelegram, type DashboardControls } from './telegram.js';
 import { RiskMonitor } from './risk.js';
 import type { MarketPair } from './types.js';
 
@@ -206,8 +206,27 @@ export async function main(): Promise<void> {
   //    runs without an orchestrating agent. No-op unless TELEGRAM_BOT_TOKEN +
   //    TELEGRAM_CHAT_ID are set. --
   const tgClient = TelegramClient.fromEnv();
+  // Halt-only control surface for the Telegram dashboard buttons: they write the
+  // SAME pull.flag / kill.flag the rest of the bot already watches (killWatch
+  // below + runReplicator), so there is one control path, not two. Nothing here
+  // can arm live, change size, or place an order.
+  const tgControls: DashboardControls = {
+    kill: () => panel.writeKillFlag('telegram dashboard kill'),
+    pull: () =>
+      fs.writeFileSync(panel.pullFlagPath, `pulled via telegram at ${new Date().toISOString()}\n`),
+    resume: () => fs.rmSync(panel.pullFlagPath, { force: true }),
+    isPulled: () => panel.pullFlagExists(),
+    isKilled: () => panel.killFlagExists(),
+  };
   const telegram = tgClient
-    ? new CrossMarketTelegram(tgClient, Number(process.env.TELEGRAM_HEARTBEAT_MS ?? 60_000))
+    ? new CrossMarketTelegram(tgClient, {
+        heartbeatMs: Number(process.env.TELEGRAM_HEARTBEAT_MS ?? 60_000),
+        dashboard: {
+          quotesPath: panel.quotesPath,
+          refreshMs: Number(process.env.TELEGRAM_CARD_MS ?? 15_000),
+          controls: tgControls,
+        },
+      })
     : null;
   if (telegram) {
     recorder.subscribe((ev) => telegram.onEvent(ev));
@@ -217,8 +236,8 @@ export async function main(): Promise<void> {
       orderSize: settings.orderSize,
       maxLossUsd: settings.maxLossUsd,
     });
-    telegram.startHeartbeat();
-    logger.info('Telegram push active (optional)');
+    telegram.startRefresh();
+    logger.info('Telegram dashboard active (optional)');
   }
 
   // -- Loss circuit breaker (live only). Tripping aborts everything; the
@@ -258,6 +277,9 @@ export async function main(): Promise<void> {
       runReplicator(pair, feed, trading, settings, ac.signal, recorder, panel.pullFlagPath),
     ),
   ];
+  // Telegram dashboard inbound loop (/status + halt-only buttons). Abort-aware,
+  // so the shutdown's Promise.allSettled doesn't block on the long-poll.
+  if (telegram) tasks.push(telegram.runControlLoop(ac.signal));
 
   // -- Wait for Ctrl-C / SIGTERM / circuit-breaker. Any abort (signal or
   //    onKill → ac.abort()) resolves this so we proceed to clean shutdown. --
