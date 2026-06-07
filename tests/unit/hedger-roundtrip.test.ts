@@ -79,6 +79,21 @@ describe('fill → hedge round-trip (hedgeOnce)', () => {
     expect(hedgeBuy.mock.calls[0][0]).toBe('POLY_YES');
   });
 
+  it('records threshold-crossing hedge skips with the reason and notional', async () => {
+    const hedgeBuy = vi.fn().mockResolvedValue(true);
+    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const rec = fakeRecorder();
+    const lmts = { [PAIR.limitlessSlug]: { yes: 0, no: 5 } };
+    const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
+
+    await hedgeOnce([PAIR], feedWithQuote(0.6, 0.19), lmts, polyPos, poly, SETTINGS, rec);
+
+    expect(hedgeBuy).not.toHaveBeenCalled();
+    const skip = rec.events.find((e) => e.kind === 'hedge_skip') as Extract<ReplicatorEvent, { kind: 'hedge_skip' }>;
+    expect(skip).toMatchObject({ reason: 'notional too small', buy: 'YES', shares: 5 });
+    expect(skip.usdc).toBeCloseTo(0.95, 6);
+  });
+
   it('an already-hedged position (Limitless YES offset by Poly NO) does NOT hedge', async () => {
     const hedgeBuy = vi.fn().mockResolvedValue(true);
     const poly = { hedgeBuy } as unknown as PolymarketAdapter;

@@ -11,6 +11,7 @@
  *   - `order`    each Limitless BUY placed (side/price/size/id)
  *   - `snapshot` each hedger tick (per-pair net exposure + venue balances)
  *   - `hedge`    each Polymarket hedge attempt (side/shares/price/usdc/success)
+ *   - `hedge_skip` threshold-crossing exposure that could not be hedged yet
  *
  * Fills aren't logged explicitly — they're derived in `analyze.ts` from the
  * change in Limitless balances between consecutive snapshots.
@@ -39,6 +40,17 @@ export type ReplicatorEvent =
       price: number;
       usdc: number;
       success: boolean;
+    }
+  | {
+      kind: 'hedge_skip';
+      pair: string;
+      reason: string;
+      buy: 'YES' | 'NO';
+      shares: number;
+      price: number;
+      usdc: number;
+      net: number;
+      threshold: number;
     }
   | {
       kind: 'equity';

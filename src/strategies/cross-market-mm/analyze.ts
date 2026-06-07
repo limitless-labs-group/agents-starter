@@ -57,6 +57,7 @@ function main(): void {
   const orders = events.filter((e) => e.kind === 'order') as Array<Logged & { kind: 'order' }>;
   const snaps = events.filter((e) => e.kind === 'snapshot') as Array<Logged & { kind: 'snapshot' }>;
   const hedges = events.filter((e) => e.kind === 'hedge') as Array<Logged & { kind: 'hedge' }>;
+  const hedgeSkips = events.filter((e) => e.kind === 'hedge_skip') as Array<Logged & { kind: 'hedge_skip' }>;
   const equities = events.filter((e) => e.kind === 'equity') as Array<Logged & { kind: 'equity' }>;
 
   console.log(`\n=== Cross-market MM run: ${path.basename(file)} ===`);
@@ -106,6 +107,17 @@ function main(): void {
   console.log(
     `\nHedges: ${hedges.length} fired (${okHedges.length} ok) | $${hedgedUsdc.toFixed(2)} bought on Polymarket`,
   );
+  if (hedgeSkips.length > 0) {
+    const byReason = new Map<string, number>();
+    for (const s of hedgeSkips) byReason.set(s.reason, (byReason.get(s.reason) ?? 0) + 1);
+    const reasons = [...byReason.entries()].map(([reason, n]) => `${reason}: ${n}`).join(', ');
+    const last = hedgeSkips[hedgeSkips.length - 1];
+    console.log(`Hedge skips: ${hedgeSkips.length} (${reasons})`);
+    console.log(
+      `  last skip: ${last.pair} | ${last.reason} | net ${last.net.toFixed(2)} | ` +
+        `would buy ${last.shares.toFixed(2)} ${last.buy} for $${last.usdc.toFixed(2)}`,
+    );
+  }
 
   // -- PnL / equity (the "is it bleeding?" signal) --
   if (equities.length > 0) {

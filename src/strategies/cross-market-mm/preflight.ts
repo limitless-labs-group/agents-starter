@@ -20,6 +20,8 @@ import { readBaseUsdc } from './risk.js';
 import { loadSettings } from './config.js';
 
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const POLYMARKET_GAMMA_URL = process.env.POLYMARKET_GAMMA_URL || 'https://gamma-api.polymarket.com';
+const MIN_POLY_HEDGE_NOTIONAL_USD = 1.0;
 const ERC20_ALLOWANCE = parseAbi(['function allowance(address,address) view returns (uint256)']);
 const SAFE_VERSION = parseAbi(['function VERSION() view returns (string)']);
 
@@ -28,6 +30,36 @@ interface Check {
   ok: boolean;
   critical: boolean;
   detail?: string;
+}
+
+function num(x: unknown): number {
+  const n = Number(x ?? NaN);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+async function readPolymarketBook(slug: string): Promise<{ bestBid: number; bestAsk: number } | null> {
+  for (const path of [`/markets/slug/${slug}`, `/events/slug/${slug}`]) {
+    try {
+      const r = await fetch(`${POLYMARKET_GAMMA_URL}${path}`);
+      if (!r.ok) continue;
+      const data = (await r.json()) as {
+        bestBid?: unknown;
+        bestAsk?: unknown;
+        markets?: Array<{ bestBid?: unknown; bestAsk?: unknown }>;
+      };
+      const sources = [data, ...(data.markets ?? [])];
+      for (const src of sources) {
+        const bestBid = num(src.bestBid);
+        const bestAsk = num(src.bestAsk);
+        if (bestBid > 0 && bestBid < 1 && bestAsk > 0 && bestAsk < 1) {
+          return { bestBid, bestAsk };
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }
 
 async function main(): Promise<void> {
@@ -166,6 +198,22 @@ async function main(): Promise<void> {
     try {
       await poly.resolveAssetIds(pair);
       add(`Polymarket market: ${pair.polymarketSlug.slice(0, 40)}`, true, true, 'resolved');
+      const book = await readPolymarketBook(pair.polymarketSlug);
+      if (book) {
+        const yesFillHedge = s.orderSize * (1 - book.bestBid); // Limitless YES fill -> buy NO on Poly
+        const noFillHedge = s.orderSize * book.bestAsk; // Limitless NO fill -> buy YES on Poly
+        const minFullFillHedge = Math.min(yesFillHedge, noFillHedge);
+        add(
+          `Dust hedge guard: ${pair.polymarketSlug.slice(0, 40)}`,
+          minFullFillHedge >= MIN_POLY_HEDGE_NOTIONAL_USD,
+          true,
+          `full-fill hedge min $${minFullFillHedge.toFixed(2)} ` +
+            `(YES-fill→NO $${yesFillHedge.toFixed(2)}, NO-fill→YES $${noFillHedge.toFixed(2)}, ` +
+            `order_size ${s.orderSize})`,
+        );
+      } else {
+        add(`Dust hedge guard: ${pair.polymarketSlug.slice(0, 40)}`, false, false, 'Gamma bestBid/bestAsk unavailable');
+      }
     } catch (e) {
       add(`Polymarket market: ${pair.polymarketSlug.slice(0, 40)}`, false, true, (e as Error).message);
     }

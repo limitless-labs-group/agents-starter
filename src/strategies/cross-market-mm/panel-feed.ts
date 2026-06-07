@@ -9,7 +9,8 @@
  *
  *   quotes.json     - quote board: per-market two-sided quote, spread, inventory
  *   positions.json  - per-pair cross-venue net delta as positions
- *   fills.ndjson    - append-only; a row is a fill iff numeric price+shares
+ *   fills.ndjson    - append-only; successful hedge fills use numeric
+ *                    price+shares; non-fill learning events use would_*
  *   kill.flag       - present == halted (breaker writes it; panel button toggles)
  *   pull.flag       - present == quotes pulled (cancel quotes, keep inventory)
  *
@@ -31,6 +32,7 @@ import path from 'node:path';
 import type { ReplicatorEvent, TimestampedEvent } from './recorder.js';
 
 type HedgeEvent = Extract<ReplicatorEvent, { kind: 'hedge' }>;
+type HedgeSkipEvent = Extract<ReplicatorEvent, { kind: 'hedge_skip' }>;
 type OrderEvent = Extract<ReplicatorEvent, { kind: 'order' }>;
 
 export interface PanelInit {
@@ -114,6 +116,9 @@ export class PanelWriter {
       case 'hedge':
         if (ev.success) this.appendFill(ev);
         break;
+      case 'hedge_skip':
+        this.appendHedgeSkip(ev);
+        break;
       // 'equity'/'run' carried elsewhere; nothing else lands by default.
     }
   }
@@ -168,6 +173,21 @@ export class PanelWriter {
       shares: Number(ev.shares.toFixed(2)),
       price: r4(ev.price),
       usdc: Number(ev.usdc.toFixed(2)),
+    });
+  }
+
+  private appendHedgeSkip(ev: HedgeSkipEvent): void {
+    this.append({
+      ts: new Date().toISOString(),
+      event: 'hedge_skip',
+      slug: this.canon(ev.pair),
+      reason: ev.reason,
+      buy: ev.buy,
+      would_shares: Number(ev.shares.toFixed(2)),
+      would_price: r4(ev.price),
+      would_usdc: Number(ev.usdc.toFixed(2)),
+      net: Number(ev.net.toFixed(2)),
+      threshold: ev.threshold,
     });
   }
 

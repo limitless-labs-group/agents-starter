@@ -29,6 +29,7 @@ import type {
 import type { ReplicatorEvent, TimestampedEvent } from './recorder.js';
 
 type HedgeEvent = Extract<ReplicatorEvent, { kind: 'hedge' }>;
+type HedgeSkipEvent = Extract<ReplicatorEvent, { kind: 'hedge_skip' }>;
 
 export interface StartInfo {
   live: boolean;
@@ -69,6 +70,15 @@ export function fmtHedge(ev: HedgeEvent): string {
     `${head}\n` +
     `<code>${ev.pair}</code>\n` +
     `bought ${ev.shares.toFixed(2)} ${ev.buy} @ ${ev.price.toFixed(3)} ($${ev.usdc.toFixed(2)}) on Polymarket`
+  );
+}
+
+export function fmtHedgeSkip(ev: HedgeSkipEvent): string {
+  return (
+    `🟠 <b>Hedge skipped</b> — ${ev.reason}\n` +
+    `<code>${ev.pair}</code>\n` +
+    `net ${ev.net.toFixed(2)} · would buy ${ev.shares.toFixed(2)} ${ev.buy} ` +
+    `@ ${ev.price.toFixed(3)} ($${ev.usdc.toFixed(2)})`
   );
 }
 
@@ -245,6 +255,8 @@ export class CrossMarketTelegram {
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly heartbeatMs: number;
   private readonly dashboard: DashboardOpts | null;
+  private readonly activeHedgeSkips = new Set<string>();
+  private readonly hedgeSkipThresholdByPair = new Map<string, number>();
 
   // Dashboard mode only:
   private live = false;
@@ -265,16 +277,48 @@ export class CrossMarketTelegram {
     switch (ev.kind) {
       case 'snapshot':
         this.netByPair.set(ev.pair, ev.net);
+        this.clearResolvedHedgeSkip(ev.pair, ev.net);
         break;
       case 'equity':
         this.latestEquity = { pnl: ev.pnl, equity: ev.equity };
         break;
       case 'hedge':
-        if (ev.success) this.hedges += 1;
+        if (ev.success) {
+          this.hedges += 1;
+          this.clearHedgeSkipsForPair(ev.pair);
+        }
         void this.tg.sendMessage(fmtHedge(ev));
+        break;
+      case 'hedge_skip':
+        this.hedgeSkipThresholdByPair.set(ev.pair, ev.threshold);
+        if (this.enterHedgeSkip(ev)) void this.tg.sendMessage(fmtHedgeSkip(ev));
         break;
       // 'order' / 'run' are intentionally not pinged.
     }
+  }
+
+  private hedgeSkipKey(ev: HedgeSkipEvent): string {
+    return `${ev.pair}\u0000${ev.reason}\u0000${ev.buy}`;
+  }
+
+  private enterHedgeSkip(ev: HedgeSkipEvent): boolean {
+    const key = this.hedgeSkipKey(ev);
+    if (this.activeHedgeSkips.has(key)) return false;
+    this.activeHedgeSkips.add(key);
+    return true;
+  }
+
+  private clearHedgeSkipsForPair(pair: string): void {
+    for (const key of [...this.activeHedgeSkips]) {
+      if (key.startsWith(`${pair}\u0000`)) this.activeHedgeSkips.delete(key);
+    }
+    this.hedgeSkipThresholdByPair.delete(pair);
+  }
+
+  private clearResolvedHedgeSkip(pair: string, net: number): void {
+    const threshold = this.hedgeSkipThresholdByPair.get(pair);
+    if (threshold == null || Math.abs(net) >= threshold) return;
+    this.clearHedgeSkipsForPair(pair);
   }
 
   /** Announce start: post the live dashboard card, or a one-line ping (legacy mode). */

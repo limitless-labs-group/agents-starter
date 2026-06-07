@@ -27,7 +27,9 @@ export interface LiveStatus {
   pnl: number | null;
   equity: number | null;
   hedges: number;
+  skippedHedges: number;
   lastFill: { pair: string; buy: 'YES' | 'NO'; shares: number; usd: number; at: number } | null;
+  lastHedgeSkip: { pair: string; reason: string; buy: 'YES' | 'NO'; shares: number; usd: number; net: number; at: number } | null;
   net: Array<{ pair: string; net: number }>;
   stopped: { reason: 'signal' | 'circuit-breaker'; flat: boolean | null; at: number } | null;
 }
@@ -59,7 +61,9 @@ export class StatusWriter {
       pnl: null,
       equity: null,
       hedges: 0,
+      skippedHedges: 0,
       lastFill: null,
+      lastHedgeSkip: null,
       net: [],
       stopped: null,
     };
@@ -88,6 +92,18 @@ export class StatusWriter {
             at: ev.t,
           };
         }
+        break;
+      case 'hedge_skip':
+        this.status.skippedHedges += 1;
+        this.status.lastHedgeSkip = {
+          pair: ev.pair,
+          reason: ev.reason,
+          buy: ev.buy,
+          shares: ev.shares,
+          usd: ev.usdc,
+          net: ev.net,
+          at: ev.t,
+        };
         break;
       default:
         return;

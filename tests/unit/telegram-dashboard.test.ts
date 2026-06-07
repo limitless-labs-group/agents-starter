@@ -93,6 +93,55 @@ describe('dashboardKeyboard', () => {
   });
 });
 
+describe('hedge_skip pings', () => {
+  it('pings only on transition into a skip state, then clears once resolved', () => {
+    const { client, tg } = harness();
+    const skip = {
+      t: 1,
+      kind: 'hedge_skip',
+      pair: 'btc-up',
+      reason: 'notional too small',
+      buy: 'YES',
+      shares: 5,
+      price: 0.19,
+      usdc: 0.95,
+      net: -5,
+      threshold: 2,
+    } as const;
+
+    tg.onEvent(skip);
+    tg.onEvent({ ...skip, t: 2 });
+    expect(client.sent.filter((s) => s.includes('Hedge skipped'))).toHaveLength(1);
+
+    tg.onEvent({ t: 3, kind: 'snapshot', pair: 'btc-up', net: 0, lmtsYes: 0, lmtsNo: 0, polyYes: 0, polyNo: 0 });
+    tg.onEvent({ ...skip, t: 4 });
+    expect(client.sent.filter((s) => s.includes('Hedge skipped'))).toHaveLength(2);
+  });
+
+  it('clears the skip state after a successful hedge on the pair', () => {
+    const { client, tg } = harness();
+    const skip = {
+      t: 1,
+      kind: 'hedge_skip',
+      pair: 'btc-up',
+      reason: 'notional too small',
+      buy: 'YES',
+      shares: 5,
+      price: 0.19,
+      usdc: 0.95,
+      net: -5,
+      threshold: 2,
+    } as const;
+
+    tg.onEvent(skip);
+    tg.onEvent({ t: 2, kind: 'hedge', pair: 'btc-up', buy: 'YES', shares: 5, price: 0.22, usdc: 1.1, success: true });
+    tg.onEvent({ ...skip, t: 3 });
+
+    expect(client.sent.filter((s) => s.includes('Hedge skipped'))).toHaveLength(2);
+    expect(client.sent.filter((s) => s.includes('Fill → hedged'))).toHaveLength(1);
+  });
+});
+
 // -- Control routing -------------------------------------------------------
 
 class FakeClient {

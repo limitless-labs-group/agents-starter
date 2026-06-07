@@ -154,7 +154,40 @@ export async function hedgeOnce(
       polyAsk: quote?.ask ?? null,
     });
 
-    if (!decision.shouldHedge) continue;
+    if (!decision.shouldHedge) {
+      // Do not spam normal flat/under-threshold heartbeats, but make every
+      // threshold-crossing no-action decision visible. This is the autonomous
+      // learning surface: dust gates / missing prices become searchable JSONL,
+      // status-file telemetry, panel events, and Telegram pings.
+      const surfaced = Math.abs(net) >= settings.hedgeThreshold;
+      if (surfaced) {
+        logger.warn(
+          {
+            slug: pair.polymarketSlug,
+            reason: decision.reason ?? 'unknown',
+            net: net.toFixed(2),
+            threshold: settings.hedgeThreshold,
+            buy: decision.buyYes ? 'YES' : 'NO',
+            shares: decision.amountShares.toFixed(2),
+            price: decision.pricePerShare.toFixed(4),
+            usdc: decision.notionalUsdc.toFixed(2),
+          },
+          'hedge skipped',
+        );
+        recorder?.record({
+          kind: 'hedge_skip',
+          pair: pair.polymarketSlug,
+          reason: decision.reason ?? 'unknown',
+          buy: decision.buyYes ? 'YES' : 'NO',
+          shares: decision.amountShares,
+          price: decision.pricePerShare,
+          usdc: decision.notionalUsdc,
+          net,
+          threshold: settings.hedgeThreshold,
+        });
+      }
+      continue;
+    }
 
     // Settle gate: if we hedged this pair within hedgeSettleMs, the Poly
     // position read above may not yet reflect that hedge — re-hedging now would
@@ -171,6 +204,17 @@ export async function hedgeOnce(
     const assetId = decision.buyYes ? pair.polyYesAssetId : pair.polyNoAssetId;
     if (!assetId) {
       logger.warn({ slug: pair.polymarketSlug }, 'hedge skipped: asset id missing');
+      recorder?.record({
+        kind: 'hedge_skip',
+        pair: pair.polymarketSlug,
+        reason: 'asset id missing',
+        buy: decision.buyYes ? 'YES' : 'NO',
+        shares: decision.amountShares,
+        price: decision.pricePerShare,
+        usdc: decision.notionalUsdc,
+        net,
+        threshold: settings.hedgeThreshold,
+      });
       continue;
     }
 
