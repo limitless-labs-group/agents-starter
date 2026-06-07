@@ -191,7 +191,12 @@ export async function main(): Promise<void> {
   //    (positions.json + fills.ndjson) so that panel renders this bot. The
   //    panel runs FROM the Academy, pointed at this data/ dir. --
   const panel = new PanelWriter(
-    { mode: settings.dryRun ? 'dry' : 'live', orderSize: settings.orderSize, marginBps: settings.marginBps },
+    {
+      mode: settings.dryRun ? 'dry' : 'live',
+      orderSize: settings.orderSize,
+      marginBps: settings.marginBps,
+      pairs: settings.pairs,
+    },
     dataDir,
   );
   recorder.subscribe((ev) => panel.onEvent(ev));

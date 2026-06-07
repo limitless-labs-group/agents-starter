@@ -17,7 +17,7 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-const mk = () => new PanelWriter({ mode: 'live', orderSize: 25, marginBps: 100 }, dir);
+const mk = () => new PanelWriter({ mode: 'live', orderSize: 25, marginBps: 100, pairs: [] }, dir);
 const readJson = (p: string) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const readFills = (w: PanelWriter) =>
   fs.readFileSync(w.fillsPath, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
@@ -83,6 +83,25 @@ describe('PanelWriter', () => {
     const fills = readFills(w).filter((f) => typeof f.price === 'number' && typeof f.shares === 'number');
     expect(fills).toHaveLength(1);
     expect(fills[0]).toMatchObject({ slug: 'a', side: 'NO', action: 'BUY', liquidity: 'taker', shares: 5, price: 0.44 });
+  });
+
+  it('joins order (Limitless slug) + snapshot (Polymarket slug) into ONE quote row', () => {
+    // order events key by limitlessSlug, snapshots by polymarketSlug; the pair
+    // map must collapse them to one row (this is the bug local testing caught).
+    const w = new PanelWriter(
+      { mode: 'live', orderSize: 25, marginBps: 100, pairs: [{ polymarketSlug: 'will-x', limitlessSlug: 'x-123' }] },
+      dir,
+    );
+    w.onEvent({ t: 1, kind: 'order', pair: 'x-123', side: 'YES', price: 0.55, size: 25, orderId: 'y' });
+    w.onEvent({ t: 2, kind: 'order', pair: 'x-123', side: 'NO', price: 0.41, size: 25, orderId: 'n' });
+    w.onEvent({ t: 3, kind: 'snapshot', pair: 'will-x', net: 2, lmtsYes: 0, lmtsNo: 0, polyYes: 0, polyNo: 0 });
+    const q = readJson(w.quotesPath);
+    expect(q).toHaveLength(1); // joined, not split into 2
+    expect(q[0].slug).toBe('will-x'); // canonical = polymarket slug
+    expect(q[0].bid.price).toBe(0.55);
+    expect(q[0].ask.price).toBe(0.59);
+    expect(q[0].net_inventory).toBe(2); // net joined onto the quoted row
+    expect(q[0].state).toBe('two_sided');
   });
 
   it('kill.flag: writes + detects', () => {
