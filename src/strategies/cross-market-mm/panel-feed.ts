@@ -37,6 +37,9 @@ export interface PanelInit {
   mode: 'live' | 'dry';
   orderSize: number;
   marginBps: number;
+  /** Pairs, so order events (keyed by Limitless slug) and snapshot/hedge events
+   *  (keyed by Polymarket slug) normalize to ONE row per pair in the panel. */
+  pairs: Array<{ polymarketSlug: string; limitlessSlug: string }>;
 }
 
 interface PanelPosition {
@@ -66,6 +69,7 @@ export class PanelWriter {
 
   private readonly orderSize: number;
   private readonly targetSpread: number;
+  private readonly canonBySlug = new Map<string, string>(); // either venue's slug -> one canonical pair key
   private readonly netByPair = new Map<string, number>();
   private readonly yesOrderByPair = new Map<string, Leg>();
   private readonly noOrderByPair = new Map<string, Leg>();
@@ -81,6 +85,12 @@ export class PanelWriter {
     this.pullFlagPath = path.join(dir, 'pull.flag');
     this.orderSize = init.orderSize;
     this.targetSpread = r4((2 * init.marginBps) / 10_000);
+    // Canonicalize both venue slugs to one key (the Polymarket slug) so the
+    // quote board (from order events) and inventory (from snapshots) join.
+    for (const p of init.pairs) {
+      this.canonBySlug.set(p.polymarketSlug, p.polymarketSlug);
+      this.canonBySlug.set(p.limitlessSlug, p.polymarketSlug);
+    }
     // Fresh display state per run (quotes/positions/fills). kill.flag is NOT
     // cleared here — a tripped breaker must stay tripped across restarts.
     this.writeQuotes();
@@ -97,7 +107,7 @@ export class PanelWriter {
         this.writeQuotes();
         break;
       case 'snapshot':
-        this.netByPair.set(ev.pair, ev.net);
+        this.netByPair.set(this.canon(ev.pair), ev.net);
         this.writePositions();
         this.writeQuotes(); // refresh inventory + pull-state on every tick
         break;
@@ -135,10 +145,15 @@ export class PanelWriter {
 
   // -- internals --
 
+  private canon(slug: string): string {
+    return this.canonBySlug.get(slug) ?? slug;
+  }
+
   private trackOrder(ev: OrderEvent): void {
+    const slug = this.canon(ev.pair);
     const leg: Leg = { price: r4(ev.price), shares: ev.size, order_id: ev.orderId };
-    if (ev.side === 'YES') this.yesOrderByPair.set(ev.pair, leg);
-    else this.noOrderByPair.set(ev.pair, leg);
+    if (ev.side === 'YES') this.yesOrderByPair.set(slug, leg);
+    else this.noOrderByPair.set(slug, leg);
   }
 
   private appendFill(ev: HedgeEvent): void {
@@ -146,7 +161,7 @@ export class PanelWriter {
     // Polymarket buys: action BUY, liquidity taker (honest, not decorative).
     this.append({
       ts: new Date().toISOString(),
-      slug: ev.pair,
+      slug: this.canon(ev.pair),
       side: ev.buy,
       action: 'BUY',
       liquidity: 'taker',
