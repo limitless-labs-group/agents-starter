@@ -58,17 +58,25 @@ export class TelegramClient {
   constructor(
     private readonly botToken: string,
     private readonly chatId: string,
+    /** Optional forum-topic thread to post into (Telegram `message_thread_id`). */
+    private readonly threadId?: string,
   ) {}
 
   /**
-   * Build from `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`. Returns null if either
-   * is unset — callers use that to mean "Telegram monitoring is off".
+   * Build from `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` (+ optional
+   * `TELEGRAM_THREAD_ID` to target one forum topic). Returns null if the token
+   * or chat is unset — callers use that to mean "Telegram monitoring is off".
    */
   static fromEnv(): TelegramClient | null {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
     if (!botToken || !chatId) return null;
-    return new TelegramClient(botToken, chatId);
+    return new TelegramClient(botToken, chatId, process.env.TELEGRAM_THREAD_ID || undefined);
+  }
+
+  /** `message_thread_id` payload fragment when a forum topic is configured. */
+  private get threadField(): { message_thread_id: number } | Record<string, never> {
+    return this.threadId ? { message_thread_id: Number(this.threadId) } : {};
   }
 
   /** The single chat authorized to issue commands and receive messages. */
@@ -84,6 +92,7 @@ export class TelegramClient {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           chat_id: this.chatId,
+          ...this.threadField,
           text,
           parse_mode: 'HTML',
           disable_web_page_preview: true,
@@ -148,6 +157,7 @@ export class TelegramClient {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           chat_id: this.chatId,
+          ...this.threadField,
           text,
           parse_mode: 'HTML',
           disable_web_page_preview: true,
