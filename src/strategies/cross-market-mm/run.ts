@@ -264,6 +264,18 @@ export async function main(): Promise<void> {
   }, 3000);
   killWatch.unref?.();
 
+  // Shared market-data client for the replicator's competitive quoting (reads
+  // the Limitless book each requote). One instance, reused across pairs.
+  const md = new LimitlessClient();
+  // The order API quantizes prices to whole cents, so a margin below one cent
+  // is a no-op. Warn so a sub-tick margin_bps isn't mistaken for a live knob.
+  if (settings.marginBps < 100) {
+    logger.warn(
+      { marginBps: settings.marginBps, oneTickBps: 100 },
+      'margin_bps is below one tick (1 cent = 100 bps): after cent-rounding the quote keeps under a tick of edge',
+    );
+  }
+
   // -- Spawn tasks under a shared AbortController --
   const tasks: Promise<void>[] = [
     runPolyWs(feed, assetToSlug, yesAssets, ac.signal),
@@ -274,7 +286,7 @@ export async function main(): Promise<void> {
       onKill,
     }),
     ...settings.pairs.map((pair) =>
-      runReplicator(pair, feed, trading, settings, ac.signal, recorder, panel.pullFlagPath),
+      runReplicator(pair, feed, trading, md, settings, ac.signal, recorder, panel.pullFlagPath),
     ),
   ];
   // Telegram dashboard inbound loop (/status + halt-only buttons). Abort-aware,
