@@ -435,6 +435,54 @@ full before trusting a match.
 
 ---
 
+### 8.1 Continual market-experiment loop
+
+Treat each new market set as an experiment, not just a config edit. The durable
+loop is:
+
+```text
+discover candidates
+→ manually verify equivalence
+→ patch config as an experiment snapshot
+→ clean-book gate
+→ test/build/preflight/status gate
+→ tracked live run
+→ analyze JSONL/status evidence
+→ convert friction into tests/config guards/status fields/watchdogs/runbook notes
+→ repeat with new markets resiliently
+```
+
+Use this loop when rotating markets:
+
+1. **Capture the hypothesis:** why these markets should work — high taker flow,
+   reward eligibility, clean equivalence, balanced books, upcoming catalyst, or
+   a controlled safety test.
+2. **Discover candidates:** run `cross-market-mm:find-pairs`; prefer short-window
+   crypto / active event markets when the goal is fill velocity; start with 1–3
+   pairs to limit cancel/replace pressure.
+3. **Verify equivalence manually:** same entity, threshold/window, resolution
+   source, polarity, and cancellation/fallback logic. Title similarity is not
+   enough.
+4. **Patch config as a snapshot:** selected slugs, order size, hedge threshold,
+   margin, loss cap, and rationale. Size orders so a full-fill hedge clears the
+   Polymarket minimum notional on both possible fill sides.
+5. **Clean-book gate:** stop/close the current run deliberately, then verify zero
+   live orders and acceptable inventory across configured and stale/orphan
+   markets before restarting.
+6. **Preflight gate:** `npm test`, `npm run build`,
+   `npm run cross-market-mm:preflight`, and `npm run cross-market-mm:status`.
+   Do not restart live until all pass.
+7. **Run with telemetry:** tracked process, boot-clean confirmation, auth OK,
+   resolved markets, WS connected, orders placed, watchdog/pinned status enabled.
+8. **Analyze and compound:** run `cross-market-mm:analyze`, inspect JSONL for
+   fills/hedges/`hedge_skip`/order failures, then convert every friction into a
+   guard, test, status field, alert, code patch, or runbook note.
+
+The strategy should be able to rotate into new markets resiliently without
+hidden operator folklore.
+
+---
+
 ## 9. Capital math, economics, and invariants
 
 ### Capital locked

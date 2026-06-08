@@ -85,6 +85,30 @@ describe('PanelWriter', () => {
     expect(fills[0]).toMatchObject({ slug: 'a', side: 'NO', action: 'BUY', liquidity: 'taker', shares: 5, price: 0.44 });
   });
 
+  it('records hedge_skip as a non-fill learning event', () => {
+    const w = mk();
+    w.onEvent({
+      t: 2,
+      kind: 'hedge_skip',
+      pair: 'a',
+      reason: 'notional too small',
+      buy: 'YES',
+      shares: 5,
+      price: 0.19,
+      usdc: 0.95,
+      net: -5,
+      threshold: 2,
+    });
+    const rows = readFills(w);
+    expect(rows).toContainEqual(
+      expect.objectContaining({ event: 'hedge_skip', slug: 'a', reason: 'notional too small', would_usdc: 0.95 }),
+    );
+    expect(rows[0]).not.toHaveProperty('price');
+    expect(rows[0]).not.toHaveProperty('shares');
+    const fills = rows.filter((f) => typeof f.price === 'number' && typeof f.action === 'string');
+    expect(fills).toHaveLength(0);
+  });
+
   it('joins order (Limitless slug) + snapshot (Polymarket slug) into ONE quote row', () => {
     // order events key by limitlessSlug, snapshots by polymarketSlug; the pair
     // map must collapse them to one row (this is the bug local testing caught).

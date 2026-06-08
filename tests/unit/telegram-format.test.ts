@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   fmtStarted,
   fmtHedge,
+  fmtHedgeSkip,
   fmtHeartbeat,
   fmtHalted,
 } from '../../src/strategies/cross-market-mm/telegram.js';
@@ -39,6 +40,26 @@ describe('fmtHedge', () => {
   it('flags a failed hedge', () => {
     const s = fmtHedge({ kind: 'hedge', pair: 'btc-up', buy: 'YES', shares: 3, price: 0.6, usdc: 1.8, success: false });
     expect(s).toContain('Hedge failed');
+  });
+});
+
+describe('fmtHedgeSkip', () => {
+  it('renders a skipped hedge reason with net and would-buy details', () => {
+    const s = fmtHedgeSkip({
+      kind: 'hedge_skip',
+      pair: 'btc-up',
+      reason: 'notional too small',
+      buy: 'YES',
+      shares: 5,
+      price: 0.19,
+      usdc: 0.95,
+      net: -5,
+      threshold: 2,
+    });
+    expect(s).toContain('Hedge skipped');
+    expect(s).toContain('notional too small');
+    expect(s).toContain('net -5.00');
+    expect(s).toContain('$0.95');
   });
 });
 

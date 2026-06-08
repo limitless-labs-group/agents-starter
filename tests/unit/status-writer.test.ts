@@ -27,6 +27,8 @@ describe('StatusWriter', () => {
     expect(s.pairs).toBe(2);
     expect(s.breaker.maxLossUsd).toBe(30);
     expect(s.breaker.tripped).toBe(false);
+    expect(s.skippedHedges).toBe(0);
+    expect(s.lastHedgeSkip).toBeNull();
     expect(s.pnl).toBeNull();
     expect(s.stopped).toBeNull();
   });
@@ -51,6 +53,25 @@ describe('StatusWriter', () => {
     const s = read(w);
     expect(s.hedges).toBe(0);
     expect(s.lastFill).toBeNull();
+  });
+
+  it('folds hedge_skip events into the snapshot', () => {
+    const w = new StatusWriter({ mode: 'live', pairs: 1, orderSize: 5, maxLossUsd: 10 }, dir);
+    w.onEvent({
+      t: 4,
+      kind: 'hedge_skip',
+      pair: 'btc-up',
+      reason: 'notional too small',
+      buy: 'YES',
+      shares: 5,
+      price: 0.19,
+      usdc: 0.95,
+      net: -5,
+      threshold: 2,
+    });
+    const s = read(w);
+    expect(s.skippedHedges).toBe(1);
+    expect(s.lastHedgeSkip).toMatchObject({ pair: 'btc-up', reason: 'notional too small', usd: 0.95, net: -5 });
   });
 
   it('records breaker trip and stop', () => {
