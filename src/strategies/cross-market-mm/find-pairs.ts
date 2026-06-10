@@ -3,12 +3,15 @@
  *
  * Queries Limitless's active CLOB markets and Polymarket's active binary
  * markets, matches them by title-token similarity, then **filters and ranks
- * by liquidity** so you don't end up quoting inside a thin, skewed book (no
- * fills, lopsided capital). Prints a shortlist as paste-ready YAML.
+ * by liquidity and recent flow** so you don't end up quoting inside a thin,
+ * skewed, or dead book (no fills, lopsided capital, adverse selection).
+ * Prints a shortlist as paste-ready YAML.
  *
  * "Not thin" here means: Polymarket has a live orderbook with a tight spread
- * and a balanced price (so both YES/NO legs are reasonably sized), and the
- * Limitless market has some traded volume (so your resting quotes can fill).
+ * and a balanced price (so both YES/NO legs are reasonably sized), the
+ * Limitless market has some traded volume, AND someone has actually traded it
+ * recently (read from the public `GET /markets/{slug}/events` feed) — lifetime
+ * volume alone happily shortlists markets nobody touches anymore.
  *
  * Usage:
  *   npm run cross-market-mm:find-pairs
@@ -26,6 +29,7 @@ import 'dotenv/config';
 import { LimitlessClient } from '../../core/limitless/markets.js';
 
 const POLYMARKET_GAMMA_API = 'https://gamma-api.polymarket.com';
+const LMTS_API_BASE = process.env.LIMITLESS_API_URL || 'https://api.limitless.exchange';
 const TITLE_SIMILARITY_THRESHOLD = 0.4;
 const TOP_N = 10;
 
@@ -36,6 +40,12 @@ const MAX_POLY_SPREAD = 0.05; // max bid/ask gap we'll quote inside (5 cents)
 const PRICE_MIN = 0.1; // avoid extreme/skewed books (e.g. 7% longshots)
 const PRICE_MAX = 0.9; //   where one leg locks ~all the capital
 const MIN_LMTS_VOLUME = 100; // some traded volume on the Limitless side
+// Flow gate. Lifetime volume says nothing about whether anyone trades the
+// market NOW, and a quote resting in a dead market is pure adverse-selection
+// exposure: the only counterparty left is someone who knows something. A
+// candidate whose newest Limitless trade is older than this is demoted to the
+// thin list even when its book and lifetime volume look fine.
+const MAX_LMTS_LAST_TRADE_HOURS = 48;
 
 // Generic prediction-market noise — drop before computing similarity so the
 // signal-bearing tokens (asset names, numbers, dates) dominate the score.
@@ -217,9 +227,50 @@ interface Candidate {
   polyEventSlug: string;
   score: number;
   poly: PolyMarket;
+  flow?: LmtsFlow;
 }
 
-/** Does the Polymarket book clear the liquidity gates? */
+/** Recent Limitless taker flow, read from the public per-market event feed. */
+interface LmtsFlow {
+  lastTradeAgeHours: number | null; // null = no trades in the feed at all
+  trades24h: number; // capped by the page size; 50 means "50 or more"
+}
+
+const FLOW_PAGE_LIMIT = 50;
+
+/**
+ * Read a market's recent trades from `GET /markets/{slug}/events` (public,
+ * newest first). Failures return undefined so flow stays an *unknown*, not a
+ * fake zero — an API hiccup must not demote a good candidate.
+ */
+async function fetchLmtsFlow(baseUrl: string, slug: string): Promise<LmtsFlow | undefined> {
+  try {
+    const res = await fetch(`${baseUrl}/markets/${slug}/events?limit=${FLOW_PAGE_LIMIT}`);
+    if (!res.ok) return undefined;
+    const body = (await res.json()) as { events?: Array<{ createdAt?: string }> };
+    const times = (body.events ?? [])
+      .map((e) => Date.parse(e.createdAt ?? ''))
+      .filter((t) => Number.isFinite(t));
+    if (times.length === 0) return { lastTradeAgeHours: null, trades24h: 0 };
+    const now = Date.now();
+    const newest = Math.max(...times);
+    return {
+      lastTradeAgeHours: (now - newest) / 3_600_000,
+      trades24h: times.filter((t) => now - t <= 86_400_000).length,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Is the Limitless side actively traded? Unknown flow passes (see fetchLmtsFlow). */
+function isFresh(c: Candidate): boolean {
+  if (!c.flow) return true; // flow unknown — don't demote on a failed read
+  if (c.flow.lastTradeAgeHours == null) return false; // never traded
+  return c.flow.lastTradeAgeHours <= MAX_LMTS_LAST_TRADE_HOURS;
+}
+
+/** Does the Polymarket book clear the liquidity gates (and the flow gate)? */
 function isLiquid(c: Candidate): boolean {
   const mid = (c.poly.bestBid + c.poly.bestAsk) / 2;
   return (
@@ -229,7 +280,8 @@ function isLiquid(c: Candidate): boolean {
     c.poly.spread <= MAX_POLY_SPREAD &&
     mid >= PRICE_MIN &&
     mid <= PRICE_MAX &&
-    c.lmtsVolume >= MIN_LMTS_VOLUME
+    c.lmtsVolume >= MIN_LMTS_VOLUME &&
+    isFresh(c)
   );
 }
 
@@ -244,6 +296,13 @@ function candidateJson(c: Candidate): Record<string, unknown> {
     limitlessTitle: c.lmtsTitle,
     polymarketTitle: c.polyTitle,
     limitlessVolume: c.lmtsVolume,
+    limitlessFlow: c.flow
+      ? {
+          lastTradeAgeHours:
+            c.flow.lastTradeAgeHours == null ? null : Number(c.flow.lastTradeAgeHours.toFixed(1)),
+          trades24h: c.flow.trades24h,
+        }
+      : null, // null = not checked (only book-gate survivors are checked)
     poly: {
       liquidity: c.poly.liquidity,
       volume24hr: c.poly.volume24hr,
@@ -263,7 +322,12 @@ function printCandidate(c: Candidate): void {
     console.log(`# 🛑 POLARITY RISK: ${polarity} — these may resolve OPPOSITE.`);
     console.log(`#    Do NOT use this pair unless you confirm both resolve the SAME way.`);
   }
-  console.log(`# Limitless:  ${c.lmtsTitle}  (vol ${c.lmtsVolume.toFixed(0)})`);
+  const flow = c.flow
+    ? c.flow.lastTradeAgeHours == null
+      ? ' | flow: NO TRADES'
+      : ` | flow: ${c.flow.trades24h}${c.flow.trades24h >= FLOW_PAGE_LIMIT ? '+' : ''} trades/24h, last ${c.flow.lastTradeAgeHours.toFixed(1)}h ago`
+    : '';
+  console.log(`# Limitless:  ${c.lmtsTitle}  (vol ${c.lmtsVolume.toFixed(0)}${flow})`);
   console.log(`# Polymarket: ${c.polyTitle}`);
   console.log(
     `#   poly: liq $${c.poly.liquidity.toFixed(0)} | 24h vol $${c.poly.volume24hr.toFixed(0)} | ` +
@@ -339,6 +403,20 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Flow enrichment: read recent Limitless trades for every candidate that
+  // clears the book/volume gates (flow can only demote those, so the others
+  // don't need the API calls). Chunked to stay polite to the public endpoint.
+  const preLiquid = candidates.filter(isLiquid);
+  progress(`Checking recent Limitless flow on ${preLiquid.length} candidate(s)…`);
+  const CHUNK = 8;
+  for (let i = 0; i < preLiquid.length; i += CHUNK) {
+    const chunk = preLiquid.slice(i, i + CHUNK);
+    const flows = await Promise.all(chunk.map((c) => fetchLmtsFlow(LMTS_API_BASE, c.lmtsSlug)));
+    chunk.forEach((c, j) => {
+      c.flow = flows[j];
+    });
+  }
+
   // Rank liquid candidates by title similarity first (a high score is the
   // best proxy we have for "actually the same market"), then by Polymarket
   // book liquidity as a tiebreak. Ranking by liquidity alone floats up
@@ -374,7 +452,8 @@ async function main(): Promise<void> {
     console.log(
       `## ${Math.min(liquid.length, TOP_N)} LIQUID pair(s) ` +
         `(poly liq ≥ $${MIN_POLY_LIQUIDITY}, spread ≤ ${MAX_POLY_SPREAD}, ` +
-        `price ${PRICE_MIN}-${PRICE_MAX}, lmts vol ≥ ${MIN_LMTS_VOLUME}):`,
+        `price ${PRICE_MIN}-${PRICE_MAX}, lmts vol ≥ ${MIN_LMTS_VOLUME}, ` +
+        `lmts traded within ${MAX_LMTS_LAST_TRADE_HOURS}h):`,
     );
     console.log();
     for (const c of liquid.slice(0, TOP_N)) printCandidate(c);
