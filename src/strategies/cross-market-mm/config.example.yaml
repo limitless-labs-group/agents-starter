@@ -43,6 +43,14 @@ hedge_settle_ms: 12000
 # comfortably under the limit. Lower only for a single pair, watching for 429s.
 min_requote_ms: 2000
 
+# Diff-requoter liveness check (ms). When neither quote moved on the cent grid
+# the bot leaves both orders RESTING (keeping their price-time queue position,
+# instead of cancel-replacing identical quotes every cycle). A fill consumes a
+# resting order silently, so it re-confirms both orders are still live this
+# often. 10s bounds the unquoted window to the same range as the hedger
+# interval; raising it saves API reads, lowering it buys little.
+liveness_check_ms: 10000
+
 # --- Safety -----------------------------------------------------------------
 # Hard loss circuit-breaker: if marked equity (pUSD + Base USDC + position
 # value) drops this many dollars below the run's starting equity, the bot

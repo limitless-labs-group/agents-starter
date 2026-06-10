@@ -3,7 +3,8 @@
  *
  * Strategy invariants (see README):
  *   1. Both Limitless quotes are BUY (YES at poly_bid - margin, NO at (1 - poly_ask) - margin).
- *   2. Cancel-all + replace every tick (no diff optimizer).
+ *   2. Diff requoter: unchanged whole-cent quotes stay resting (queue position
+ *      preserved); any uncertainty degrades to cancel-all + replace.
  *   3. Hedge always BUYs on Polymarket (FAK).
  *   4. YES-frame is canonical (poly_ws inverts NO updates).
  */
@@ -39,11 +40,16 @@ export interface ReplicatorSettings {
   // without this the hedger re-reads a stale (pre-hedge) position and fires the
   // SAME hedge again, over-trading. Must exceed the data-api settle lag.
   hedgeSettleMs: number;
-  // Floor on re-quote frequency per pair (ms). Cancel-replace still fires every
+  // Floor on re-quote frequency per pair (ms). The quote cycle still runs every
   // tick, but coalesces bursts to at most one cycle per this interval, always
   // quoting the freshest book. Prevents the Limitless API Cloudflare rate-limit
   // (429/1015) that an unthrottled multi-pair run trips on sustained operation.
   minRequoteMs: number;
+  // How often (ms) the diff requoter confirms both resting orders are still
+  // live while it skips unchanged quotes. A fill consumes an order silently;
+  // this bounds how long a consumed side can sit unquoted. Keep it in the same
+  // range as the hedger interval — checking much faster buys nothing.
+  livenessCheckMs: number;
   maxLossUsd: number; // circuit breaker: halt + cancel-all if equity drawdown ≥ this
   flattenOnStop: boolean; // on Ctrl-C/breaker, also SELL inventory to flat (both venues), not just cancel orders
   dryRun: boolean; // log intents, don't sign or POST

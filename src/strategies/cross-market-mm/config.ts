@@ -45,6 +45,8 @@ interface YamlConfig {
   hedgeSettleMs?: number;
   min_requote_ms?: number;
   minRequoteMs?: number;
+  liveness_check_ms?: number;
+  livenessCheckMs?: number;
   max_loss_usd?: number;
   maxLossUsd?: number;
   flatten_on_stop?: boolean;
@@ -146,6 +148,10 @@ export function loadSettings(): ReplicatorSettings {
     // limit while staying responsive. Lower it only if a single pair needs
     // tighter tracking and you've confirmed you're not getting 429s.
     minRequoteMs: Number(raw.min_requote_ms ?? raw.minRequoteMs ?? 2000),
+    // Default 10s: bounds how long a silently-filled side can sit unquoted
+    // while the diff requoter skips unchanged quotes. Same range as the
+    // hedger interval (5s) and the order POST's own pre-match latency.
+    livenessCheckMs: Number(raw.liveness_check_ms ?? raw.livenessCheckMs ?? 10000),
     maxLossUsd: Number(
       process.env.REPLICATOR_MAX_LOSS_USD ?? raw.max_loss_usd ?? raw.maxLossUsd ?? 10,
     ),
