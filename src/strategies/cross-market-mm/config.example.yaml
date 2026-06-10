@@ -25,7 +25,12 @@ poly_signature_type: 3
 
 # --- Trading parameters -----------------------------------------------------
 order_size: 5          # shares per order (same N on YES and NO sides) — start small
-margin_bps: 100        # how much *inside* the Poly price we quote (100 = 1%)
+# How much *inside* the Poly price we quote (100 = 1%). Treat ~100 as the
+# FLOOR, not a starting point to tighten: a 31h recorded run quoting ~30bps of
+# gross edge sat below the measured round-trip cost of a hedged fill (hedge
+# slippage + adverse selection, ~50bps on far-dated markets), i.e. every fill
+# lost money on average. Thinner only makes sense with maker rebates.
+margin_bps: 100
 hedge_threshold: 2.0   # hedge when |net exposure| in shares exceeds this
 hedge_interval: 5      # seconds between hedge ticks
 # After a hedge fires on a pair, don't hedge that pair again for this long. The
@@ -42,6 +47,14 @@ hedge_settle_ms: 12000
 # Cloudflare rate-limit (429/1015) on sustained runs. 2000ms keeps a 3-pair run
 # comfortably under the limit. Lower only for a single pair, watching for 429s.
 min_requote_ms: 2000
+
+# Diff-requoter liveness check (ms). When neither quote moved on the cent grid
+# the bot leaves both orders RESTING (keeping their price-time queue position,
+# instead of cancel-replacing identical quotes every cycle). A fill consumes a
+# resting order silently, so it re-confirms both orders are still live this
+# often. 10s bounds the unquoted window to the same range as the hedger
+# interval; raising it saves API reads, lowering it buys little.
+liveness_check_ms: 10000
 
 # --- Safety -----------------------------------------------------------------
 # Hard loss circuit-breaker: if marked equity (pUSD + Base USDC + position

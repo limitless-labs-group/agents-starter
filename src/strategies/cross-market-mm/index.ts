@@ -5,11 +5,16 @@
  *   1. Wait for the WS to push a new Poly quote for the pair's slug.
  *   2. Read latest YES-frame Poly bid/ask (the fair value to hedge against).
  *   3. Fetch the Limitless book so we quote competitively, not blind.
- *   4. Cancel every open Limitless order on the pair.
- *   5. Place fresh YES-bid + NO-bid BUY orders: as aggressive as profitable,
- *      capped at fair value, one tick inside the resting Limitless book.
+ *   4. Diff the desired quotes against what we last placed: when neither side
+ *      moved on the cent grid and both orders still rest, do nothing; when one
+ *      side moved, cancel-replace just that side; otherwise cancel-all + replace.
  *
- * Cancel-all + replace every tick. No diff optimizer.
+ * Why the diff matters: a 31h recorded run showed ~100% of cancel-replace
+ * cycles re-placed the SAME whole-cent price every ~2s. On a price-time
+ * priority book that resets our queue position thousands of times a day, so
+ * benign flow never reaches us and fills skew to adverse selection (price
+ * trading through the quote). Resting unchanged orders keep their queue spot
+ * and cut API writes from cancel+2 posts per tick to zero in the steady state.
  *
  * Strategy invariants:
  *   - Both Limitless quotes are BUY. We never SELL on Limitless.
@@ -20,6 +25,8 @@
  *     The Limitless book only ever makes us MORE competitive UP TO that cap; an
  *     empty or misread book degrades to fair-value-only quoting, never to an
  *     unprofitable quote.
+ *   - Any uncertainty (no confirmed resting state, a missing order, a failed
+ *     single-side cancel) degrades to cancel-all + replace, the prior behavior.
  *   - On shutdown (AbortSignal), cancel-all so we don't leave orphans.
  */
 
@@ -99,6 +106,54 @@ export function computeBuyPrices(
   return { yes: clipPrice(yes), no: clipPrice(no) };
 }
 
+/** One side's last confirmed placement: whole-cent price + the order id. */
+export interface SidePlacement {
+  cents: number;
+  orderId?: string;
+}
+
+/** What we believe is resting on the book for a pair. Reset on any cancel-all. */
+export interface QuoteMemo {
+  yes?: SidePlacement;
+  no?: SidePlacement;
+}
+
+export type RequotePlan =
+  | { action: 'skip' }
+  | { action: 'replace_side'; side: 'YES' | 'NO' }
+  | { action: 'replace_all' };
+
+/**
+ * Pure requote decision, exposed for testing.
+ *
+ * `bothLive` is the caller's (throttled) liveness read: `true` = both orders
+ * confirmed resting, `false` = at least one is gone (filled or cancelled),
+ * `null` = not checked this tick (trust the memo until the next check).
+ *
+ * Decision table:
+ *   - No confirmed placement (missing side or order id) -> replace_all.
+ *   - A side is gone (`bothLive === false`) -> replace_all (re-establish clean).
+ *   - Neither side moved on the cent grid -> skip (keep queue position).
+ *   - Exactly one side moved -> replace just that side; the other keeps its spot.
+ *   - Both sides moved -> replace_all.
+ */
+export function planRequote(
+  desiredYesCents: number,
+  desiredNoCents: number,
+  memo: QuoteMemo,
+  bothLive: boolean | null,
+): RequotePlan {
+  if (!memo.yes?.orderId || !memo.no?.orderId) return { action: 'replace_all' };
+  if (bothLive === false) return { action: 'replace_all' };
+
+  const yesSame = memo.yes.cents === desiredYesCents;
+  const noSame = memo.no.cents === desiredNoCents;
+
+  if (yesSame && noSame) return { action: 'skip' };
+  if (yesSame !== noSame) return { action: 'replace_side', side: yesSame ? 'NO' : 'YES' };
+  return { action: 'replace_all' };
+}
+
 async function maybePlace(
   trading: SDKTradingClient,
   pair: MarketPair,
@@ -106,9 +161,9 @@ async function maybePlace(
   size: number,
   isYes: boolean,
   recorder?: Recorder,
-): Promise<void> {
+): Promise<SidePlacement | undefined> {
   // Last-mile range gate. Same shape as the Python `_maybe_place`.
-  if (!(price > 0 && price < 1) || size < 1) return;
+  if (!(price > 0 && price < 1) || size < 1) return undefined;
   try {
     const res = await trading.createOrder({
       marketSlug: pair.limitlessSlug,
@@ -118,16 +173,19 @@ async function maybePlace(
       orderType: 'GTC',
       postOnly: true,
     });
+    const orderId = (res as { order?: { id?: string } })?.order?.id;
     recorder?.record({
       kind: 'order',
       pair: pair.limitlessSlug,
       side: isYes ? 'YES' : 'NO',
       price,
       size,
-      orderId: (res as { order?: { id?: string } })?.order?.id,
+      orderId,
     });
+    return { cents: Math.round(price * 100), orderId };
   } catch (err) {
     logger.warn({ err: (err as Error).message, slug: pair.limitlessSlug }, 'place_order failed');
+    return undefined;
   }
 }
 
@@ -138,8 +196,10 @@ async function replicateOnce(
   trading: SDKTradingClient,
   settings: ReplicatorSettings,
   markets: LimitlessClient | undefined,
-  recorder?: Recorder,
-): Promise<void> {
+  recorder: Recorder | undefined,
+  memo: QuoteMemo,
+  bothLive: boolean | null,
+): Promise<QuoteMemo> {
   // Read the Limitless book so we quote competitively. Best-effort: a failed
   // fetch degrades to fair-value-only quoting (the prior behavior), never blocks.
   let yesBook: BookTop | undefined;
@@ -157,16 +217,48 @@ async function replicateOnce(
     settings.marginBps,
     yesBook,
   );
+  const yesCents = Math.round(yesPrice * 100);
+  const noCents = Math.round(noPrice * 100);
 
-  // Cancel-all first so the new pair lands on a clean book for our maker.
+  const plan = planRequote(yesCents, noCents, memo, bothLive);
+
+  if (plan.action === 'skip') return memo;
+
+  if (plan.action === 'replace_side') {
+    // Cancel just the moved side; the other order keeps its queue position.
+    // A failed single-side cancel falls through to cancel-all + replace so we
+    // never risk doubling up a side.
+    const side = plan.side;
+    const placed = side === 'YES' ? memo.yes : memo.no;
+    try {
+      if (placed?.orderId) await trading.cancelOrder(placed.orderId);
+      const fresh = await maybePlace(
+        trading,
+        pair,
+        side === 'YES' ? yesPrice : noPrice,
+        settings.orderSize,
+        side === 'YES',
+        recorder,
+      );
+      return side === 'YES' ? { ...memo, yes: fresh } : { ...memo, no: fresh };
+    } catch (err) {
+      logger.warn(
+        { err: (err as Error).message, slug: pair.limitlessSlug, side },
+        'single-side replace failed — falling back to cancel-all',
+      );
+    }
+  }
+
+  // replace_all (and the replace_side fallback): clean book, then both sides.
   await trading.cancelAll(pair.limitlessSlug);
 
   // Both sides fire concurrently. maybePlace logs (doesn't throw) on rejects
   // so a YES failure doesn't block the NO leg.
-  await Promise.all([
+  const [yes, no] = await Promise.all([
     maybePlace(trading, pair, yesPrice, settings.orderSize, true, recorder),
     maybePlace(trading, pair, noPrice, settings.orderSize, false, recorder),
   ]);
+  return { yes, no };
 }
 
 /**
@@ -193,14 +285,16 @@ export async function runReplicator(
   );
 
   let lastRequoteAt = 0;
+  let memo: QuoteMemo = {};
+  let lastLivenessAt = 0;
   try {
     while (!signal.aborted) {
       await feed.nextUpdate(slug, signal);
       if (signal.aborted) break;
 
-      // Re-quote throttle: cancel-replace still fires every cycle, but at most
-      // once per minRequoteMs per pair. Poly ticks many times/sec; without this
-      // floor a multi-pair run trips the Limitless API rate-limit (429/1015) on
+      // Re-quote throttle: the quote cycle still runs at most once per
+      // minRequoteMs per pair. Poly ticks many times/sec; without this floor a
+      // multi-pair run trips the Limitless API rate-limit (429/1015) on
       // sustained operation. We sleep off the remainder, then re-read so we
       // always quote the FRESHEST book — coalescing the burst, not lagging it.
       const sinceLast = Date.now() - lastRequoteAt;
@@ -215,6 +309,7 @@ export async function runReplicator(
       if (pullFlagPath && fs.existsSync(pullFlagPath)) {
         if (!pulled) {
           pulled = true;
+          memo = {}; // book is about to be cleaned — forget placements
           await trading.cancelAllAndVerify(pair.limitlessSlug).catch(() => {});
           logger.warn({ slug }, 'quotes pulled (pull.flag present) — holding; hedger still manages inventory');
         }
@@ -225,10 +320,38 @@ export async function runReplicator(
       const quote = feed.getQuote(slug);
       if (!quote || quote.bid == null || quote.ask == null) continue;
 
+      // Throttled liveness read: a fill consumes a resting order silently, so
+      // when the diff says "nothing moved" we still confirm both orders rest,
+      // at most once per livenessCheckMs. Between checks we trust the memo
+      // (bothLive = null); the exposure window is bounded by the check cadence,
+      // the same order of magnitude as the hedger interval. -1 (read failed)
+      // maps to null, not false — a flaky read must not trigger a replace storm.
+      // DRY_RUN: no real orders exist to read, so treat the memo as live; the
+      // diff logic then runs exactly as it would in production.
+      let bothLive: boolean | null = null;
+      if (settings.dryRun) {
+        bothLive = true;
+      } else if (Date.now() - lastLivenessAt >= settings.livenessCheckMs) {
+        lastLivenessAt = Date.now();
+        const n = await trading.countLiveOrders(pair.limitlessSlug);
+        bothLive = n < 0 ? null : n === 2;
+      }
+
       lastRequoteAt = Date.now();
       try {
-        await replicateOnce(pair, quote.bid, quote.ask, trading, settings, markets, recorder);
+        memo = await replicateOnce(
+          pair,
+          quote.bid,
+          quote.ask,
+          trading,
+          settings,
+          markets,
+          recorder,
+          memo,
+          bothLive,
+        );
       } catch (err) {
+        memo = {}; // unknown book state after a failed cycle — next tick replaces all
         logger.warn({ err: (err as Error).message, slug }, 'replicate tick failed');
         // small backoff so we don't tight-loop on a persistent error
         await new Promise((r) => setTimeout(r, 1000));
