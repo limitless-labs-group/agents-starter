@@ -40,16 +40,52 @@ describe('RiskMonitor', () => {
     expect(res.tripped).toBe(false);
   });
 
-  it('trips when drawdown meets the kill threshold', () => {
-    const r = new RiskMonitor(10);
+  it('trips immediately when requiredBreaches = 1', () => {
+    const r = new RiskMonitor(10, 1);
     r.update(50);
-    const res = r.update(40); // -10
+    const res = r.update(40); // -10, one breach is enough
     expect(res.tripped).toBe(true);
     expect(r.isTripped()).toBe(true);
   });
 
+  it('does NOT trip on a single breach under the default (needs consecutive confirmation)', () => {
+    const r = new RiskMonitor(10); // default requiredBreaches = 3
+    r.update(50);
+    const res = r.update(40); // -10, but only one breach
+    expect(res.pnl).toBe(-10);
+    expect(res.tripped).toBe(false);
+  });
+
+  it('trips only after requiredBreaches consecutive breaches', () => {
+    const r = new RiskMonitor(10, 3);
+    r.update(50);
+    expect(r.update(40).tripped).toBe(false); // breach 1
+    expect(r.update(40).tripped).toBe(false); // breach 2
+    expect(r.update(40).tripped).toBe(true); // breach 3 -> trip
+  });
+
+  it('a recovery resets the streak — a transient bad mark cannot trip (the Jun-12 false trip)', () => {
+    const r = new RiskMonitor(10, 3);
+    r.update(50);
+    r.update(40); // breach 1 (e.g. a one-tick pUSD glitch)
+    r.update(40); // breach 2
+    expect(r.update(55).tripped).toBe(false); // good read -> streak reset
+    expect(r.update(40).tripped).toBe(false); // breach 1 again, NOT 3
+    expect(r.update(40).tripped).toBe(false); // breach 2
+    expect(r.isTripped()).toBe(false);
+  });
+
+  it('skipped (null) reads neither advance nor reset the streak', () => {
+    const r = new RiskMonitor(10, 3);
+    r.update(50);
+    r.update(40); // breach 1
+    expect(r.update(null).tripped).toBe(false); // skipped, streak holds at 1
+    r.update(40); // breach 2
+    expect(r.update(40).tripped).toBe(true); // breach 3 -> trip
+  });
+
   it('stays tripped even if equity recovers', () => {
-    const r = new RiskMonitor(10);
+    const r = new RiskMonitor(10, 1);
     r.update(50);
     r.update(39); // trip
     const res = r.update(55); // recovered, but latched
