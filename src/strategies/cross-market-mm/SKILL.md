@@ -285,7 +285,20 @@ positions (the UI can't show them) and the per-pair net delta (≈0 = hedged).
 
 - **Loss circuit-breaker** (`max_loss_usd`, default $10): marks equity (pUSD +
   Base USDC + position value) each tick; on a drawdown past the limit it aborts
-  the run.
+  the run. **Resilient to bad reads** (hardened after a Jun-12 false trip): a
+  tick whose pUSD *or* Base USDC read fails is SKIPPED (a partial read can no
+  longer fake a drawdown), and the breaker trips only after **3 consecutive**
+  valid sub-threshold ticks, so a single transient bad mark cannot trip it.
+- **Inventory guard** (`max_net_shares`, default 4× `order_size`;
+  `max_hedge_failures`, default 3): the lighter, earlier-firing sibling of the
+  loss breaker. When net exposure on a pair reaches `max_net_shares`, OR a
+  pair's hedge fails `max_hedge_failures` times in a row (the Poly route went
+  thin/closed), the bot **pulls quotes** — writes `pull.flag`, so the quoter
+  stops adding inventory while the hedger keeps flattening. This is what was
+  missing on Jun-12, when failing hedges let net pile to 100 unhedged. **Sticky:**
+  you (or the panel/Telegram resume button) clear `pull.flag` after inspecting
+  *why* hedging stalled, so a broken venue route can't silently resume into the
+  same pileup. Set either knob to `0` to disable.
 - **Flatten on stop** (`flatten_on_stop`, default **true**): a stop — Ctrl-C OR
   a tripped breaker — first cancels all resting orders, then **sells inventory
   to flat on BOTH venues**, so a stop never walks away with unhedged directional
@@ -293,6 +306,12 @@ positions (the UI can't show them) and the per-pair net delta (≈0 = hedged).
   leaves a position on each venue. Set `flatten_on_stop: false` only if you
   deliberately want to leave inventory in place.
 - **Boot-clean:** every live start cancels prior resting orders before quoting.
+
+> **`pull.flag` vs `kill.flag`.** `pull.flag` = stop quoting, keep hedging
+> (recoverable: clear it to resume). `kill.flag` = full halt + flatten
+> (a tripped breaker writes it; it persists across restarts so a tripped bot
+> stays down until you clear it). The panel and Telegram buttons, the breaker,
+> and the inventory guard all write these same two files — one control path.
 
 ### Manual exit to flat
 
