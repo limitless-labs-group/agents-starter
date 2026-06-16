@@ -51,6 +51,13 @@ export interface ReplicatorSettings {
   // range as the hedger interval — checking much faster buys nothing.
   livenessCheckMs: number;
   maxLossUsd: number; // circuit breaker: halt + cancel-all if equity drawdown ≥ this
+  // Inventory guard: when |net shares| on a pair reaches this, pull quotes
+  // (write pull.flag) so the quoter stops adding inventory while the hedger
+  // flattens. The lighter, earlier-firing sibling of the loss breaker. 0 = off.
+  maxNetShares: number;
+  // Inventory guard, second trigger: after this many CONSECUTIVE failed hedges
+  // on a pair (broken Poly route), pull quotes. 0 = off.
+  maxHedgeFailures: number;
   flattenOnStop: boolean; // on Ctrl-C/breaker, also SELL inventory to flat (both venues), not just cancel orders
   dryRun: boolean; // log intents, don't sign or POST
   /**

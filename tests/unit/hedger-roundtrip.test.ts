@@ -134,3 +134,66 @@ describe('fill → hedge round-trip (hedgeOnce)', () => {
     expect(hedgeBuy).toHaveBeenCalledTimes(2);
   });
 });
+
+const GUARD_SETTINGS = {
+  hedgeThreshold: 2,
+  marginBps: 100,
+  orderSize: 5,
+  hedgeSettleMs: 0, // no settle gate, so repeated ticks each fire a hedge
+  maxNetShares: 10,
+  maxHedgeFailures: 3,
+} as unknown as ReplicatorSettings;
+
+describe('inventory guard (hedgeOnce)', () => {
+  it('pulls quotes when |net| reaches max_net_shares, still hedging the pile down', async () => {
+    const onPull = vi.fn();
+    const hedgeBuy = vi.fn().mockResolvedValue(true);
+    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const rec = fakeRecorder();
+    const lmts = { [PAIR.limitlessSlug]: { yes: 12, no: 0 } }; // net +12 >= cap 10
+    const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
+
+    await hedgeOnce([PAIR], feedWithQuote(0.6, 0.62), lmts, polyPos, poly, GUARD_SETTINGS, rec, new Map(), new Map(), onPull);
+
+    expect(onPull).toHaveBeenCalledTimes(1);
+    expect(onPull.mock.calls[0][0]).toMatch(/inventory cap/);
+    expect(hedgeBuy).toHaveBeenCalled(); // still flattens what we hold
+    expect(
+      rec.events.some((e) => e.kind === 'hedge_skip' && /inventory cap/.test((e as { reason?: string }).reason ?? '')),
+    ).toBe(true);
+  });
+
+  it('does NOT pull while under the cap', async () => {
+    const onPull = vi.fn();
+    const poly = { hedgeBuy: vi.fn().mockResolvedValue(true) } as unknown as PolymarketAdapter;
+    const lmts = { [PAIR.limitlessSlug]: { yes: 5, no: 0 } }; // net +5 < cap 10
+    const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
+    await hedgeOnce([PAIR], feedWithQuote(0.6, 0.62), lmts, polyPos, poly, GUARD_SETTINGS, undefined, new Map(), new Map(), onPull);
+    expect(onPull).not.toHaveBeenCalled();
+  });
+
+  it('pulls after max_hedge_failures consecutive failed hedges, and a success resets the streak', async () => {
+    const onPull = vi.fn();
+    const hedgeBuy = vi.fn().mockResolvedValue(false); // broken Poly route
+    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const lmts = { [PAIR.limitlessSlug]: { yes: 5, no: 0 } }; // net +5: hedges, under cap
+    const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
+    const failStreak = new Map<string, number>();
+    const lastHedge = new Map<string, number>();
+    const feed = feedWithQuote(0.6, 0.62);
+    const tick = () =>
+      hedgeOnce([PAIR], feed, lmts, polyPos, poly, GUARD_SETTINGS, undefined, lastHedge, failStreak, onPull);
+
+    await tick();
+    expect(onPull).not.toHaveBeenCalled(); // 1 fail
+    await tick();
+    expect(onPull).not.toHaveBeenCalled(); // 2 fails
+    await tick();
+    expect(onPull).toHaveBeenCalledTimes(1); // 3 fails -> pull
+    expect(onPull.mock.calls[0][0]).toMatch(/hedge failed/);
+
+    hedgeBuy.mockResolvedValue(true);
+    await tick();
+    expect(failStreak.get(PAIR.polymarketSlug)).toBe(0); // success resets
+  });
+});

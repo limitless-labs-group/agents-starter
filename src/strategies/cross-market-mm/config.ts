@@ -49,6 +49,10 @@ interface YamlConfig {
   livenessCheckMs?: number;
   max_loss_usd?: number;
   maxLossUsd?: number;
+  max_net_shares?: number;
+  maxNetShares?: number;
+  max_hedge_failures?: number;
+  maxHedgeFailures?: number;
   flatten_on_stop?: boolean;
   flattenOnStop?: boolean;
   dry_run?: boolean;
@@ -155,6 +159,16 @@ export function loadSettings(): ReplicatorSettings {
     maxLossUsd: Number(
       process.env.REPLICATOR_MAX_LOSS_USD ?? raw.max_loss_usd ?? raw.maxLossUsd ?? 10,
     ),
+    // Inventory guard cap (shares per pair). Default 4x order_size: a few fills
+    // of hedge-latency slack, but well short of the net-100 pileup on Jun 12.
+    // Pulls quotes (not a full halt) when breached; set an absolute number to
+    // override, or 0 to disable.
+    maxNetShares: Number(
+      raw.max_net_shares ?? raw.maxNetShares ?? Number(raw.order_size ?? raw.orderSize ?? 100) * 4,
+    ),
+    // Consecutive failed hedges on a pair before pulling quotes (broken Poly
+    // route). Default 3; 0 disables.
+    maxHedgeFailures: Number(raw.max_hedge_failures ?? raw.maxHedgeFailures ?? 3),
     // Default ON: a stop (Ctrl-C or breaker) sells inventory to flat on both
     // venues, not just cancels resting orders. Set flatten_on_stop: false to
     // leave inventory in place (only orders are cancelled) — rarely wanted,

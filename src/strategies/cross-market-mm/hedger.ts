@@ -119,6 +119,13 @@ export async function hedgeOnce(
   // Gates re-hedging within settings.hedgeSettleMs so a lagged Poly position
   // read can't make us fire the same hedge twice (stale-read stacking).
   lastHedgeAt: Map<string, number> = new Map(),
+  // Per-pair count of CONSECUTIVE failed hedges. Caller-owned so it persists.
+  // Drives the inventory guard: a hedge route that stays broken pulls quotes.
+  hedgeFailStreak: Map<string, number> = new Map(),
+  // Inventory guard: called (with a reason) when net exposure exceeds the hard
+  // cap or hedges fail repeatedly. Wired in run.ts to write pull.flag so the
+  // quoter stops adding inventory while the hedger keeps flattening.
+  onPull?: (reason: string) => void,
 ): Promise<void> {
   for (const pair of pairs) {
     const lm = lmtsPositions[pair.limitlessSlug] ?? { yes: 0, no: 0 };
@@ -145,6 +152,30 @@ export async function hedgeOnce(
       polyYes: pm.yes,
       polyNo: pm.no,
     });
+
+    // Inventory guard: if net exposure has grown past the hard cap, pull quotes
+    // (stop adding inventory) while the hedger keeps working it down. This is
+    // the control that was missing on Jun 12, when hedges were failing and the
+    // quoter kept adding fills until net hit 100. Still falls through to the
+    // hedge logic below so we keep trying to flatten what we already hold.
+    if (settings.maxNetShares > 0 && Math.abs(net) >= settings.maxNetShares) {
+      logger.warn(
+        { slug: pair.limitlessSlug, net: net.toFixed(2), cap: settings.maxNetShares },
+        'inventory cap breached — pulling quotes (hedger keeps flattening)',
+      );
+      recorder?.record({
+        kind: 'hedge_skip',
+        pair: pair.polymarketSlug,
+        reason: `inventory cap: |net| ${Math.abs(net).toFixed(0)} >= ${settings.maxNetShares}`,
+        buy: net > 0 ? 'NO' : 'YES',
+        shares: Math.abs(net),
+        price: 0,
+        usdc: 0,
+        net,
+        threshold: settings.hedgeThreshold,
+      });
+      onPull?.(`inventory cap: ${pair.limitlessSlug} net ${net.toFixed(0)} >= ${settings.maxNetShares}`);
+    }
 
     const quote = feed.getQuote(pair.polymarketSlug);
     const decision = decideHedge({
@@ -242,6 +273,24 @@ export async function hedgeOnce(
       usdc: decision.notionalUsdc,
       success: ok,
     });
+
+    // Inventory guard, second trigger: a hedge route that stays broken (the
+    // Poly book went thin/closed, auth lapsed, etc.) means every new fill grows
+    // unhedgeable exposure. After maxHedgeFailures consecutive failures on a
+    // pair, pull quotes. A success resets the streak.
+    if (ok) {
+      hedgeFailStreak.set(pair.polymarketSlug, 0);
+    } else {
+      const fails = (hedgeFailStreak.get(pair.polymarketSlug) ?? 0) + 1;
+      hedgeFailStreak.set(pair.polymarketSlug, fails);
+      if (settings.maxHedgeFailures > 0 && fails >= settings.maxHedgeFailures) {
+        logger.error(
+          { slug: pair.polymarketSlug, fails, max: settings.maxHedgeFailures },
+          'hedge failing repeatedly — pulling quotes (cannot offset fills)',
+        );
+        onPull?.(`hedge failed ${fails}x on ${pair.polymarketSlug}`);
+      }
+    }
   }
 }
 
@@ -284,6 +333,7 @@ export interface HedgerHooks {
   risk?: RiskMonitor;
   walletAddress?: string; // Base trading wallet, for the free-USDC read
   onKill?: () => void; // called once when the circuit breaker trips
+  onPull?: (reason: string) => void; // inventory guard: pull quotes (write pull.flag)
 }
 
 /**
@@ -300,7 +350,7 @@ export async function runHedger(
   signal: AbortSignal,
   hooks: HedgerHooks = {},
 ): Promise<void> {
-  const { recorder, risk, walletAddress, onKill } = hooks;
+  const { recorder, risk, walletAddress, onKill, onPull } = hooks;
   logger.info({ intervalSec: settings.hedgeIntervalSec }, 'hedger started');
 
   // DRY_RUN fill simulation state. Walks the real pipeline through:
@@ -312,8 +362,10 @@ export async function runHedger(
   let simHedged = false;
 
   // Persistent across ticks: last hedge time per pair, for the settle gate that
-  // prevents stale-read hedge stacking.
+  // prevents stale-read hedge stacking; and the consecutive hedge-failure count
+  // per pair, for the inventory guard.
   const lastHedgeAt = new Map<string, number>();
+  const hedgeFailStreak = new Map<string, number>();
 
   while (!signal.aborted) {
     await new Promise<void>((resolve) => {
@@ -361,14 +413,18 @@ export async function runHedger(
         }
       }
 
-      await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder, lastHedgeAt);
+      await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder, lastHedgeAt, hedgeFailStreak, onPull);
       // After the first post-fill tick, the hedge has been decided+recorded.
       if (sim && simTick >= 2) simHedged = true;
 
       // -- Circuit breaker (live only): mark equity, trip on drawdown --
       if (!settings.dryRun && risk) {
         const [pUSD, baseUsd] = await Promise.all([
-          poly.getCollateralBalance().catch(() => 0),
+          // null (not 0) on failure: a transient Poly read returning 0 would
+          // understate equity by the entire pUSD balance and falsely trip the
+          // breaker (the Jun-12 false trip: 635 -> 352 was pUSD reading ~0).
+          // Skip the tick instead, exactly as the Base read already does.
+          poly.getCollateralBalance().catch(() => null),
           walletAddress ? readBaseUsdc(walletAddress) : Promise.resolve(null),
         ]);
         let posValue = 0;
@@ -380,18 +436,23 @@ export async function runHedger(
             mid,
           );
         }
-        const equity = baseUsd == null ? null : totalEquity({ pUSD, lmtsFreeUsd: baseUsd, posValue });
+        // Skip the whole tick if EITHER balance read failed: equity from a
+        // partial read is garbage and must never reach the breaker.
+        const equity =
+          pUSD == null || baseUsd == null
+            ? null
+            : totalEquity({ pUSD, lmtsFreeUsd: baseUsd, posValue });
         const res = risk.update(equity);
         if (res.equity != null) {
           logger.info(
-            { pnl: (res.pnl ?? 0).toFixed(2), equity: res.equity.toFixed(2), pUSD: pUSD.toFixed(2), posValue: posValue.toFixed(2) },
+            { pnl: (res.pnl ?? 0).toFixed(2), equity: res.equity.toFixed(2), pUSD: (pUSD ?? 0).toFixed(2), posValue: posValue.toFixed(2) },
             'risk',
           );
           recorder?.record({
             kind: 'equity',
             pnl: res.pnl ?? 0,
             equity: res.equity,
-            pUSD,
+            pUSD: pUSD ?? 0,
             lmtsFreeUsd: baseUsd ?? 0,
             posValue,
           });

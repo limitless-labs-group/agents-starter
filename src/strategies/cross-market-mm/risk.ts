@@ -83,13 +83,25 @@ export async function readBaseUsdc(
 
 /**
  * Tracks equity vs a baseline captured on first valid update; trips when
- * drawdown crosses `killUsd`. Once tripped it stays tripped.
+ * drawdown crosses `killUsd` for `requiredBreaches` CONSECUTIVE valid ticks.
+ * Once tripped it stays tripped.
+ *
+ * The consecutive-breach requirement is defense in depth against a single bad
+ * mark: a transient venue read that understates equity for one tick (e.g. a
+ * Polymarket collateral read that briefly returns a low value) recovers on the
+ * next tick and resets the streak, so it can never trip the breaker alone. A
+ * real drawdown persists and trips. Skipped ticks (null equity from a failed
+ * read) neither advance nor reset the streak — they are simply not evidence.
  */
 export class RiskMonitor {
   private equity0: number | null = null;
   private tripped = false;
+  private breachStreak = 0;
 
-  constructor(private readonly killUsd: number) {}
+  constructor(
+    private readonly killUsd: number,
+    private readonly requiredBreaches = 3,
+  ) {}
 
   baseline(): number | null {
     return this.equity0;
@@ -114,12 +126,31 @@ export class RiskMonitor {
       return { pnl: 0, equity, tripped: false };
     }
     const pnl = equity - this.equity0;
-    if (!this.tripped && pnl <= -this.killUsd) {
-      this.tripped = true;
-      logger.error(
-        { pnl: pnl.toFixed(2), killUsd: this.killUsd, equity: equity.toFixed(2), equity0: this.equity0.toFixed(2) },
-        'CIRCUIT BREAKER TRIPPED — halting + cancelling all',
-      );
+    if (!this.tripped) {
+      if (pnl <= -this.killUsd) {
+        this.breachStreak += 1;
+        if (this.breachStreak >= this.requiredBreaches) {
+          this.tripped = true;
+          logger.error(
+            {
+              pnl: pnl.toFixed(2),
+              killUsd: this.killUsd,
+              equity: equity.toFixed(2),
+              equity0: this.equity0.toFixed(2),
+              breaches: this.breachStreak,
+            },
+            'CIRCUIT BREAKER TRIPPED — halting + cancelling all',
+          );
+        } else {
+          logger.warn(
+            { pnl: pnl.toFixed(2), killUsd: this.killUsd, breach: this.breachStreak, required: this.requiredBreaches },
+            'equity below kill threshold (awaiting consecutive confirmation, not yet tripped)',
+          );
+        }
+      } else {
+        // Recovered above the threshold — a prior breach was transient.
+        this.breachStreak = 0;
+      }
     }
     return { pnl, equity, tripped: this.tripped };
   }

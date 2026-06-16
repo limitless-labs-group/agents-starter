@@ -284,6 +284,19 @@ export async function main(): Promise<void> {
       risk,
       walletAddress: trading.getWalletAddress(),
       onKill,
+      // Inventory guard pulls quotes via the SAME pull.flag the panel/Telegram
+      // buttons write. Sticky: an operator (or the panel resume button) clears
+      // it after inspecting why hedging stalled, so a bad venue route can't
+      // silently resume into the same pileup.
+      onPull: (reason: string) => {
+        if (panel.pullFlagExists()) return; // already pulled; don't churn the file
+        fs.writeFileSync(
+          panel.pullFlagPath,
+          `pulled by inventory guard: ${reason} at ${new Date().toISOString()}\n`,
+        );
+        panel.appendEvent('quotes_pulled', { reason });
+        logger.error({ reason }, 'inventory guard pulled quotes (pull.flag written) — clear it to resume');
+      },
     }),
     ...settings.pairs.map((pair) =>
       runReplicator(pair, feed, trading, md, settings, ac.signal, recorder, panel.pullFlagPath),
