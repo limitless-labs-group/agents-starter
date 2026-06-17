@@ -105,7 +105,7 @@ setup-poly  →  fund  →  approve  →  preflight  →  run
    and CTF (sell side) on Polymarket's v2 exchanges.
 2. **fund** — Base USDC + a little ETH on the EOA (sent directly); USDC to the
    Polymarket **bridge** (`cross-market-mm:deposit`) for the deposit wallet's pUSD —
-   you cannot send pUSD to the deposit wallet directly (see §4.3).
+   sending USDC straight to the deposit wallet does not work (see §4.3).
 3. **approve** — Limitless exchange approval for your pair's market(s).
 4. **preflight** — one command that re-checks all of the above and the pair.
 5. **run** — dry-run, then live.
