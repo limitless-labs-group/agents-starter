@@ -72,7 +72,8 @@ Key facts that trip people up:
 - **pUSD must live IN the deposit wallet.** Polymarket's CLOB v2 settles in
   **pUSD**, and your CLOB buying power is the pUSD balance *of the deposit
   wallet specifically*. pUSD sitting in your EOA, your Safe, or your Polymarket
-  UI login address is **not** buying power — transfer it into the deposit wallet.
+  UI login address is **not** buying power. Fund the deposit wallet via the
+  bridge (§4.3, `cross-market-mm:deposit`); sending USDC straight to it does not work.
 - **The deposit wallet is invisible in the Polymarket UI.** It's a different
   address from your Polymarket login, so the UI shows neither its balance nor
   its positions. Use `npm run cross-market-mm:status` (and the on-chain links it
@@ -102,11 +103,16 @@ setup-poly  →  fund  →  approve  →  preflight  →  run
 
 1. **setup-poly** — derive + deploy the deposit wallet, approve pUSD (buy side)
    and CTF (sell side) on Polymarket's v2 exchanges.
-2. **fund** — Base USDC + a little ETH on the EOA; pUSD transferred INTO the
-   deposit wallet.
+2. **fund** — Base USDC + a little ETH on the EOA (sent directly); USDC to the
+   Polymarket **bridge** (`cross-market-mm:deposit`) for the deposit wallet's pUSD —
+   you cannot send pUSD to the deposit wallet directly (see §4.3).
 3. **approve** — Limitless exchange approval for your pair's market(s).
 4. **preflight** — one command that re-checks all of the above and the pair.
 5. **run** — dry-run, then live.
+
+`npm run cross-market-mm:init` is the guided version of steps 1–2: it runs
+setup-poly, scaffolds `.env` + config, and prints the funding addresses. You
+still do step 3 (**approve**) and pick + verify a pair yourself.
 
 ---
 
@@ -131,6 +137,13 @@ All from the repo root (`agents-starter/`). One-time setup commands are marked.
 ---
 
 ## 4. Setup
+
+> **Two ways through this.** `npm run cross-market-mm:init` is the guided path —
+> re-runnable, it walks 4.1–4.3 (credentials → deposit wallet → funding) and
+> scaffolds your config. The steps below are exactly what it does, plus the
+> manual path if you'd rather run each command yourself. **Either way, init does
+> not pick a pair or approve the exchange for you** — you still do §4.4 (find +
+> verify a pair) and §4.5 (approve) before going live.
 
 ### 4.1 Install + secrets
 
@@ -184,15 +197,33 @@ poly_signature_type: 3
 
 ### 4.3 Fund
 
-| Side | Chain | Asset | Goes to | Why |
-|---|---|---|---|---|
-| Limitless | Base (8453) | USDC | your EOA | collateral for resting limit orders |
-| Limitless | Base | ETH (~$1–2) | your EOA | gas for one-time approvals |
-| Polymarket | Polygon (137) | **pUSD** | **the deposit wallet** | collateral for FAK hedges |
+Two sides. The **Limitless** side you fund by sending to your EOA **directly**.
+The **Polymarket** side you fund **through a bridge** — you *cannot* get pUSD into
+the deposit wallet by sending to it directly.
 
-Transfer pUSD **into the deposit-wallet address** from 4.2 — not your EOA, not
-your Safe, not your Polymarket UI login. `cross-market-mm:status` will show the
-deposit wallet's pUSD so you can confirm it landed.
+| Side | Send | On | To | Why |
+|---|---|---|---|---|
+| Limitless collateral | USDC | Base (8453) | **your EOA** (directly) | collateral for resting limit orders |
+| Limitless gas | ETH (~$1–2) | Base | **your EOA** (directly) | gas for one-time approvals |
+| Polymarket hedge | **USDC** | Base / Polygon / Ethereum | **the bridge** (NOT the deposit wallet) | auto-wraps to pUSD in the deposit wallet |
+
+For the hedge side, run:
+
+```bash
+npm run cross-market-mm:deposit
+```
+
+It prints the **bridge address** + the minimum. Send **USDC** there (any supported
+chain — same address) and it auto-wraps to **pUSD** and credits your deposit
+wallet. Send a small test first, confirm with `cross-market-mm:status`, then the rest.
+
+> ⚠ Do **NOT** send USDC straight to the deposit-wallet address (it won't
+> auto-wrap there), and do **NOT** use the Polymarket app's deposit button — both
+> strand your funds (the
+> app button credits a *different* account). Only the bridge address from
+> `cross-market-mm:deposit` produces spendable pUSD. Your EOA on Base (USDC + ETH) is
+> the only thing you send to an address directly. No Polygon gas (MATIC/POL) is
+> ever needed — Polymarket deploy + approvals are gasless via the relayer.
 
 ### 4.4 Configure the pair
 

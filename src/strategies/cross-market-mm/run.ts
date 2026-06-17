@@ -95,7 +95,7 @@ export async function main(): Promise<void> {
   //    run REFUSES to start until it's cleared, so a tripped breaker stays
   //    tripped across restarts. Clear it via the panel "Clear" button or
   //    `rm data/kill.flag`. --
-  const dataDir = process.env.REPLICATOR_DATA_DIR || './data';
+  const dataDir = process.env.CROSS_MARKET_MM_DATA_DIR || process.env.REPLICATOR_DATA_DIR || './data';
   const killFlagPath = path.join(dataDir, 'kill.flag');
   if (fs.existsSync(killFlagPath)) {
     logger.error(
@@ -200,7 +200,11 @@ export async function main(): Promise<void> {
     dataDir,
   );
   recorder.subscribe((ev) => panel.onEvent(ev));
-  logger.info({ positions: panel.positionsPath, fills: panel.fillsPath }, 'operator-panel feed (point the Academy control panel here)');
+  const panelDataDir = path.resolve(dataDir);
+  logger.info(
+    { dataDir: panelDataDir, positions: panel.positionsPath, fills: panel.fillsPath },
+    `operator-panel feed → point the Academy panel's QUOTES_PATH/POSITIONS_PATH/AGENT_LOG/KILL_SWITCH/PULL_SWITCH at this ABSOLUTE dir (not the panel's own ./data): ${panelDataDir}`,
+  );
 
   // -- Optional: direct Telegram push (fill pings + heartbeat) for standalone
   //    runs without an orchestrating agent. No-op unless TELEGRAM_BOT_TOKEN +

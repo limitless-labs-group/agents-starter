@@ -35,6 +35,8 @@ async function main(): Promise<void> {
   console.log(`  1. Send USDC on Base  →  ${addrs.evm}`);
   console.log(`     (Polymarket bridge address, ${minStr}). Works from Polygon/Ethereum/other`);
   console.log(`     EVM chains too — same address. It wraps to pUSD and credits your wallet.`);
+  console.log(`     (The minimum shown is the Base USDC minimum; from another chain,`);
+  console.log(`     check /supported-assets for that chain's minimum.)`);
   console.log(`  2. pUSD lands in your deposit wallet:  ${depositWallet}`);
   console.log(`  3. Confirm:  npm run cross-market-mm:status   (pUSD should go up)`);
   console.log('\n  Send a small test first, confirm it lands, then send the rest.');

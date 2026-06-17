@@ -25,12 +25,14 @@ setup, not running commands. Full reference + troubleshooting: **[SKILL.md](./SK
   - **Limitless scoped HMAC token** — limitless.exchange → connect wallet → API
     token modal → *API Tokens* → Derive → `LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET`.
     Full flow: [Limitless Authentication](https://docs.limitless.exchange/developers/authentication).
-  - **Polymarket relayer API key** — from the [Polymarket builder dashboard](https://docs.polymarket.com/builders/overview)
-    → `RELAYER_API_KEY` + `RELAYER_API_KEY_ADDRESS` (your EOA address). For the
+  - **Polymarket relayer API key** — create one on the [Polymarket builder API Keys
+    page](https://docs.polymarket.com/builders/api-keys) → `RELAYER_API_KEY` +
+    `RELAYER_API_KEY_ADDRESS` (your EOA address). For the
     [gasless](https://docs.polymarket.com/trading/gasless) setup only.
-- **Funds:** Base **USDC** (collateral) + ~$1–2 **ETH** (gas) on your EOA;
-  [**pUSD**](https://docs.polymarket.com/concepts/pusd) on Polygon held **in the
-  deposit wallet** (deployed in step 2).
+- **Funds:** Base **USDC** (collateral) + ~$1–2 **ETH** (gas) on your EOA; for
+  the hedge side, **USDC bridged to [pUSD](https://docs.polymarket.com/concepts/pusd)**
+  into the deposit wallet via the Polymarket bridge (step 3 prints the address —
+  never send straight to the wallet).
 
 The order matters: **create a wallet → get credentials → derive the deposit
 wallet → fund.** You can't fund the Polymarket side until step 2 prints the
@@ -116,10 +118,13 @@ enough.
 npm start approve <your-limitless-slug>
 ```
 
-Approves USDC (buy) + CTF (sell) for that market's exchange.
+Approves USDC (buy) + CTF (sell) for that market's exchange. **This is the only
+step that spends Base ETH gas** (steps 2–3 are gasless via the relayer), so make
+sure the ~$1–2 ETH is on your EOA.
 [Neg-risk](https://docs.limitless.exchange/user-guide/negrisk-overview)
-(grouped/winner) markets use a separate exchange and need their own approve —
-preflight tells you if it's missing.
+(grouped/winner) markets use a separate exchange and need their own approve;
+preflight flags a missing main-exchange approval, but for a neg-risk pair re-run
+`approve` to also grant the adapter (exit) approval.
 
 ## 6. Preflight, then go live
 
@@ -141,7 +146,7 @@ npm run cross-market-mm
 What a healthy live run looks like:
 
 ```
-INFO Polymarket auth OK            { funder: 0x7Ec6…, signatureType: 3 }
+INFO Polymarket auth OK            { funder: 0x…(yours), signatureType: 3 }
 INFO Limitless market resolved     { yes: '…', exchange: '0x…' }
 INFO Poly WS connected             { count: 2 }
 INFO createOrder placed            { side: 'YES', price: 0.55, size: 5, orderId: '…' }

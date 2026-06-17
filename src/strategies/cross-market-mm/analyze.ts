@@ -33,7 +33,7 @@ function fmtDuration(ms: number): string {
 
 function main(): void {
   const arg = process.argv[2];
-  const file = arg || latestFile(process.env.REPLICATOR_DATA_DIR || './data');
+  const file = arg || latestFile(process.env.CROSS_MARKET_MM_DATA_DIR || process.env.REPLICATOR_DATA_DIR || './data');
   if (!file || !fs.existsSync(file)) {
     console.error('No run data found. Run `npm run cross-market-mm` first (it writes ./data/*.jsonl).');
     process.exit(1);

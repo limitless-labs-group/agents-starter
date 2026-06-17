@@ -77,7 +77,7 @@ export class PanelWriter {
   private readonly noOrderByPair = new Map<string, Leg>();
   private stopped = false;
 
-  constructor(init: PanelInit, dir: string = process.env.REPLICATOR_DATA_DIR || './data') {
+  constructor(init: PanelInit, dir: string = process.env.CROSS_MARKET_MM_DATA_DIR || process.env.REPLICATOR_DATA_DIR || './data') {
     fs.mkdirSync(dir, { recursive: true });
     this.dir = dir;
     this.quotesPath = path.join(dir, 'quotes.json');
