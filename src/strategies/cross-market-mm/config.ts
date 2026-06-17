@@ -121,8 +121,9 @@ export function loadSettings(): ReplicatorSettings {
     );
   }
 
-  // Env DRY_RUN overrides YAML; sensible default = false.
-  const dryRun = isTruthyEnv(process.env.DRY_RUN) || (raw.dry_run ?? raw.dryRun ?? false);
+  // Env DRY_RUN can force dry-run; YAML decides otherwise. Fail-safe default =
+  // TRUE: a config that omits dry_run must never silently go live.
+  const dryRun = isTruthyEnv(process.env.DRY_RUN) || (raw.dry_run ?? raw.dryRun ?? true);
 
   // SIMULATE_FILL=YES:5 (DRY_RUN-only) — inject a synthetic fill to exercise
   // the hedge pipeline end-to-end without a live taker.
@@ -141,7 +142,7 @@ export function loadSettings(): ReplicatorSettings {
     lmtsApiKey: legacyApiKey,
     polyFunder: raw.poly_funder ?? raw.polyFunder ?? '',
     polySignatureType: sigTypeRaw as 2 | 3,
-    orderSize: Number(raw.order_size ?? raw.orderSize ?? 100),
+    orderSize: Number(raw.order_size ?? raw.orderSize ?? 5),
     marginBps: Number(raw.margin_bps ?? raw.marginBps ?? 100),
     hedgeThreshold: Number(raw.hedge_threshold ?? raw.hedgeThreshold ?? 2),
     hedgeIntervalSec: Number(raw.hedge_interval ?? raw.hedgeIntervalSec ?? 5),
@@ -157,14 +158,14 @@ export function loadSettings(): ReplicatorSettings {
     // hedger interval (5s) and the order POST's own pre-match latency.
     livenessCheckMs: Number(raw.liveness_check_ms ?? raw.livenessCheckMs ?? 10000),
     maxLossUsd: Number(
-      process.env.REPLICATOR_MAX_LOSS_USD ?? raw.max_loss_usd ?? raw.maxLossUsd ?? 10,
+      process.env.CROSS_MARKET_MM_MAX_LOSS_USD ?? process.env.REPLICATOR_MAX_LOSS_USD ?? raw.max_loss_usd ?? raw.maxLossUsd ?? 10,
     ),
     // Inventory guard cap (shares per pair). Default 4x order_size: a few fills
     // of hedge-latency slack, but well short of the net-100 pileup on Jun 12.
     // Pulls quotes (not a full halt) when breached; set an absolute number to
     // override, or 0 to disable.
     maxNetShares: Number(
-      raw.max_net_shares ?? raw.maxNetShares ?? Number(raw.order_size ?? raw.orderSize ?? 100) * 4,
+      raw.max_net_shares ?? raw.maxNetShares ?? Number(raw.order_size ?? raw.orderSize ?? 5) * 4,
     ),
     // Consecutive failed hedges on a pair before pulling quotes (broken Poly
     // route). Default 3; 0 disables.

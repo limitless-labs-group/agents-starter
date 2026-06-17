@@ -78,11 +78,18 @@ Maker Bootcamp's MM panel (`Academy/programs/market_maker_bootcamp/panel/`) read
   it; the bot cancels resting quotes and stops placing new ones while the hedger keeps
   managing inventory. Resumes when cleared.
 
-To watch a run, point the Academy MM control panel at this `data/` dir:
+To watch a run, point the panel's env at the bot's data dir — **use absolute
+paths.** The panel runs from the Academy folder, so a relative `data/` resolves
+against the *panel's* own directory, not the bot's, and you get a silent, forever-
+empty board with no error. The bot prints its absolute data dir on boot (the
+`operator-panel feed → point the Academy panel … at this ABSOLUTE dir: …` line);
+copy that. To pin it, set `CROSS_MARKET_MM_DATA_DIR=/abs/.../agents-starter/data`
+for the bot and point all five panel vars at the **same** absolute dir:
 
 ```
-QUOTES_PATH=data/quotes.json  POSITIONS_PATH=data/positions.json  AGENT_LOG=data/fills.ndjson
-KILL_SWITCH=data/kill.flag    PULL_SWITCH=data/pull.flag
+# /ABS = the bot's data dir (printed on boot, or set via CROSS_MARKET_MM_DATA_DIR)
+QUOTES_PATH=/ABS/quotes.json  POSITIONS_PATH=/ABS/positions.json  AGENT_LOG=/ABS/fills.ndjson
+KILL_SWITCH=/ABS/kill.flag    PULL_SWITCH=/ABS/pull.flag
 ```
 
 ## Other strategies

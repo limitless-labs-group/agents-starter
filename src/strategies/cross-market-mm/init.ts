@@ -136,7 +136,7 @@ function printCredentialGuide(missing: string[]): void {
   }
   if (missing.includes('RELAYER_API_KEY') || missing.includes('RELAYER_API_KEY_ADDRESS')) {
     console.log('• RELAYER_API_KEY + RELAYER_API_KEY_ADDRESS — Polymarket relayer key.');
-    console.log('    Polymarket builder dashboard (docs.polymarket.com/builders/overview)');
+    console.log('    Polymarket builder API Keys page (docs.polymarket.com/builders/api-keys)');
     console.log('    → create a relayer API key. RELAYER_API_KEY_ADDRESS is your EOA');
     console.log('    public address (the same wallet as PRIVATE_KEY). Used once, for the');
     console.log('    deposit-wallet setup only.');

@@ -15,8 +15,9 @@
  * Then set in cross-market-mm.config.yaml:
  *   poly_funder: <the printed deposit-wallet address>
  *   poly_signature_type: 3
- * and transfer your pUSD into that deposit wallet (pUSD held elsewhere is not
- * CLOB buying power).
+ * and fund the deposit wallet via the bridge (`npm run cross-market-mm:deposit`):
+ * send USDC, it auto-wraps to pUSD. Sending USDC straight to the wallet does not
+ * create buying power.
  *
  * Requires in .env: PRIVATE_KEY, RELAYER_API_KEY, RELAYER_API_KEY_ADDRESS
  * (create the relayer key in the Polymarket builder dashboard).
@@ -162,7 +163,7 @@ async function main(): Promise<void> {
   const { depositWallet: dw, pusdBalance: pusdBal } = await setupDepositWallet();
   console.log('\nNext:');
   console.log(`  • set  poly_funder: "${dw}"  and  poly_signature_type: 3  in cross-market-mm.config.yaml`);
-  if (pusdBal === 0n) console.log('  • transfer pUSD into the deposit wallet (pUSD held elsewhere is not CLOB buying power)');
+  if (pusdBal === 0n) console.log('  • fund the deposit wallet via the bridge: npm run cross-market-mm:deposit (send USDC, it wraps to pUSD; sending USDC straight to the wallet does not work)');
   console.log('  • run  npm run cross-market-mm:preflight');
 }
 

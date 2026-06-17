@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Build autonomous trading agents for Limitless Exchange prediction markets on Base",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsc",
     "start": "npx tsx src/index.ts",

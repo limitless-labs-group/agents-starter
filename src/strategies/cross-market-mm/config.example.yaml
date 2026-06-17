@@ -14,12 +14,16 @@
 
 # --- Polymarket wallet ------------------------------------------------------
 # Polymarket's collateral is pUSD on the V2 exchange; this bot uses
-# @polymarket/clob-client-v2. The funder is the address that holds your pUSD:
-#   - New API users (default): deposit wallet address → poly_signature_type: 3 (POLY_1271)
-#   - Existing Gnosis Safe users: your Safe address    → poly_signature_type: 2
-# Find the address in Polymarket's UI under your account (settings). The
-# "for API use only, do not send funds" address is your SIGNER EOA, not the
-# funder. If you see "maker address not allowed" at boot, the sig type is wrong.
+# @polymarket/clob-client-v2. poly_funder is the address that holds your pUSD.
+# `npm run cross-market-mm:init` derives + deploys your deposit wallet and WRITES
+# poly_funder here for you (poly_signature_type: 3, POLY_1271). On the manual path
+# (running `cross-market-mm:setup-poly` directly) it PRINTS the address and you
+# paste it here yourself. That address is the authoritative source — it is
+# INVISIBLE in the Polymarket UI, so don't go looking for it there.
+#   - New API users (default): keep setup-poly's value → poly_signature_type: 3
+#   - Existing Gnosis Safe users ONLY: your Safe address → poly_signature_type: 2.
+#     Note the CLOB REJECTS Safe makers for ORDERS ("maker address not allowed"
+#     at boot), so the deposit-wallet flow (type 3) is required to actually trade.
 poly_funder: "0xYourPolymarketFunderAddress"
 poly_signature_type: 3
 
@@ -69,7 +73,7 @@ max_hedge_failures: 3
 # --- Safety -----------------------------------------------------------------
 # Hard loss circuit-breaker: if marked equity (pUSD + Base USDC + position
 # value) drops this many dollars below the run's starting equity, the bot
-# cancels all orders and halts. Also settable via REPLICATOR_MAX_LOSS_USD.
+# cancels all orders and halts. Also settable via CROSS_MARKET_MM_MAX_LOSS_USD.
 max_loss_usd: 10
 
 # On a stop (Ctrl-C OR a tripped breaker), also SELL held inventory back to flat

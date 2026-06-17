@@ -46,7 +46,7 @@ export class StatusWriter {
   private readonly status: LiveStatus;
   private readonly netByPair = new Map<string, number>();
 
-  constructor(init: StatusInit, dir: string = process.env.REPLICATOR_DATA_DIR || './data') {
+  constructor(init: StatusInit, dir: string = process.env.CROSS_MARKET_MM_DATA_DIR || process.env.REPLICATOR_DATA_DIR || './data') {
     fs.mkdirSync(dir, { recursive: true });
     this.filePath = path.join(dir, 'cross-market-mm-status.json');
     const now = Date.now();

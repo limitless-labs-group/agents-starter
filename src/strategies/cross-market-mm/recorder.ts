@@ -2,7 +2,7 @@
  * Recorder — append-only JSONL data capture for a cross-market-mm run.
  *
  * Writes one JSON object per line to `data/cross-market-mm-<timestamp>.jsonl`
- * (override the dir with REPLICATOR_DATA_DIR). Every line is `{ t, kind, ... }`
+ * (override the dir with CROSS_MARKET_MM_DATA_DIR). Every line is `{ t, kind, ... }`
  * where `t` is epoch ms. Cheap, structured, and trivially analyzable — see
  * `analyze.ts` (`npm run cross-market-mm:analyze`).
  *
@@ -69,7 +69,7 @@ export class Recorder {
   private stream: fs.WriteStream | null;
   private subscribers: ((ev: TimestampedEvent) => void)[] = [];
 
-  constructor(dir: string = process.env.REPLICATOR_DATA_DIR || './data') {
+  constructor(dir: string = process.env.CROSS_MARKET_MM_DATA_DIR || process.env.REPLICATOR_DATA_DIR || './data') {
     fs.mkdirSync(dir, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     this.filePath = path.join(dir, `cross-market-mm-${ts}.jsonl`);
