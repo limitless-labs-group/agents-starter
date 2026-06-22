@@ -1,0 +1,28 @@
+{
+  "_comment": "The ONE file the experiment agent edits. One experiment = one knob set. The bot, hedger, and risk code are fixed infra; you change conditions here, run a bounded experiment, score it, keep or revert. See program.md. These knobs map onto the bot config / find-pairs filters when you apply them to a run.",
+  "_metric": "Optimize the score from `npm run cross-market-mm:score` (higher is better). It rewards: every fill hedged, book stays flat, some real fills, little bleed, low peak inventory, no manual rescue.",
+
+  "pair_filters": {
+    "min_poly_liquidity_usd": 1000,
+    "max_poly_spread": 0.05,
+    "min_lmts_trades_24h": 5,
+    "max_hours_to_event": 24,
+    "prefer": "same-day match-winner (resolves in hours, quotes don't go stale)",
+    "avoid": "far-dated winner markets (they bleed)"
+  },
+
+  "quoting": {
+    "margin_bps": 100,
+    "order_size": 6
+  },
+
+  "risk": {
+    "hedge_threshold_shares": 2.0,
+    "max_net_shares": 24,
+    "max_loss_usd": 15
+  },
+
+  "timing": {
+    "pull_before_kickoff_min": 15
+  }
+}
