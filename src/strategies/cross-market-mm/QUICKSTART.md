@@ -172,6 +172,12 @@ resting orders **and** sells inventory to flat on both venues (`flatten_on_stop`
 default on). `cross-market-mm:close` is the deliberate wind-down (idempotent).
 If anything looks wrong: **halt, flatten, check `status`** — don't keep bleeding.
 
+## 8. Run it persistently (optional)
+
+To keep the bot quoting when your laptop is closed, deploy it as a long-running
+worker on a host (Railway, a VPS, etc.). The repo ships a `Procfile`; the env-var,
+config, and volume details are in **[DEPLOY.md](./DEPLOY.md)**.
+
 ## Economics
 
 On Limitless you're the **maker**, and makers pay
