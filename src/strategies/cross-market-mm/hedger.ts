@@ -37,6 +37,33 @@ export interface HedgeDecision {
   reason?: string;
 }
 
+/**
+ * Min |shares| for a Polymarket position to count as "sizable" for anomaly
+ * detection. A position at or above this vanishing to exactly zero in one tick is
+ * treated as a bad read (dust below this is ignored).
+ */
+const ANOMALY_MIN_SHARES = 5;
+
+/**
+ * A Polymarket position read is suspicious when a pair that previously held a
+ * sizable position suddenly reads exactly zero. The positions API intermittently
+ * returns an empty read for a pair that still holds inventory; collapsing that to
+ * {yes:0,no:0} drops its marked value and feeds the risk breaker a phantom
+ * drawdown (the Jun-25 false -$64 trip on Spain: a properly hedged ~flat book read
+ * as a $64 loss). We never sell a position mid-run, so a sizable->0 jump is a read
+ * glitch, not a real flatten; skip the tick rather than trip or hedge off bad data.
+ */
+export function isSuspiciousPositionZero(
+  prev: { yes: number; no: number } | undefined,
+  cur: { yes: number; no: number },
+  minShares: number = ANOMALY_MIN_SHARES,
+): boolean {
+  if (!prev) return false;
+  const prevSize = Math.abs(prev.yes) + Math.abs(prev.no);
+  const curSize = Math.abs(cur.yes) + Math.abs(cur.no);
+  return prevSize >= minShares && curSize === 0;
+}
+
 export function decideHedge(args: {
   netShares: number;
   hedgeThreshold: number;
@@ -366,6 +393,9 @@ export async function runHedger(
   // per pair, for the inventory guard.
   const lastHedgeAt = new Map<string, number>();
   const hedgeFailStreak = new Map<string, number>();
+  // Last Poly position read we trusted, per pair. Used to spot a sizable position
+  // that vanishes to exactly zero in one tick (a bad read) and skip that tick.
+  const lastReliablePoly = new Map<string, { yes: number; no: number }>();
 
   while (!signal.aborted) {
     await new Promise<void>((resolve) => {
@@ -392,6 +422,41 @@ export async function runHedger(
           });
       const pm = await poly.getPositions(pairs);
 
+      // -- Position-read anomaly guard (live only) ---------------------------
+      // A sizable Poly position vanishing to exactly zero in one tick is a bad
+      // read, not a real flatten (we never sell mid-run). Skip the tick: no
+      // hedge off the phantom, and feed the breaker null so it can't trip on the
+      // phantom drawdown. Pull quotes while the read is untrusted.
+      let positionReadAnomaly = false;
+      if (!settings.dryRun) {
+        for (const pair of pairs) {
+          const cur = pm.get(pair.polymarketSlug) ?? { yes: 0, no: 0 };
+          const prev = lastReliablePoly.get(pair.polymarketSlug);
+          if (isSuspiciousPositionZero(prev, cur)) {
+            positionReadAnomaly = true;
+            recorder?.record({
+              kind: 'position_read_anomaly',
+              pair: pair.polymarketSlug,
+              reason: 'poly position read zero after a prior sizable position',
+              prevYes: prev!.yes,
+              prevNo: prev!.no,
+              curYes: cur.yes,
+              curNo: cur.no,
+            });
+            onPull?.(
+              `poly read anomaly: ${pair.polymarketSlug} read flat after holding ` +
+                `${(Math.abs(prev!.yes) + Math.abs(prev!.no)).toFixed(0)} shares`,
+            );
+          } else {
+            // Trust this read; remember it (anomalous pairs keep their last good value).
+            lastReliablePoly.set(pair.polymarketSlug, cur);
+          }
+        }
+        if (positionReadAnomaly) {
+          logger.warn('position-read anomaly — skipping hedge + breaker mark this tick');
+        }
+      }
+
       // -- SIMULATE_FILL (DRY_RUN): inject a synthetic fill on the first pair --
       if (sim && pairs.length > 0) {
         simTick++;
@@ -413,7 +478,9 @@ export async function runHedger(
         }
       }
 
-      await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder, lastHedgeAt, hedgeFailStreak, onPull);
+      if (!positionReadAnomaly) {
+        await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder, lastHedgeAt, hedgeFailStreak, onPull);
+      }
       // After the first post-fill tick, the hedge has been decided+recorded.
       if (sim && simTick >= 2) simHedged = true;
 
@@ -439,7 +506,7 @@ export async function runHedger(
         // Skip the whole tick if EITHER balance read failed: equity from a
         // partial read is garbage and must never reach the breaker.
         const equity =
-          pUSD == null || baseUsd == null
+          positionReadAnomaly || pUSD == null || baseUsd == null
             ? null
             : totalEquity({ pUSD, lmtsFreeUsd: baseUsd, posValue });
         const res = risk.update(equity);
