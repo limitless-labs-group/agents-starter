@@ -59,6 +59,19 @@ export type ReplicatorEvent =
       pUSD: number;
       lmtsFreeUsd: number;
       posValue: number;
+    }
+  | {
+      // A Polymarket position read returned zero for a pair that was just holding
+      // a sizable position, with nothing to explain it. Treated as a bad read, not
+      // a flat: the tick is skipped (no hedge, no breaker mark) so phantom-zero
+      // posValue can't trip the breaker.
+      kind: 'position_read_anomaly';
+      pair: string;
+      reason: string;
+      prevYes: number;
+      prevNo: number;
+      curYes: number;
+      curNo: number;
     };
 
 /** An event with the epoch-ms timestamp the recorder stamps onto every line. */
