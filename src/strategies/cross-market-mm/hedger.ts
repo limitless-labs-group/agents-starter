@@ -153,6 +153,11 @@ export async function hedgeOnce(
   // cap or hedges fail repeatedly. Wired in run.ts to write pull.flag so the
   // quoter stops adding inventory while the hedger keeps flattening.
   onPull?: (reason: string) => void,
+  // Per-pair last recorded hedge-skip signature (reason + rounded net). Caller-owned
+  // so it persists across ticks; dedupes a persistent unchanged skip (e.g. a sub-$1
+  // residual that can never clear Polymarket's min notional) to one event instead of
+  // one per tick. Without it a stuck residual logs a hedge_skip every tick (20k+).
+  lastSkipSig: Map<string, string> = new Map(),
 ): Promise<void> {
   for (const pair of pairs) {
     const lm = lmtsPositions[pair.limitlessSlug] ?? { yes: 0, no: 0 };
@@ -218,7 +223,13 @@ export async function hedgeOnce(
       // learning surface: dust gates / missing prices become searchable JSONL,
       // status-file telemetry, panel events, and Telegram pings.
       const surfaced = Math.abs(net) >= settings.hedgeThreshold;
-      if (surfaced) {
+      // Dedupe: a persistent unchanged skip (e.g. a sub-$1 residual that can never
+      // clear Polymarket's min notional) must surface once, not every tick — that's
+      // what produced 20k+ identical hedge_skip events on a -2.45-share residual.
+      // Re-surface only when the reason or net materially changes.
+      const sig = `${decision.reason ?? 'unknown'}|${net.toFixed(1)}`;
+      if (surfaced && lastSkipSig.get(pair.polymarketSlug) !== sig) {
+        lastSkipSig.set(pair.polymarketSlug, sig);
         logger.warn(
           {
             slug: pair.polymarketSlug,
@@ -243,6 +254,9 @@ export async function hedgeOnce(
           net,
           threshold: settings.hedgeThreshold,
         });
+      } else if (!surfaced) {
+        // Back under threshold (flat enough) — let the next real skip surface fresh.
+        lastSkipSig.delete(pair.polymarketSlug);
       }
       continue;
     }
@@ -291,6 +305,7 @@ export async function hedgeOnce(
     // Start the settle window from the fire so the next tick can't re-stack
     // before the data-api reflects this hedge.
     lastHedgeAt.set(pair.polymarketSlug, Date.now());
+    lastSkipSig.delete(pair.polymarketSlug); // post-hedge residual should surface fresh
     recorder?.record({
       kind: 'hedge',
       pair: pair.polymarketSlug,
@@ -396,6 +411,9 @@ export async function runHedger(
   // Last Poly position read we trusted, per pair. Used to spot a sizable position
   // that vanishes to exactly zero in one tick (a bad read) and skip that tick.
   const lastReliablePoly = new Map<string, { yes: number; no: number }>();
+  // Last recorded hedge-skip signature per pair, so a persistent unchanged skip
+  // (un-hedgeable sub-$1 residual) surfaces once instead of every tick.
+  const lastSkipSig = new Map<string, string>();
 
   while (!signal.aborted) {
     await new Promise<void>((resolve) => {
@@ -479,7 +497,7 @@ export async function runHedger(
       }
 
       if (!positionReadAnomaly) {
-        await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder, lastHedgeAt, hedgeFailStreak, onPull);
+        await hedgeOnce(pairs, feed, lmts, pm, poly, settings, recorder, lastHedgeAt, hedgeFailStreak, onPull, lastSkipSig);
       }
       // After the first post-fill tick, the hedge has been decided+recorded.
       if (sim && simTick >= 2) simHedged = true;
