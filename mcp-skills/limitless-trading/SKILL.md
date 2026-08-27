@@ -102,6 +102,7 @@ Full model: https://docs.limitless.exchange/user-guide/fees
 
 ## Related skills
 
+- `limitless-thesis-builder` for turning a view into a sized, written thesis
 - `limitless-lp-ladder` for resting quotes aimed at liquidity rewards
 - `limitless-scale-in` for building a position across a price band
 - `limitless-portfolio-review` for exposure, open orders, and cleanup

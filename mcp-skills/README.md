@@ -1,6 +1,6 @@
 # Limitless MCP skills
 
-Five skills that drive the Limitless connector from a chat client. No API keys, no private
+Six skills that drive the Limitless connector from a chat client. No API keys, no private
 key, no server, no code. Every order goes through a browser approval on limitless.exchange.
 
 This is the other half of this repo. `src/strategies/` holds headless bots that run
@@ -54,6 +54,7 @@ cp -r limitless-* .claude/skills/            # this project only
 |---|---|
 | `limitless-trading` | The shared operating manual. Tool map, order rules, approval flow, wallet and fee model. The others assume it. |
 | `limitless-lp-ladder` | Rests a ladder of quotes inside a market's reward band, then verifies the orders are actually earning and re-quotes on drift. |
+| `limitless-thesis-builder` | Turns a view into a written falsifiable thesis: your probability first, then resolution criteria audit, edge against the executable price, and sizing. |
 | `limitless-scale-in` | Splits a budget into a ladder of limit orders across a price band and reports cost basis and breakeven probability. |
 | `limitless-portfolio-review` | Balance, locked collateral, positions, concentration, stale and non-earning orders, recent fills, then proposed cleanup cancels. |
 | `limitless-group-scan` | Checks the children of a market group against each other for pricing that cannot all be true. |

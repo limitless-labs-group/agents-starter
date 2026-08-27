@@ -19,6 +19,10 @@ If the user gave a thesis rather than a price, read the market's resolution crit
 to them and confirm the thesis actually matches what resolves the market. Wrong-market
 entries are the most common way this goes bad.
 
+If they have a view but have not decided the market, the size, or whether there is any
+edge, that is upstream of this skill. Use `limitless-thesis-builder` first and come back
+with its output.
+
 ## Workflow
 
 ### 1. Read the market

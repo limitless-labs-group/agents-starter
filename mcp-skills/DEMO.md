@@ -1,6 +1,6 @@
 # Demo and test script
 
-One pass through all five skills. Run it as the acceptance test first, then film the same
+One pass through all six skills. Run it as the acceptance test first, then film the same
 sequence. Every step lists what a working run looks like, so a failure is unambiguous.
 
 Prerequisite: the connector is authenticated and the selected Limitless Wallet is funded.
@@ -65,14 +65,38 @@ Wait about two minutes, then:
 Expect `get_open_orders` and a per-rung `isEarning` readout. This is the beat that makes
 the demo, because it is the model checking its own work rather than declaring success.
 
-### 4. Scale-in
+### 4. Thesis builder
+
+The strongest segment to film, because the model does research and calibration before it
+touches money, and because a clean "there is no edge here" is a real outcome.
+
+> I think ETH ends the week higher. is that tradeable here?
+
+Expect, in order:
+
+1. the claim restated with a threshold, a deadline, and a source
+2. **a request for your probability before any price is shown.** If it reports a market
+   price first, that is a bug in the run, restart the take
+3. several `search_markets` calls with different phrasings, plus `get_market_group` on any
+   group hits
+4. `get_market` on each candidate and a resolution audit that rejects the near misses out
+   loud, for example a market resolving on a 60 second oracle TWAP at one exact timestamp
+   rather than on "the week"
+5. `get_orderbook` and the implied probability quoted from `bestAsk`, not the midpoint
+6. edge against your number, net of spread and fee, then a quarter Kelly size with caps
+7. a written thesis note including what would falsify it
+
+Give a deliberately vague view for the first take. The restatement is the part worth
+watching.
+
+### 5. Scale-in
 
 > I think this resolves yes. build me into it with $20 across five limit orders
 
 Expect a five rung ladder, one `place_orders`, and a closing report with average entry
 price, breakeven probability, max payout and max loss.
 
-### 5. Portfolio review
+### 6. Portfolio review
 
 > where am I right now?
 
@@ -80,14 +104,14 @@ Expect all four read tools, a balance line that separates locked collateral from
 positions with concentration flagged, resting orders with `isEarning`, and a list of
 proposed cancels that it does not execute without asking.
 
-### 6. Cleanup
+### 7. Cleanup
 
 > cancel the ladder
 
 Expect confirmation in chat, then `cancel_all_orders`, then a fresh `get_wallet_balance`
 showing the freed collateral. No approval link, because cancels execute directly.
 
-### 7. Group scan
+### 8. Group scan
 
 > is this group priced consistently?
 
