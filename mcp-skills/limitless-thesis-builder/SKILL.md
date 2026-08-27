@@ -75,11 +75,23 @@ the market on each of these, and say which one fails when one does:
 | Source | Which feed, oracle, or authority decides, and whether the user trusts it |
 | Edge cases | What happens on a tie, a missing report, a cancelled event, or an early call |
 
-A worked example of why this matters: short window crypto markets typically resolve on a
-60 second TWAP from a named feed, comparing the value at one exact timestamp against a
-price captured at an earlier one, and some state outright that the market does not resolve
-automatically if no report exists in the window. A user who thinks they are buying "BTC
-goes up this hour" is buying a comparison of two specific oracle observations.
+Worked example, and the reason this step exists. The daily single-name equity markets
+("NVIDIA Up or Down", "Tesla Up or Down") do not resolve on the exchange close. They
+resolve on a **Pyth price feed** for that ticker, **strictly higher** than the value on the
+**most recent prior trading day**, and the reference price is already captured and printed
+in the market description. Three consequences a stock trader would not assume:
+
+- the oracle price at the resolution moment can differ from the official closing print
+- a perfectly flat day resolves Down, because strictly higher means strictly
+- "prior trading day" shifts across weekends and holidays, so a Monday market is measured
+  against Friday
+
+Short window crypto markets have the same shape: a 60 second TWAP from a named feed
+compared against a price captured at an earlier timestamp, with some stating outright that
+they do not resolve automatically if no report exists in the window.
+
+In every case the user thinks they are trading the thing. They are trading a specific
+oracle's opinion of the thing at a specific moment.
 
 Reject candidates that fail any check. Show the rejects with the reason. A user learns
 more from "this one is close but resolves on the daily close, not the intraday high" than
@@ -93,29 +105,45 @@ Also confirm `orderPlacement.orderable` is true on the survivors.
 because that is what you pay. Not `midpoint`, which is an average of two prices you cannot
 trade at, and not `lastTradePrice`, which is history.
 
-Check `bookState`. On an `empty` book the midpoint reads 0.5 and means nothing. Check
-depth too: an ask with 20 shares behind it is not a price you can put $500 through.
+Check `bookState`. On an `empty` book the midpoint reads 0.5 and means nothing. A market
+quoted 0.01 bid against 0.99 ask has no book at all, whatever its title suggests, and
+should be dropped rather than priced. Check depth too: an ask with 20 shares behind it is
+not a price you can put $500 through.
 
 Then report the market's implied probability as a percentage, next to the user's number
 from step 2.
 
+**Say how much to trust the number.** When the spread is a large fraction of the price, for
+example 8 cents wide around a 37 cent midpoint, the ask is not a confident statement of
+what the market believes. It is a wide quote. Any edge measured against it is soft, and the
+honest report says so rather than presenting a precise expected return. A wide book can
+mean the market knows something, or it can mean nobody is quoting. You cannot tell which
+from the book, and neither can the user, so do not pretend the number settles it.
+
 ### 6. Edge, then size
 
-Edge is the user's probability minus the executable price, less costs. Costs are the
-spread you cross and the taker fee, and `place_orders` returns the fee estimate per order.
+Edge is the user's probability minus the executable price, less costs.
+
+The taker fee is the one people forget, and it is large. The published BUY rate is **3.00%
+for any outcome priced between $0.01 and $0.50**, tapering above that, and it is charged in
+shares, so the honest comparison is against an effective price of `ask / (1 - fee)`. An ask
+of 0.409 is really 0.422. See https://docs.limitless.exchange/user-guide/fees, and
+`place_orders` returns the exact estimate per order.
 
 **If the edge does not clear the spread plus the fee, there is no trade.** Say so and
 stop. This is the most useful output this skill produces and it should not be buried.
 
-When there is edge, size it with fractional Kelly. For a BUY at price `p` with believed
-probability `q`:
+When there is edge, size it with fractional Kelly. Use the effective price, not the raw
+ask. For a BUY at effective price `p` with believed probability `q`:
 
 ```
 full Kelly fraction of bankroll = (q - p) / (1 - p)
 ```
 
-Use a quarter of that, and cap it. Worked example: ask at 0.40, belief 0.55, so full Kelly
-is 0.15 / 0.60 = 25% of bankroll, quarter Kelly is 6.25%.
+Use a quarter of that, and cap it. Worked example on a daily equity market: ask 0.409, so
+effective price 0.422 after the 3% fee. Belief 0.50, a coin flip on a single stock's next
+session. Edge is 0.078 per share, full Kelly is 0.078 / 0.578 = 13.5% of bankroll, quarter
+Kelly is 3.4%.
 
 Apply three caps, tightest wins:
 

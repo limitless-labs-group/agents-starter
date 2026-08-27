@@ -50,16 +50,30 @@ cp -r limitless-* .claude/skills/            # this project only
 
 ## The skills
 
+**Start with `limitless-thesis-builder`.** It is the one that does something you cannot do
+faster yourself: take a view you already hold, find the contract that actually expresses it,
+check that the contract resolves on what you think it resolves on, and tell you whether the
+price leaves anything on the table once fees are paid. It answers no more often than yes,
+which is the point.
+
 | Skill | What it does |
 |---|---|
+| `limitless-thesis-builder` | Your probability first, then a resolution criteria audit, then edge against the executable price net of the taker fee, then quarter Kelly sizing and a written thesis with a falsifier. |
 | `limitless-trading` | The shared operating manual. Tool map, order rules, approval flow, wallet and fee model. The others assume it. |
-| `limitless-lp-ladder` | Rests a ladder of quotes inside a market's reward band, then verifies the orders are actually earning and re-quotes on drift. |
-| `limitless-thesis-builder` | Turns a view into a written falsifiable thesis: your probability first, then resolution criteria audit, edge against the executable price, and sizing. |
-| `limitless-scale-in` | Splits a budget into a ladder of limit orders across a price band and reports cost basis and breakeven probability. |
 | `limitless-portfolio-review` | Balance, locked collateral, positions, concentration, stale and non-earning orders, recent fills, then proposed cleanup cancels. |
-| `limitless-group-scan` | Checks the children of a market group against each other for pricing that cannot all be true. |
+| `limitless-scale-in` | Splits a budget into a ladder of limit orders across a price band and reports cost basis and breakeven probability. |
+| `limitless-lp-ladder` | Rests a ladder of quotes inside a market's reward band, then verifies the orders are actually earning and re-quotes on drift. |
+| `limitless-group-scan` | Checks the children of a market group against each other for pricing that cannot all be true. Mostly a machine for explaining why an apparent edge is not one. |
 
 Install `limitless-trading` alongside whichever strategy skills you use.
+
+## Costs decide most answers
+
+Taker fees apply to any order that crosses the spread, and the published BUY rate is
+**3.00% for any outcome priced between $0.01 and $0.50**, charged in shares. On a market
+quoted 0.409 the effective price is 0.422. Strategies that buy baskets of cheap legs start
+3% behind, which is more than most apparent cross-market gaps. Orders that rest and fill as
+maker pay nothing. Full curve: https://docs.limitless.exchange/user-guide/fees
 
 ## What the connector can and cannot do
 

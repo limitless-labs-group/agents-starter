@@ -39,118 +39,132 @@ indistinguishable, and the fallback has no upload step to go wrong.
 
 ## Film plan
 
-Roughly four minutes. Two skills on camera, `limitless-thesis-builder` and
-`limitless-group-scan`. The other four get a sentence at the end, not screen time.
+Roughly four minutes. **One skill on camera, `limitless-thesis-builder`**, on equity
+markets, with `limitless-portfolio-review` as a short second act. The other four skills get
+a sentence at the end and no screen time.
 
-The rule for every beat: it has to be something the viewer could not have done faster
-themselves. Watching a model browse markets is not that. Watching it stop you from buying
-the wrong market is.
+Equities are the right surface for three reasons. The framing problem disappears, because
+"is NVIDIA higher tomorrow" is plainly a financial question. The viewer has a real prior,
+unlike a Fed decision where most people just defer to the market, so the calibration step
+is a genuine estimate rather than a shrug. And the daily single-name markets are plain
+binaries, so there is no group or ladder structure to explain.
+
+The demo runs two theses. One clears the costs and becomes a position. One does not and
+gets declined. Both are needed.
 
 ### Beat 1, the vague view (about 30 seconds)
 
-Open cold, no setup shown. Type something a person would actually say:
+Open cold, no setup shown.
 
-> I think the Fed holds in September
+> I think NVIDIA is up tomorrow
 
-Expect the model to restate it as a claim with a threshold, a deadline and a source, then
-**ask for your probability before it shows you any price**. That refusal to show the price
-first is the beat. If it reports a price before asking, restart the take, because that is
-the skill not firing.
+The model restates it as a claim with a source and a deadline, then **asks for your
+probability before it shows any price**. That refusal is the beat. If a price appears
+first, the skill did not fire, restart the take.
 
-Give a number out loud. Say 70%.
+Answer with a real prior out loud. "It's a coin flip, call it 50."
 
 ### Beat 2, the resolution audit (about 60 seconds)
 
-The model searches, finds **Fed Decision in September**, and reads the criteria back. The
-market resolves on the **upper bound of the target federal funds range** as decided at the
-September FOMC meeting, and it has five outcomes rather than two: 50+ bps decrease, 25 bps
-decrease, no change, 25 bps increase, 50+ bps increase.
+This is the value moment, and on equities it has genuinely surprising content.
 
-This is the value moment. "Fed holds" is not a yes or no market here, it is one child of a
-five way group, and the thing that decides it is a specific number in a specific statement.
-Let that land before moving on.
+The market does not resolve on the NYSE close. It resolves on the **Pyth NVDA/USD feed**,
+**strictly higher** than the **most recent prior trading day**, and the reference price is
+already captured and printed in the description, $227.96504 at the last read.
 
-### Beat 3, price and the honest answer (about 45 seconds)
+Let the model spell out the three consequences: the oracle price at the resolution moment
+can differ from the official closing print, a perfectly flat day resolves Down because
+strictly means strictly, and "prior trading day" shifts across weekends.
 
-The model prices it at the executable price, not the midpoint. On the day this was written
-the "no change" child was 0.665 bid, 0.705 ask, so the market implied about 70% and the ask
-is what you pay.
+Say the line: you thought you were trading NVIDIA, you are trading a specific oracle's
+opinion of NVIDIA at a specific moment. Anyone who has been burned by a settlement
+technicality will sit up.
 
-Your 70% against a 70.5% ask is no edge. The model should say there is no trade, and stop.
+### Beat 3, the number, and the fee nobody accounts for (about 60 seconds)
 
-**Do not cut this.** A demo where the AI always finds a trade is a demo nobody believes. If
-you want a positive outcome on camera too, give a second view where your number genuinely
-differs from the book, and run the same beat again to a real position.
+The book was 0.330 bid, 0.409 ask. The model prices at the ask, because that is what you
+pay, then adds the part people skip: the **3.00% BUY taker fee**, charged in shares, so the
+effective price is 0.409 / 0.97, about 0.422.
 
-### Beat 4, the three reasons it is not free money (about 60 seconds)
+Your 50 against an effective 0.422 is a real edge, roughly 19% expected return per share.
+Quarter Kelly on that is about 3.4% of bankroll.
 
-Switch to the weekly Ethereum price ladder and ask the question a naive agent would get
-wrong:
+Then the honest caveat, which is what makes it credible: the spread is 7.9 cents on a 37
+cent midpoint. A book that wide is not a confident statement of what the market believes,
+so the edge number is soft. Either the market knows something about tomorrow, or nobody is
+quoting. You cannot tell which from the book, and the model should say so rather than
+selling the 19%.
 
-> there is a group here where the prices sum to about a dollar. is that free money?
+### Beat 4, the one it turns down (about 45 seconds)
 
-**What price will Ethereum hit August 24-30** has 14 children, `↑ 3,100` down to `↓ 1,700`,
-each resolving YES if any Binance 1-minute candle merely touches that level during the
-window. The best asks summed to 0.985 at one read and 1.015 forty minutes later, so pull
-fresh numbers on the day and expect them to have moved.
+Same question, different ticker.
 
-The model should decline, and the reason it gives is the beat. Three independent reasons,
-any one of which is fatal:
+> what about Tesla?
 
-1. **One child has no book.** 13 of the 14 have two sided books. You cannot buy a complete
-   set that is missing a leg.
-2. **The children are nested, not exclusive.** Touching 3,000 means you already touched
-   2,900. The sum of a nested ladder has no reason to be 1, so being under 1 says nothing.
-3. **The fee settles it before either of those.** Buying every leg means crossing the
-   spread on every leg, and the published BUY taker fee is 3.00% for any outcome priced
-   between $0.01 and $0.50, charged in shares. Every leg here is cheap, so the basket pays
-   the full 3%, against an apparent gap of one or two points. Underwater before you start.
+0.443 bid, 0.508 ask, effective 0.523 after fees. Against the same coin-flip prior that is
+**negative**, about -4% per share. The model declines.
 
-Reason 3 is the one worth saying out loud on camera, because it is the one a viewer can
-check against the fee page and because it generalises: on this venue, cheap-leg basket
-strategies start 3% behind.
+Do the third one if the take has room. SPY was 0.422 bid, 0.478 ask, effective 0.493, which
+against a 50% prior is roughly fair and also not a trade.
 
-Ask the follow up if the take has room:
+Three tickers, one trade. That ratio is the demo. A tool that finds an edge in everything
+you point it at is a tool nobody should trust with money.
 
-> what about the ladder being inconsistent, is there anything there?
-
-There are visible monotonicity inversions, for instance `↑ 2,900` asking less than
-`↑ 3,000` when touching 2,900 is strictly easier. The correct answer is still no: those
-inversions are fractions of a cent inside spreads of three cents on books that are one or
-two orders deep. A violation smaller than the spread is not a violation.
-
-An AI that talks you out of four bad trades in a row, with a different reason each time, is
-a more useful demo than one that finds an edge.
+Worth showing if it comes up naturally: Amazon, SpaceX and EQT were all quoted 0.01 against
+0.99, which is no book at all. The model drops them rather than pricing them.
 
 ### Beat 5, the approval (about 45 seconds)
 
-Take the position from the second view in beat 3. The model sizes it, proposes, and returns
-an `approvalUrl`. Cut to the browser. The approval page shows the exact terms. Approve it,
-cut back, and the model polls `check_order_status` to `approved`.
+Back to NVIDIA. The model sizes it, proposes, and returns an `approvalUrl`. Cut to the
+browser. The approval page shows the exact terms. Approve, cut back, `check_order_status`
+goes to `approved`.
 
-Say the line out loud while the browser is on screen: the model proposed this, you approved
-it, and it never held a key or moved a dollar on its own. That is the difference between
-this and every agent demo that starts with pasting a private key into an env file.
+Say the line while the browser is on screen: it proposed, you approved, it never held a key
+or moved a dollar by itself. That is the difference between this and every agent demo that
+opens by pasting a private key into a `.env` file.
+
+### Beat 6, where am I (about 20 seconds)
+
+> where am I right now?
+
+`limitless-portfolio-review`. Balance, collateral locked by resting orders, the new
+position. Short. It exists to show the loop closes.
 
 ### Close (about 20 seconds)
 
-Name the other four skills in one sentence each and point at the repo. Do not demo them.
+Name the other four skills in one sentence and point at the repo. Do not demo them.
+
+### Optional coda
+
+These markets resolve the next day. A fifteen second follow-up showing the position
+resolved, filmed a day later, costs nothing and closes the story.
 
 ## Markets, verified live
 
-Re-check these on the day. Minimums, spreads and depth all move.
+Re-check on the day. Books move, and three of these had no book at all.
 
-| Market | Why it is good on camera |
-|---|---|
-| `fed-decision-in-september-1786349751858` | Macro, serious, five way group, all five children two sided. Resolution criteria are specific enough to make the audit beat land. Top of book depth runs from $1 to $70, so keep demo size small. |
-| `what-price-will-ethereum-hit-august-24-30-1787554957657` | The nested threshold trap. 13 of 14 children two sided, best asks summed to 0.985, depth $14 to $463. |
-| `august-unemployment-rate-1786349546297` | Nine children, all two sided, depth up to about $2,000. The backup if either of the above has thinned out. |
-| BTC or ETH Up or Down, 15 Min or Hourly | The only markets currently paying LP rewards, needed for the ladder skill. They resolve fast, which is good for a reward demo and bad for anything slow. |
+**Daily single-name equities.** Pyth resolved, `takerDelayMs` 0, fee bearing, minimum 150
+shares for LP rewards, $10 a day reward budget. Last read:
 
-**Do not demo sports or esports markets.** The framing holds for crypto and macro, where the
-activity is plainly limit orders on an exchange. It does not hold for sports, and no amount
-of prompt wording fixes that. Macro and crypto inventory is easy to find through
-`search_markets` even though the default active feed is mostly sports.
+| Market | Bid | Ask | Effective after 3% fee | Verdict at a 50% prior |
+|---|---|---|---|---|
+| NVIDIA (NVDA) | 0.330 | 0.409 | 0.422 | real edge, about +19% per share |
+| S&P 500 ETF (SPY) | 0.422 | 0.478 | 0.493 | roughly fair, no trade |
+| Tesla (TSLA) | 0.443 | 0.508 | 0.523 | negative, about -4% per share |
+| Amazon, SpaceX, EQT | 0.010 | 0.990 | n/a | no book, drop them |
+
+Top of book depth on the live three ran $50 to $76, so keep demo size small.
+
+**Other inventory worth knowing about.** Macro groups (`fed-decision-in-september`,
+`august-unemployment-rate`, ECB) for a five way resolution audit. Weekly nested price
+ladders on SPY, gold, BTC and ETH, which are the trap case for `limitless-group-scan`.
+Longer dated single names like OpenAI IPO, Stripe next round valuation, and AST SpaceMobile
+if you want a thesis with more than a day on it. BTC and ETH Up or Down on 15 minute and
+hourly cadences are the only markets paying LP rewards, needed if you ever demo the ladder.
+
+**Do not demo sports or esports markets.** The framing holds for equities, macro and crypto,
+where the activity is plainly limit orders on an exchange. It does not hold for sports, and
+no amount of prompt wording fixes that.
 
 ## Acceptance test
 
