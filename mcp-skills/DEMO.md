@@ -82,24 +82,45 @@ Your 70% against a 70.5% ask is no edge. The model should say there is no trade,
 you want a positive outcome on camera too, give a second view where your number genuinely
 differs from the book, and run the same beat again to a real position.
 
-### Beat 4, the fake arbitrage (about 60 seconds)
+### Beat 4, the three reasons it is not free money (about 60 seconds)
 
-The strongest single beat available. Switch to the weekly Ethereum price ladder:
+Switch to the weekly Ethereum price ladder and ask the question a naive agent would get
+wrong:
 
-> there is a group here where the prices sum to less than a dollar. is that free money?
+> there is a group here where the prices sum to about a dollar. is that free money?
 
-**What price will Ethereum hit August 24-30** has 14 children priced from `↑ 3,100` down to
-`↓ 1,700`, and the best asks summed to 0.985 when this was written. Under a dollar for what
-looks like a complete set. A naive agent buys all 14 and calls it arbitrage.
+**What price will Ethereum hit August 24-30** has 14 children, `↑ 3,100` down to `↓ 1,700`,
+each resolving YES if any Binance 1-minute candle merely touches that level during the
+window. The best asks summed to 0.985 at one read and 1.015 forty minutes later, so pull
+fresh numbers on the day and expect them to have moved.
 
-It is not. The children are nested thresholds. Each resolves YES if any Binance 1-minute
-candle high touches that level during the window, so if ETH hits 3,100 it also hit 3,000 and
-2,900. They are not mutually exclusive, the sum has no reason to be 1, and there is nothing
-to collect.
+The model should decline, and the reason it gives is the beat. Three independent reasons,
+any one of which is fatal:
 
-`limitless-group-scan` classifies the group before it does any arithmetic, so it declines.
-An AI that turns down free money for the right reason is worth more than one that finds
-edges.
+1. **One child has no book.** 13 of the 14 have two sided books. You cannot buy a complete
+   set that is missing a leg.
+2. **The children are nested, not exclusive.** Touching 3,000 means you already touched
+   2,900. The sum of a nested ladder has no reason to be 1, so being under 1 says nothing.
+3. **The fee settles it before either of those.** Buying every leg means crossing the
+   spread on every leg, and the published BUY taker fee is 3.00% for any outcome priced
+   between $0.01 and $0.50, charged in shares. Every leg here is cheap, so the basket pays
+   the full 3%, against an apparent gap of one or two points. Underwater before you start.
+
+Reason 3 is the one worth saying out loud on camera, because it is the one a viewer can
+check against the fee page and because it generalises: on this venue, cheap-leg basket
+strategies start 3% behind.
+
+Ask the follow up if the take has room:
+
+> what about the ladder being inconsistent, is there anything there?
+
+There are visible monotonicity inversions, for instance `↑ 2,900` asking less than
+`↑ 3,000` when touching 2,900 is strictly easier. The correct answer is still no: those
+inversions are fractions of a cent inside spreads of three cents on books that are one or
+two orders deep. A violation smaller than the spread is not a violation.
+
+An AI that talks you out of four bad trades in a row, with a different reason each time, is
+a more useful demo than one that finds an edge.
 
 ### Beat 5, the approval (about 45 seconds)
 

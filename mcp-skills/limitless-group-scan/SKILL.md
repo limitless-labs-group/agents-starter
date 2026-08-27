@@ -26,9 +26,16 @@ group metadata, then decide which relationship holds:
 A football match winner group (home, away, draw) is the clear case. The YES prices should
 sum to about 1.
 
-**Date laddered.** Each child asks the same question with a later deadline, for example
-"by June 30" then "by July 31". These are not exclusive. The correct check is monotonicity:
-a later deadline can never be less likely than an earlier one.
+**Nested ladder.** Each child is a threshold on the same underlying, either a date or a
+price. "By June 30" then "by July 31". Or `↑ 2,900` then `↑ 3,000` on a weekly price
+ladder, where each resolves YES if the underlying merely touches that level. These are
+**not exclusive**, they are strictly nested: touching 3,000 means you already touched
+2,900. The sum has no reason to be anything in particular, and a sum under 1 is not an
+arbitrage.
+
+The correct check on a ladder is monotonicity. The easier event can never price below the
+harder one: a later deadline is never cheaper than an earlier one, a nearer price level is
+never cheaper than a further one.
 
 **Independent.** Children that can resolve YES together, such as separate props on one
 event. No cross-market identity holds. Report the prices and stop, there is no
@@ -57,21 +64,37 @@ there is nothing to check.
 
 ## 4. Check
 
-**Exclusive group:** sum the YES asks. Sum well above 1 means the set is collectively
-expensive. Sum well below 1 means buying every outcome costs less than the $1 that one of
-them is guaranteed to pay.
+**Exclusive group only:** sum the YES asks. Sum well below 1 means buying every outcome
+costs less than the $1 that exactly one of them is guaranteed to pay. Sum well above 1
+means the set is collectively expensive. Both only mean anything when every child has a
+book and the set is genuinely exclusive and exhaustive.
 
-**Date ladder:** walk the children in deadline order. Flag any pair where the later
-deadline prices below the earlier one.
+**Ladder:** walk the children in order of difficulty. Flag any pair where the easier event
+prices below the harder one.
 
-Before calling anything an inconsistency, subtract the costs:
+### Costs, which usually settle it
 
-- the spread on every leg, since you pay the ask on each
-- taker fees on any leg you cross for, `place_orders` returns the estimate per order
-- whether every leg actually has size at the quoted price, check the book depth
+Before calling anything an inconsistency, subtract:
 
-Most apparent gaps are the spread. Say that plainly when it is the case, and do not dress
-a spread up as an edge.
+**The taker fee, and start here because it is the biggest number.** Crossing the spread on
+every leg makes every leg a taker. The published BUY fee is **3.00% for any outcome priced
+between $0.01 and $0.50**, only tapering above that, and it is charged in shares, so you
+receive fewer contracts than you paid for. See
+https://docs.limitless.exchange/user-guide/fees
+
+A basket of cheap legs therefore needs a gross gap well above 3% before it is worth
+anything at all. Most apparent group gaps are one or two points. Do that arithmetic first
+and you will usually be done.
+
+**The spread on every leg**, since you pay the ask on each. A monotonicity violation
+smaller than the spread is not a violation, it is two wide books quoted independently. On
+thin ladders a 0.4 cent inversion sitting inside a 3 cent spread means nothing.
+
+**The depth at the quoted price.** `place_orders` returns the fee estimate per order, and
+the book tells you whether the size is really there.
+
+Say all of this plainly when it applies. Do not dress a spread up as an edge, and do not
+report a gap without netting the fee.
 
 ## 5. Propose
 
