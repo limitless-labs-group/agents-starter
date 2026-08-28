@@ -1,13 +1,17 @@
 ---
 name: limitless-group-scan
-description: Scans the child markets of a Limitless market group against each other and flags pricing that is internally inconsistent, such as mutually exclusive outcomes whose probabilities do not sum to one or date laddered markets whose probabilities move the wrong way, then proposes the corrective orders. Use when the user asks about a market group, an event with several outcomes, relative value between related markets, or whether a group is mispriced.
+description: Checks the child markets of a Limitless market group against each other for pricing that cannot all be true, covering mutually exclusive outcomes that do not sum to one and nested date or price ladders that move the wrong way, and nets spread and taker fees before calling anything an edge. Usually concludes there is no trade and explains why. Use when the user asks about a market group, an event with several outcomes, relative value between related markets, or whether a group is mispriced or arbitrageable.
 ---
 
 # Group consistency scan
 
-Markets inside a group are related, so their prices have to agree with each other. When
-they do not, the disagreement is the trade. This skill finds the disagreement and prices
-the correction.
+Markets inside a group are related, so their prices have to agree with each other. This
+skill checks whether they do.
+
+Set expectations before you start: **the answer is almost always that there is no trade.**
+Apparent group gaps are usually the spread, a child with no book, a group that was never
+mutually exclusive, or an edge smaller than the 3% taker fee. Working out which one it is
+is the useful output. Finding a real correction is the rare case, not the goal.
 
 ## 1. Resolve the group
 

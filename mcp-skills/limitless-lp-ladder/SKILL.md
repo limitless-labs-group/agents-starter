@@ -36,8 +36,15 @@ position you are willing to hold, not as a rebate farm.
 - `liquidityRewards.minimumContracts`, the minimum shares per order to qualify
 - `liquidityRewards.maximumDistanceFromMidpoint`, the reward band in price terms
 
-Prefer markets with a deadline far enough out to be worth quoting. Short window markets
-(5 minute, 15 minute, hourly) resolve while your orders are still resting.
+**Expect a short deadline.** The markets that pay LP rewards are the recurring ones: crypto
+and equity up or down on 5 minute, 15 minute, hourly and daily cadences. They resolve while
+your orders are still resting, and that is the normal case here rather than a problem to
+avoid. Do not go looking for a long dated market to quote, most of them carry no reward
+budget at all.
+
+What that means in practice: the ladder is a position with a known, short life, the reward
+accrues per minute while it rests, and any unfilled rung disappears at resolution. Quote
+accordingly and do not set up a ladder you cannot watch for its whole life.
 
 ### 2. Read the live book
 
@@ -65,6 +72,9 @@ scales with the price of the outcome you quote:
 | 0.98 | 100 | $98 |
 | 0.50 | 100 | $50 |
 | 0.02 | 100 | $2 |
+
+Minimums observed in the wild run from 50 to 150 shares depending on the market, so read
+`minimumContracts` rather than assuming.
 
 A six rung ladder on a market trading near 0.98 is a few hundred dollars of committed
 collateral. If that exceeds the budget, say so and offer the cheaper outcome or a market

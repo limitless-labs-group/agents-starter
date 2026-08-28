@@ -22,9 +22,14 @@ as `limitless:search_markets`.
 
 | Group | Tools |
 |---|---|
-| Discovery, no auth needed | `search_markets`, `list_markets`, `list_market_categories`, `get_market`, `get_market_group`, `get_orderbook` |
+| Market data | `search_markets`, `list_markets`, `list_market_categories`, `get_market`, `get_market_group`, `get_orderbook` |
 | Your account | `get_wallet_balance`, `get_positions`, `get_open_orders`, `get_trade_history` |
 | Trading | `place_orders`, `check_order_status`, `cancel_order`, `cancel_all_orders` |
+
+Every tool needs the connector to be authenticated, market data included. There is no
+anonymous read path. `place_orders`, `cancel_order` and `cancel_all_orders` additionally
+need the `trading` scope on the grant and return an explicit scope error without it;
+`check_order_status` does not.
 
 ## The one rule that shapes everything
 

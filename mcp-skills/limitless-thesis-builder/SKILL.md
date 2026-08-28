@@ -32,8 +32,12 @@ This skill deals with both before anything gets sized.
 ### 1. State the claim so it can be wrong
 
 Rewrite the user's view as one proposition with a subject, a threshold, a deadline, and a
-source. "ETH does well" is not a thesis. "ETH trades above $4,000 on the Chainlink
-ETH/USD feed at any point before October 1" is.
+source. "ETH does well this week" is not a thesis. "An ETH/USDT 1-minute candle on Binance
+prints a high at or above $2,900 before Sunday" is, and it happens to be exactly what one
+of the weekly ladder markets asks.
+
+You will usually not know the source until step 4. Write the claim with a placeholder for
+it, then come back and fill it in once you have read the market that actually resolves it.
 
 If the user cannot name a deadline, there is no market. Say that and ask for one.
 
@@ -176,8 +180,8 @@ files:
 | | |
 |---|---|
 | My probability | [q]% |
-| Market price (ask) | [p]% |
-| Edge, net of costs | [q - p - costs] points |
+| Market price | [ask]% quoted, [effective]% after the taker fee |
+| Edge | [q minus the effective price] points |
 | Size | [$X, which is Y% of bankroll, quarter Kelly capped at Z] |
 | Max loss | [$X if it resolves against me] |
 | Max payout | [shares x $1] |
@@ -203,9 +207,10 @@ user wants it on now. Either way the user approves in the browser.
 
 Some views need more than one market:
 
-- **Date ladders.** "By when" rather than "if". Buying a later deadline is a weaker,
-  cheaper claim than an earlier one. If an earlier deadline prices above a later one for
-  the same event, one of them is wrong, see `limitless-group-scan`.
+- **Nested ladders**, by date or by price threshold. "By when" or "how far" rather than
+  "if". A later deadline, or a nearer price level, is a weaker and cheaper claim than the
+  one beyond it. These are not exclusive, so their prices do not sum to anything
+  meaningful, but they must stay monotonic. See `limitless-group-scan`.
 - **Groups.** When a group is mutually exclusive, expressing a view means picking a child,
   or buying several and accepting that only one can pay.
 - **Baskets.** Several markets on the same underlying driver are one bet, not three. Size
