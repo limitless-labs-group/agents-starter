@@ -1,154 +1,73 @@
-export interface Token {
-    address: string;
-    decimals: number;
-    symbol: string;
-}
+/**
+ * Shared Limitless types used across strategies.
+ *
+ * Wire shapes come from the official SDK; this file only re-exports the ones
+ * strategies touch and adds the small strategy-level vocabulary (order types,
+ * outcome sides) so a strategy never imports the SDK directly for types.
+ */
 
-export interface MarketVenue {
-    exchange: string; // The verifyingContract for EIP-712
-    adapter: string;
-}
+import type {
+  Market as SdkMarket,
+  OrderBook as SdkOrderBook,
+  OrderbookEntry,
+  CLOBPosition,
+  UserProfile,
+  OrderResponse,
+  Execution,
+} from '@limitless-exchange/sdk';
 
-export interface Market {
-    id: number;
-    address: string;
-    title: string;
-    prices: number[]; // [YES price, NO price] e.g. [42.8, 57.2]
-    tradeType: 'amm' | 'clob' | 'group';
-    marketType: 'single' | 'group';
-    slug: string;
-    venue: MarketVenue;
-    positionIds: string[]; // [YES token ID, NO token ID]
-    collateralToken: Token;
-    volume: string; // Raw units
-    volumeFormatted: string; // Human readable
-    liquidity: string;
-    liquidityFormatted: string;
-    expirationTimestamp: number; // ms
-    status: 'FUNDED' | 'CLOSED' | 'RESOLVED';
-    // Additional fields might be present
-}
+/** A Limitless market as returned by `GET /markets/:slug` and the listings. */
+export type Market = SdkMarket;
 
-export interface MarketDetail extends Market {
-    description?: string;
-    resolutionSource?: string;
-}
+/** A CLOB orderbook as returned by `GET /markets/:slug/orderbook`. */
+export type Orderbook = SdkOrderBook;
 
-export interface MarketSlugMeta {
-    slug: string;
-    collateralToken: Token;
-    expirationTimestamp: number;
-}
+export type { OrderbookEntry, CLOBPosition, UserProfile, OrderResponse, Execution };
 
-export interface OrderbookLevel {
-    price: string; // Price in cents/shares? API usually returns raw. Need to confirm unit.
-    // User prompt says "prices[0] = YES price (0-100)".
-    // CLOB API usually returns price as raw uint256 or string.
-    // We will assume string for safety.
-    size: string;
-}
-
-export interface Orderbook {
-    bids: OrderbookLevel[];
-    asks: OrderbookLevel[];
-    midpoint?: number;
-}
-
-/** Supported order execution strategies */
+/** Supported order execution strategies. */
 export type OrderType = 'GTC' | 'FOK' | 'FAK';
 
-export interface Order {
-    id: string;
-    marketSlug: string;
-    side: 'YES' | 'NO';
-    price: number;
-    size: number;
-    filledSize: number;
-    status: 'OPEN' | 'FILLED' | 'CANCELLED' | 'EXPIRED';
-    timestamp: number;
-    /** Matches returned when an FAK or FOK order fills immediately */
-    makerMatches?: any[];
+/** Binary outcome side. */
+export type OutcomeSide = 'YES' | 'NO';
+
+/**
+ * YES / NO position token ids for a market. Markets carry them either as
+ * `positionIds: [yes, no]` or `tokens: { yes, no }` depending on vintage;
+ * always go through {@link marketTokenIds} rather than reading one shape.
+ */
+export interface MarketTokenIds {
+  yes: string;
+  no: string;
 }
 
-/** Parameters for creating a self-signed order */
-export interface CreateOrderParams {
-    marketSlug: string;
-    side: 'YES' | 'NO';
-    /** Limit price in cents, 1–99. E.g. 50 means 50¢ per contract. */
-    limitPriceCents: number;
-    /** Amount in USD to spend. E.g. 10 means $10. */
-    usdAmount: number;
-    /** Order type. Defaults to 'FOK'. */
-    orderType?: OrderType;
-    /**
-     * GTC only. When true, the order is rejected if it would immediately match
-     * against existing orders. Guarantees maker-only execution.
-     */
-    postOnly?: boolean;
+/** Resolve a market's YES/NO token ids, whichever shape the API returned. */
+export function marketTokenIds(market: Pick<Market, 'positionIds' | 'tokens' | 'slug'>): MarketTokenIds {
+  const yes = market.positionIds?.[0] ?? market.tokens?.yes;
+  const no = market.positionIds?.[1] ?? market.tokens?.no;
+  if (!yes || !no) {
+    throw new Error(`market ${market.slug} has no YES/NO token ids`);
+  }
+  return { yes, no };
 }
 
-/** Parameters for redeeming resolved positions via the API */
-export interface RedeemParams {
-    /** CTF condition ID (bytes32 hex string) */
-    conditionId: string;
-    /** Managed sub-account profile ID (partner flow only) */
-    onBehalfOf?: number;
+/**
+ * Normalize a price to the 0..1 range. The markets listing reports `prices`
+ * as cents (0..100) while orderbook levels are fractions (0..1); strategies
+ * that mix the two should pass everything through this.
+ */
+export function toFraction(price: number | string | null | undefined): number {
+  const v = Number(price ?? 0);
+  if (!Number.isFinite(v)) return 0;
+  return v > 1 ? v / 100 : v;
 }
 
-/** Parameters for withdrawing funds from a managed server wallet */
-export interface WithdrawParams {
-    /** Amount to withdraw (human-readable, e.g. "50" for 50 USDC) */
-    amount: string;
-    /** Token contract address */
-    token: string;
-    /** Managed sub-account profile ID (partner flow only) */
-    onBehalfOf?: number;
-}
-
-// EIP-712 Types
-export const EIP712_DOMAIN = {
-    name: 'Limitless CTF Exchange',
-    version: '1',
-    chainId: 8453,
-    // verifyingContract is dynamic per market
-} as const;
-
-export const EIP712_TYPES = {
-    Order: [
-        { name: 'salt', type: 'uint256' },
-        { name: 'maker', type: 'address' },
-        { name: 'signer', type: 'address' },
-        { name: 'taker', type: 'address' },
-        { name: 'tokenId', type: 'uint256' },
-        { name: 'makerAmount', type: 'uint256' },
-        { name: 'takerAmount', type: 'uint256' },
-        { name: 'expiration', type: 'uint256' },
-        { name: 'nonce', type: 'uint256' },
-        { name: 'feeRateBps', type: 'uint256' },
-        { name: 'side', type: 'uint8' },
-        { name: 'signatureType', type: 'uint8' },
-    ]
-} as const;
-
-export interface SignedOrder {
-    salt: number | string;
-    maker: string;
-    signer: string;
-    taker: string;
-    tokenId: string;
-    makerAmount: string | number;
-    takerAmount: string | number;
-    expiration: string | number;
-    nonce: number;
-    feeRateBps: number;
-    side: 0 | 1; // 0 = BUY, 1 = SELL
-    signatureType: 0 | 1; // 0 = EOA
-    signature: string;
-}
-
-export interface FeedEvent {
-    user: string;
-    description: string;
-    timestamp: number;
-    // Add other fields as discovered
+/**
+ * Per-market taker delay in milliseconds (0 = none). FOK/FAK orders on a
+ * delayed market come back `DELAYED` with an `eligibleAt`. The SDK's
+ * `MarketSettings` type does not model the field yet, hence the cast.
+ */
+export function takerDelayMs(market: Pick<Market, 'settings'>): number {
+  const raw = (market.settings as { takerDelayMs?: number | string } | undefined)?.takerDelayMs;
+  const n = Number(raw ?? 0);
+  return Number.isFinite(n) ? n : 0;
 }

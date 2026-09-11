@@ -1,8 +1,8 @@
 # Limitless Agents Starter
 
-Autonomous trading agents for [Limitless Exchange](https://limitless.exchange), the prediction market on Base.
+Boilerplate for autonomous trading agents on [Limitless Exchange](https://limitless.exchange), the prediction market on Base. TypeScript, built on the official [`@limitless-exchange/sdk`](https://docs.limitless.exchange/developers/sdk/typescript/getting-started), dry-run by default.
 
-Feed `SKILL.md` to any coding agent with shell + file access and it handles the rest — setup, trading, iteration.
+Feed [`AGENTS.md`](AGENTS.md) or [`SKILL.md`](SKILL.md) to any coding agent with shell + file access and it handles the rest: setup, trading, iteration.
 
 ## Install
 
@@ -10,62 +10,51 @@ Feed `SKILL.md` to any coding agent with shell + file access and it handles the 
 curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh | sh
 ```
 
-One command: checks prerequisites, clones the repo, installs, and scaffolds your config — then prints exactly which credentials to add. It **never touches a private key**; placing your key stays a step you take yourself. (Prefer to read before running? `curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh -o install.sh && less install.sh && sh install.sh`.)
+One command: checks prerequisites (Node 20+), clones, installs, scaffolds `.env`, and prints exactly which credentials to add. It **never touches a private key**; placing your key stays a step you take yourself. (Prefer to read before running? `curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh -o install.sh && less install.sh && sh install.sh`.)
 
-Then fill `.env` and run `npm run cross-market-mm:init` again — it derives your Polymarket deposit wallet and prints the exact addresses to fund. Full walkthrough: **[QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md)**.
-
-**Docs:** [Build a trading agent](https://docs.limitless.exchange/developers/build-a-trading-agent) is the companion guide for this repo on [docs.limitless.exchange](https://docs.limitless.exchange) — alongside the full API reference, market structure, and SDKs. Also available as a live MCP server at `https://docs.limitless.exchange/mcp` for AI agents that need up-to-date context.
-
-## Strategies
-
-| Strategy | Run | What it does | Guides |
-|---|---|---|---|
-| **Cross-market MM** | `npm run cross-market-mm` | Quote on Limitless, hedge fills on Polymarket → delta-neutral. Earns the cross-venue spread + Limitless maker rebates / LP rewards. | [QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md) · [SKILL](src/strategies/cross-market-mm/SKILL.md) |
-| Oracle Arb | `npm run oracle-arb` | Pyth (Hermes SSE) oracle vs Limitless pricing; fires FOK when the market is mispriced. | [QUICKSTART](src/strategies/oracle-arb/QUICKSTART.md) · [SKILL](src/strategies/oracle-arb/SKILL.md) |
-| Certainty Closer | `npm run certainty-closer` | SDK-only, no feeds: buy near-resolution favourites, sized via fractional Kelly. The simplest example. | [QUICKSTART](src/strategies/certainty-closer/QUICKSTART.md) · [SKILL](src/strategies/certainty-closer/SKILL.md) |
-
-All three default to `DRY_RUN` (logs intents, signs nothing) so you can boot them risk-free first. **New here?** Start with **[QUICKSTART](src/strategies/cross-market-mm/QUICKSTART.md)** — it takes you all the way to cross-venue market-making live on both chains in ~20–30 min.
-
-## For AI agents
-
-This repo is designed to be operated by an AI agent, and it carries its own operating contract so you don't need a bespoke prompt. Point your agent at **[`AGENTS.md`](AGENTS.md)** (Claude Code reads it automatically) — it has the install one-liner, the safety contract, the command map, and the monitoring surface, and routes to `SKILL.md` for depth.
-
-The human handles the one thing the agent can't: placing the private key + tokens in `.env` and funding the wallet. **Keep secrets out of the agent's chat context;** the `init` bootstrap is built to never read them.
-
-## Manual setup
-
-The installer above does this for you. To do it by hand instead:
+By hand:
 
 ```bash
 git clone https://github.com/limitless-labs-group/agents-starter.git
 cd agents-starter
 npm install
-npm run cross-market-mm:init   # scaffolds .env + config, lists the credentials to add
+npm run init        # creates .env (mode 600), lists the credentials to add
 ```
 
-### Get Your Credentials
+## Credentials
 
-**HMAC token:** [limitless.exchange](https://limitless.exchange) → Connect wallet → API token modal → "API Tokens" tab → Derive → copy the `tokenId` + `secret` into `LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET`. (Headless/CI: `npm run derive-token`. A legacy `LIMITLESS_API_KEY` still works if you hold one.)
+Two things go in `.env`. [`npm run doctor`](#doctor) verifies both before you trade.
 
-**Private Key:** Export from MetaMask or Rabby. Use a dedicated trading wallet — never your main wallet.
+| Variable | What | Where |
+|---|---|---|
+| `PRIVATE_KEY` | A **dedicated** trading wallet on Base. Never your main wallet. | Export from your wallet app |
+| `LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET` | Limitless scoped HMAC token | [limitless.exchange](https://limitless.exchange) → connect the **same** wallet → API token modal → **API Tokens** → Derive |
 
-**Funding:** You need USDC (trading collateral) and a small amount of ETH (gas) on Base chain.
+Fund the wallet with **USDC on Base** (order collateral) and a little **ETH on Base** (gas for approvals and redemptions only; orders themselves are off-chain). There is no testnet or sandbox; rehearse with small live orders.
 
-### Run a Strategy
+> **Trading-wallet mode.** While connected in the app, decline the one-time "1-click trading" (smart wallet) prompt. Accepting it puts the profile in `smartWallet` mode and every order your bot signs is rejected with *Signer does not match*. Already accepted? `npm start wallet-mode eoa` switches it back. `npm run doctor` catches this.
 
-Pick one from the [Strategies](#strategies) table. They all default to `DRY_RUN`:
+## Doctor
 
 ```bash
-# Cross-venue market making (dry-run by default)
-npm run cross-market-mm
-# or the simplest example: npm run certainty-closer
-
-# Go live: set DRY_RUN=false in .env (or dry_run: false in the YAML for cross-market-mm)
+npm run doctor                     # key · token · wallet mode · USDC/ETH balances
+npm run doctor -- --market <slug>  # + USDC/CTF approvals for that market's exchange
 ```
 
-For the full cross-market-mm lifecycle (find-pairs → preflight → run → status → close), follow [`src/strategies/cross-market-mm/SKILL.md`](src/strategies/cross-market-mm/SKILL.md).
+Non-zero exit on anything that would make orders fail. Run it after any credential change.
 
-### Claim Winnings
+## Strategies
+
+Every strategy defaults to `DRY_RUN=true`: every order intent is logged, nothing is signed or sent. Flip `DRY_RUN=false` only after a clean dry run.
+
+| Strategy | Run | What it does | Needs |
+|---|---|---|---|
+| **Template** | `npm run template` | Bare skeleton: scan → fair value → decide. Copy it to build your own. | Base only |
+| Certainty Closer | `npm run certainty-closer` | Buy near-resolution favourites, sized by fractional Kelly. The simplest worked example ([guide](src/strategies/certainty-closer/QUICKSTART.md)). | Base only |
+| Oracle Arb | `npm run oracle-arb` | Pyth (Hermes SSE) oracle vs Limitless price; fires FOK when the market is mispriced ([guide](src/strategies/oracle-arb/QUICKSTART.md)). | Base only |
+| Cross-market MM | `npm run cross-market-mm` | Quote on Limitless, hedge fills on Polymarket, stay delta-neutral. Earns spread + LP rewards ([guide](src/strategies/cross-market-mm/QUICKSTART.md)). | Base + Polygon, guided `cross-market-mm:init` |
+
+Claim winnings from resolved markets any time (standard and neg-risk markets):
 
 ```bash
 npm run redeem claim-all
@@ -73,23 +62,59 @@ npm run redeem claim-all
 
 ## Build your own strategy
 
-`oracle-arb` and `certainty-closer` extend `BaseStrategy` (`src/strategies/base-strategy.ts`): implement `tick()` to return `TradeDecision[]`, plus `initialize()`/`shutdown()`; the base class runs the loop and gates on `DRY_RUN`. `src/strategies/certainty-closer/` is the simplest template. (`cross-market-mm` has its own runtime loop rather than `BaseStrategy`.)
+Copy [`src/strategies/template/`](src/strategies/template/), rename, and replace `fairValue()` with your signal. A strategy is four methods on [`BaseStrategy`](src/strategies/base-strategy.ts):
 
-## Architecture
+```typescript
+class MyStrategy extends BaseStrategy {
+  async initialize() {}                       // connect feeds, load state
+  async tick(): Promise<TradeDecision[]> {    // read markets, decide
+    return [{ action: 'BUY', marketSlug, side: 'YES', amountUsd: 2, priceLimit: 55, orderType: 'FOK', reason }];
+  }
+  async shutdown() {}                         // cancel quotes, close feeds
+  getStats() { /* for heartbeats */ }
+}
+```
 
-```
-src/
-  core/
-    limitless/          # Full Limitless API client (markets, trading, signing, redeem)
-    polymarket/         # Polymarket clob-client-v2 adapter + WS (cross-market-mm hedge side)
-    price-feeds/        # Pyth Hermes SSE
-    kelly.ts            # Fractional-Kelly position sizing util
-  strategies/
-    base-strategy.ts    # Strategy base class with tick loop
-    cross-market-mm/         # Cross-venue market-making (Polymarket ↔ Limitless)
-    oracle-arb/         # Pyth oracle edge-detection
-    certainty-closer/   # SDK-only near-resolution example
-```
+The base class runs the loop, gates on `DRY_RUN`, routes BUY/SELL to the SDK, and (with `awaitFills = true`) waits out the **taker delay** on markets that hold marketable orders for a moment before matching. Add a `run.ts` and an npm script; `npm run template` is the reference.
+
+Building blocks in [`src/core/`](src/core/):
+
+| Module | Purpose |
+|---|---|
+| `limitless/client.ts` | One place that turns env into SDK clients (HMAC-first auth) |
+| `limitless/markets.ts` | Active markets, search, detail, orderbook |
+| `limitless/sdk-trading.ts` | Orders: BUY/SELL, cancel, cancel-replace, `status/batch`, `awaitFill` (taker-delay aware) |
+| `limitless/websocket.ts` | Live orderbooks (with initial snapshot) and your order events |
+| `limitless/portfolio.ts` | Profile, positions, fill verification, trading-wallet mode |
+| `limitless/execution.ts` | The `settlementStatus` state machine: filled / resting / pending / killed |
+| `limitless/redeem.ts` | Claim winnings on-chain (CTF and neg-risk adapter) |
+| `limitless/approve.ts` | USDC + CTF approvals for a market's exchange |
+| `kelly.ts` | Fractional-Kelly sizing |
+| `price-feeds/hermes.ts` | Pyth oracle prices over SSE |
+| `polymarket/` | Polymarket CLOB v2 adapter + websocket (cross-market-mm hedge leg) |
+
+Two runnable examples: `npm run example:place-order` (search → post-only GTC → watch order events → verify → cancel) and `npm run example:stream` (live orderbooks + your order events).
+
+## For AI agents
+
+This repo carries its own operating contract. Point your agent at [`AGENTS.md`](AGENTS.md) (Claude Code reads it automatically); it routes to [`SKILL.md`](SKILL.md) for the full manual: market structure, SDK reference, websocket semantics, fees, partner flows, and known footguns.
+
+The human handles the one thing the agent must not: placing the private key and token in `.env` and funding the wallet. **Keep secrets out of the agent's chat context**; `init` and `doctor` are built to never print them.
+
+Two other ways to put an agent on Limitless, for different jobs:
+
+- **Chat, with a human approving each order:** the official trading MCP server at `https://api.limitless.exchange/mcp` ([guide](https://docs.limitless.exchange/developers/mcp-server)). The [`mcp-skills/`](mcp-skills/) pack in this repo gives Claude research, sizing, LP-ladder, and portfolio-review skills on top of it. No keys, no server.
+- **Unattended bots:** this repo.
+
+Before letting any agent trade, read [Responsible agents](https://docs.limitless.exchange/developers/responsible-agents): self-trade prevention, blocklists, and what gets an address blocked (never cancel CLOB orders on-chain).
+
+## Docs and support
+
+- [Build a trading agent](https://docs.limitless.exchange/developers/build-a-trading-agent), the companion guide for this repo
+- [Developer docs](https://docs.limitless.exchange/developers/introduction): [authentication](https://docs.limitless.exchange/developers/authentication), [EIP-712 signing](https://docs.limitless.exchange/developers/eip712-signing), [WebSocket](https://docs.limitless.exchange/developers/websocket/overview), [fees](https://docs.limitless.exchange/user-guide/fees), [API reference](https://docs.limitless.exchange/api-reference/introduction)
+- Docs MCP for coding agents: `https://docs.limitless.exchange/mcp`
+- [Builders Chat](https://t.me/LimitlessBuildersChat) on Telegram
+- Related tools: [`limitless-cli`](https://github.com/limitless-labs-group/limitless-cli) (Rust CLI), [`limitless-feeds-cli`](https://github.com/limitless-labs-group/limitless-feeds-cli) (price-feed mapping), the [Python](https://github.com/limitless-labs-group/limitless-sdk) / [Go](https://github.com/limitless-labs-group/limitless-exchange-go-sdk) / [Rust](https://github.com/limitless-labs-group/limitless-exchange-rust-sdk) SDKs
 
 ## Contracts (Base)
 
@@ -98,12 +123,18 @@ src/
 | CTF | `0xC9c98965297Bc527861c898329Ee280632B76e18` |
 | USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 
-## Resources
+Exchange and neg-risk adapter addresses are per market: read them from `market.venue`, never hardcode.
 
-- [Limitless API Docs](https://docs.limitless.exchange)
-- [Limitless MCP Server](https://docs.limitless.exchange/mcp) — live docs for AI agents
-- [SKILL.md](./SKILL.md) — full agent operating manual
+## Development
+
+```bash
+npm run typecheck   # tsc --noEmit
+npm test            # vitest, no network
+npm run build
+```
+
+CI runs all three on Node 20 and 22. `tests/unit/sdk-surface.test.ts` and `tests/unit/sdk-signing.test.ts` fail loudly if an SDK bump changes an API this repo calls or what it signs.
 
 ## License
 
-MIT
+MIT. Real money on real markets; nothing here is financial advice.

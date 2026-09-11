@@ -23,7 +23,8 @@
  * (create the relayer key in the Polymarket builder dashboard).
  */
 
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 import { privateKeyToAccount } from 'viem/accounts';
 import {
   createWalletClient,

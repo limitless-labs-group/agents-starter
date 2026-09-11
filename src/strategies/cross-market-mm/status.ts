@@ -15,7 +15,8 @@
  * an agent needs to double-check current state from scratch.
  */
 
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 import { createPublicClient, http, parseAbi } from 'viem';
 import { polygon } from 'viem/chains';
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';

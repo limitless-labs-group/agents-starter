@@ -2,9 +2,9 @@ import { createWalletClient, http, publicActions } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base } from 'viem/chains';
 import { pino } from 'pino';
-import * as dotenv from 'dotenv';
+import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 

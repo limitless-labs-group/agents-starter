@@ -11,7 +11,8 @@
  * Read-only: allocates a deposit address, moves no funds.
  */
 
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 import fs from 'node:fs';
 import { readPolyFunder } from './init.js';
 import { getDepositAddresses, getBaseUsdcMin } from './poly-bridge.js';

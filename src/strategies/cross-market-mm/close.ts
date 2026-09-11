@@ -13,7 +13,8 @@
  * `npm run cross-market-mm:setup-poly` (Poly deposit wallet, incl. CTF sell-approval).
  */
 
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
 import { LimitlessClient } from '../../core/limitless/markets.js';
 import { PolymarketAdapter } from '../../core/polymarket/client.js';

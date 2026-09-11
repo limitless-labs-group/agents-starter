@@ -1,9 +1,9 @@
 # Operating guide for AI agents
 
-You are operating a real-money trading-agent repo. **This file is your contract.**
-For depth, read `src/strategies/cross-market-mm/SKILL.md` (the strategy manual) and
-`SKILL.md` (the framework/SDK reference). You shouldn't need a bespoke prompt beyond
-"set up and run cross-market-mm" — everything you need to do it safely is here.
+You are operating a real-money trading-agent repo on Limitless Exchange (Base).
+**This file is your contract.** For depth, read `SKILL.md` (the full manual:
+market structure, SDK reference, websocket semantics, fees, footguns) and the
+strategy's own `SKILL.md` under `src/strategies/<name>/`.
 
 ## Install (one line)
 
@@ -11,89 +11,94 @@ For depth, read `src/strategies/cross-market-mm/SKILL.md` (the strategy manual) 
 curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh | sh
 ```
 
-Checks prerequisites, clones, installs, and scaffolds. Then the re-runnable bootstrap
-`npm run cross-market-mm:init` walks the rest: credentials → deposit wallet → funding.
-Run it, do the one step it asks, run it again.
+Checks prerequisites (Node 20+), clones, installs, scaffolds `.env`. Then the
+operator adds credentials and you verify them:
+
+```sh
+npm run doctor            # key · token · trading-wallet mode · USDC/ETH balances
+```
 
 ## Safety contract (non-negotiable)
 
-- **The operator's `PRIVATE_KEY` stays out of your context.** Never ask them to paste it,
-  never echo it, never `cat .env`, never read the key back. They place it in `.env`
-  themselves; `init` is built to never read secrets.
-- **Dedicated wallet only** — confirm with the operator it is not their main wallet.
-- **Start in `dry_run`.** Go live (`dry_run: false`) only after a clean `preflight` *and*
-  the operator's explicit go-ahead.
+- **The operator's `PRIVATE_KEY` and token secret stay out of your context.**
+  Never ask them to paste either, never echo them, never `cat .env`, never read
+  a secret back. They place them in `.env` themselves; `init` and `doctor` are
+  built to never print them.
+- **Dedicated wallet only.** Confirm with the operator it is not their main wallet.
+- **Start in `DRY_RUN=true`.** Go live only after a clean dry run *and* the
+  operator's explicit go-ahead. `doctor` must be green first.
 - **Confirm before any action that spends gas, moves funds, or goes live.**
-- The **loss breaker** and **flatten-on-stop** stay on. If anything looks wrong —
-  unexpected loss, an unhedged position, a failed hedge, a stuck order — **halt, flatten,
-  and report.** Do not keep bleeding.
+- **Never cancel CLOB orders on-chain.** Cancel through the API. An on-chain
+  `OrderCancelled` gets the maker address blocked. See
+  https://docs.limitless.exchange/developers/responsible-agents
+- If anything looks wrong (unexpected loss, an unhedged position, a stuck or
+  orphaned order) **halt, cancel, flatten, and report.** Do not keep bleeding.
 
 ## The flow
 
 ```
-install → init (loop until funded) → find-pairs (pick + VERIFY identical resolution)
-        → approve → preflight (gate) → dry run → live (on go-ahead) → monitor → close (flat)
+install → init → operator fills .env → doctor → dry run → approve <slug>
+        → live (on go-ahead, small size) → monitor → cancel-all / close → redeem
 ```
 
-When picking a pair: `find-pairs` flags polarity-flipped candidates (negation/direction
-mismatch) — heed them, and still confirm both markets resolve on identical criteria (same
-asset, threshold, UTC moment, source). Title similarity is not enough.
-
-## Commands (cross-market-mm)
+## Commands
 
 | Command | Purpose |
 |---|---|
-| `npm run cross-market-mm:init` | Guided, re-runnable setup (scaffold → creds → deposit wallet → funding) |
-| `npm run cross-market-mm:deposit` | Print the Polymarket bridge address to fund the deposit wallet (send USDC there → auto-wraps to pUSD). NOT the deposit-wallet address directly |
-| `npm run cross-market-mm:find-pairs` | Liquidity-ranked equivalent-market shortlist; flags polarity risk (`-- --json` for machine output you can pick from) |
-| `npm run cross-market-mm:preflight` | Validate auth/funding/approvals/pairs — the gate before live (`-- --json` for structured go/no-go; non-zero exit on any critical fail) |
-| `npm run cross-market-mm` | Run the bot (`DRY_RUN` default; `dry_run: false` to go live) |
-| `npm run cross-market-mm:status` | Cross-venue portfolio + net delta (`-- --json` for machine output) |
-| `npm run cross-market-mm:close` | Exit to flat on both venues |
+| `npm run init` | Scaffold `.env` + `data/`, list credentials to add (never reads secrets) |
+| `npm run doctor [-- --market <slug>] [-- --json]` | Preflight; non-zero exit if orders would be rejected |
+| `npm start approve <slug>` | Approve USDC + CTF for the market's exchange (+ neg-risk adapter). One-time per exchange. Costs gas. |
+| `npm start wallet-mode eoa` | Fix the `smartWallet` trap (self-signed orders rejected) |
+| `npm start whoami` | Authenticated profile: id, account, wallet mode, fee tier |
+| `npm run template` | Bare strategy skeleton to build on |
+| `npm run certainty-closer` / `oracle-arb` / `cross-market-mm` | Shipped strategies, all `DRY_RUN` by default |
+| `npm run example:place-order` / `example:stream` | Runnable SDK examples (order lifecycle, websocket) |
+| `npm run redeem claim-all` | Claim winnings from resolved markets (standard + neg-risk). Costs gas. |
+| `npx tsx src/scripts/check-balances.ts` | On-chain + Limitless balances, open positions, claimable winnings |
+| `npm run typecheck && npm test` | Quality gate; run after any code change |
 
-Full command list and troubleshooting: `src/strategies/cross-market-mm/SKILL.md`.
+## Reading an order result
+
+Branch on `execution.settlementStatus`, never on `matched`
+(`src/core/limitless/execution.ts` does this for you):
+
+| settlementStatus | Meaning | Action |
+|---|---|---|
+| `MINED` / `CONFIRMED` | settled on-chain | done |
+| `UNMATCHED` | FOK/FAK: nothing filled. GTC: resting on the book | FOK/FAK: no position. GTC: wait or cancel |
+| `DELAYED` | held by the market's taker delay until `eligibleAt` | not an error; watch order events or `awaitFill` |
+| `MATCHED` / `RETRYING` | provisional | keep watching |
+| `FAILED` / `CANCELED` | terminal failure (CANCELED = self-trade prevention) | log, do not retry blindly |
+
+Rejected orders are an HTTP status plus a `message` string; there is no
+machine-readable error code. Do not blacklist a market on normal-flow
+rejections ("would cross resting liquidity", "post-only would execute").
 
 ## Monitoring
 
-A live run continuously maintains **`data/cross-market-mm-status.json`** — mode, uptime,
-PnL, equity, per-pair net delta, hedge count, last fill, breaker + stop state. Poll it for
-a heartbeat and relay it to the operator. Use `cross-market-mm:status -- --json` when you
-want a fresh independent read from the venues instead.
+- Every strategy logs each decision and its order result (pino JSON).
+- `cross-market-mm` also maintains `data/cross-market-mm-status.json` and the
+  Academy operator-panel data contract (`data/quotes.json`, `positions.json`,
+  `fills.ndjson`, `kill.flag`, `pull.flag`). Details in
+  `src/strategies/cross-market-mm/SKILL.md`.
+- For any strategy, `npx tsx src/scripts/check-balances.ts` is an independent
+  read of the venue state.
 
-### Operator panel (the bot emits a panel data contract)
+## cross-market-mm specifics
 
-A run emits the **Limitless Academy control panel's** data contract into `data/`, so the
-panel renders this bot unchanged — there is no panel in this repo, by design. The Market
-Maker Bootcamp's MM panel (`Academy/programs/market_maker_bootcamp/panel/`) reads all five:
+The cross-venue strategy adds a Polymarket leg. Its guided setup is
+`npm run cross-market-mm:init` (loop until funded), then
+`find-pairs → preflight → run → status → close`. When picking a pair,
+`find-pairs` flags polarity-flipped candidates; still confirm both markets
+resolve on identical criteria (same asset, threshold, UTC moment, source).
+Title similarity is not enough. Full manual: `src/strategies/cross-market-mm/SKILL.md`.
 
-- `data/quotes.json` — quote board: per-pair two-sided quote (bid = YES buy, ask = 1 − NO
-  buy), mid/fair_value, spread vs target, net inventory, state (two_sided/one_sided/pulled/stopped).
-- `data/positions.json` — per-pair cross-venue net delta as positions.
-- `data/fills.ndjson` — append-only event log; successful hedges are fills (BUY/taker),
-  lifecycle/breaker are events.
-- `data/kill.flag` — the kill switch. The breaker writes it on a trip; the panel's kill
-  button creates it; the bot reads it each loop and halts. Present == halted, and a fresh
-  run refuses to start until it's cleared (`rm data/kill.flag` or the panel "Clear" button).
-- `data/pull.flag` — pause quoting without halting. The panel's "Pull quotes" button creates
-  it; the bot cancels resting quotes and stops placing new ones while the hedger keeps
-  managing inventory. Resumes when cleared.
+## Conventions when changing code
 
-To watch a run, point the panel's env at the bot's data dir — **use absolute
-paths.** The panel runs from the Academy folder, so a relative `data/` resolves
-against the *panel's* own directory, not the bot's, and you get a silent, forever-
-empty board with no error. The bot prints its absolute data dir on boot (the
-`operator-panel feed → point the Academy panel … at this ABSOLUTE dir: …` line);
-copy that. To pin it, set `CROSS_MARKET_MM_DATA_DIR=/abs/.../agents-starter/data`
-for the bot and point all five panel vars at the **same** absolute dir:
-
-```
-# /ABS = the bot's data dir (printed on boot, or set via CROSS_MARKET_MM_DATA_DIR)
-QUOTES_PATH=/ABS/quotes.json  POSITIONS_PATH=/ABS/positions.json  AGENT_LOG=/ABS/fills.ndjson
-KILL_SWITCH=/ABS/kill.flag    PULL_SWITCH=/ABS/pull.flag
-```
-
-## Other strategies
-
-`oracle-arb` (Pyth oracle vs market) and `certainty-closer` (SDK-only, the simplest
-example) each have their own `QUICKSTART.md` + `SKILL.md` under `src/strategies/`. They
-need only Base + a Limitless token — no Polymarket deposit wallet.
+- Everything Limitless goes through the official SDK via
+  `src/core/limitless/client.ts`; never hand-roll HTTP, HMAC, or EIP-712.
+- `DRY_RUN` gates must short-circuit **before** any network call.
+- `npm run typecheck && npm test` must pass; tests never touch the network.
+- Verify wire shapes against the live docs before adding an API call:
+  docs MCP at `https://docs.limitless.exchange/mcp`, API reference at
+  https://docs.limitless.exchange/api-reference/introduction

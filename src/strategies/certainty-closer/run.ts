@@ -10,8 +10,8 @@
  * own this has no independent edge; the edge is the `assumedEdge` you assert.
  */
 
-import { config } from 'dotenv';
-config();
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 
 import { LimitlessClient } from '../../core/limitless/markets.js';
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';

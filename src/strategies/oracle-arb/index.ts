@@ -325,7 +325,7 @@ export class OracleArbStrategy extends BaseStrategy {
                                 continue;
                             }
                             if (book.asks?.[0]?.price) {
-                                askPrice = parseFloat(book.asks[0].price);
+                                askPrice = Number(book.asks[0].price);
                             }
                         } catch { /* use fallback */ }
 
@@ -406,7 +406,7 @@ export class OracleArbStrategy extends BaseStrategy {
                                 continue;
                             }
                             if (book.bids?.[0]?.price) {
-                                noAskPrice = 1 - parseFloat(book.bids[0].price);
+                                noAskPrice = 1 - Number(book.bids[0].price);
                             }
                         } catch { /* use fallback */ }
 

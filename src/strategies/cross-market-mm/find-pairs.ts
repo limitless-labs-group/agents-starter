@@ -25,7 +25,8 @@
  * running live.
  */
 
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 import { LimitlessClient } from '../../core/limitless/markets.js';
 
 const POLYMARKET_GAMMA_API = 'https://gamma-api.polymarket.com';

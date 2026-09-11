@@ -9,7 +9,8 @@
  * (the strategy only ever BUYs; positions ride to resolution or are hedged).
  */
 
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';
 import { loadSettings } from './config.js';
 

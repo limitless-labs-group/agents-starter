@@ -28,7 +28,7 @@ import { config as loadEnv } from 'dotenv';
 import { Client } from '@limitless-exchange/sdk';
 import pino from 'pino';
 
-loadEnv();
+loadEnv({ quiet: true });
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',

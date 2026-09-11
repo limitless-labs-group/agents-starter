@@ -8,7 +8,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 import type { MarketPair, ReplicatorSettings } from './types.js';
 
 function requireEnv(name: string): string {
