@@ -1,8 +1,9 @@
 name: CI
 
-# Gates every PR (incl. Dependabot SDK/dep bumps) on type-check + tests.
-# The SDK-surface test (tests/unit/sdk-surface.test.ts) makes a breaking
-# @limitless-exchange/sdk change fail here instead of at a live run.
+# Gates every PR (incl. Dependabot SDK/dep bumps) on type-check + tests on
+# both supported Node lines. The SDK contract tests (tests/unit/sdk-surface,
+# tests/unit/sdk-signing) make a breaking @limitless-exchange/sdk change fail
+# here instead of at a live run. No test touches the network.
 on:
   push:
     branches: [main]
@@ -11,14 +12,20 @@ on:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - name: Type-check
-        run: npx tsc --noEmit
+        run: npm run typecheck
       - name: Tests
         run: npm test
+      - name: Build
+        run: npm run build

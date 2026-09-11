@@ -1,125 +1,140 @@
 /**
- * SDKTradingClient — thin adapter over `@limitless-exchange/sdk`.
+ * SDKTradingClient — order placement, cancellation, and fill tracking over
+ * the official `@limitless-exchange/sdk`.
  *
- * Lives alongside the legacy hand-rolled `TradingClient` so strategies can
- * opt in one at a time. The hand-rolled client (`./trading.ts`) is unchanged
- * and remains the default until each strategy is migrated.
+ * The SDK owns the hard parts: EIP-712 order signing against the market's
+ * venue (`verifyingContract`), HMAC request signing, tick alignment, FOK
+ * `takerAmount` semantics, and profile-id caching. This class adds the
+ * strategy-facing vocabulary (YES/NO side, price in cents, USD notional),
+ * the `DRY_RUN` gate, and the fill-tracking helpers that the SDK does not
+ * ship yet (`POST /orders/status/batch`, taker-delay aware waiting).
  *
- * Why this exists:
- *   - The hand-rolled client duplicates work the SDK already does well
- *     (venue/exchange routing, retry/queueing, tick alignment, type cleanup).
- *   - Sign parity is proven byte-identical between the SDK and the viem-based
- *     hand-rolled signer — see `tests/unit/sign-parity.test.ts`. So switching
- *     a strategy from one to the other does not change on-chain order
- *     semantics.
- *   - The SDK is npm-published (`@limitless-exchange/sdk@^1.0.9`) and tracks
- *     backend changes the hand-rolled code would silently drift from.
- *
- * Public surface intentionally narrow for Phase 1:
- *   - `createOrder(...)` — GTC / FOK / FAK with explicit price+size or
- *     usd notional.
- *   - `cancelOrder(orderId)` / `cancelAll(slug)`.
- *   - `getWalletAddress()` / `getOwnerId()`.
- *
- * Anything else (positions, websocket, markets) should be added on demand
- * as strategies migrate. Each addition is a thin pass-through to the
- * corresponding SDK service from the shared `Client` instance.
+ * Every write path short-circuits when `dryRun` is true: nothing is signed,
+ * nothing is sent. Pass the caller's resolved dry-run flag explicitly so env
+ * and config can never disagree.
  */
 
 import { ethers } from 'ethers';
 import {
-  Client,
-  HttpClient,
-  OrderClient,
-  OrderType,
+  CancelReplaceMode,
+  OrderType as SdkOrderType,
   Side,
+  type CancelReplaceResponse,
+  type Client,
+  type Execution,
+  type OrderClient,
   type OrderResponse,
+  type OrderMatch,
 } from '@limitless-exchange/sdk';
 import { pino } from 'pino';
+import {
+  createSdkClient,
+  hasAuth,
+  isLegacyAuth,
+  resolveAuth as resolveLimitlessAuth,
+  type LimitlessAuth,
+} from './client.js';
+import { classifyExecution, isTerminalState, summarizeExecution, type ExecutionSummary } from './execution.js';
+import { marketTokenIds, type OrderType, type OutcomeSide } from './types.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   name: 'sdk-trading',
 });
 
-/**
- * Config for constructing an SDKTradingClient.
- *
- * Auth: prefer **scoped HMAC token credentials** (`hmacCredentials`). Plain
- * API keys are deprecated on Limitless (no longer issued) — `apiKey` is kept
- * only as a legacy fallback for users who already hold one. You must provide
- * one or the other.
- *
- * @see https://docs.limitless.exchange/developers/authentication
- */
-export interface SDKTradingConfig {
+/** Shares are quantized to 0.001; the SDK rejects sizes off that grid. */
+const SHARE_GRID = 1000;
+
+export interface SDKTradingConfig extends LimitlessAuth {
+  /** EOA private key that signs orders. The profile must be in `eoa` trading-wallet mode. */
   privateKey: string;
-  /**
-   * Scoped API-token credentials for HMAC request signing (current method).
-   * Derive via `POST /auth/api-tokens/derive`; you receive `{ tokenId, secret }`.
-   */
-  hmacCredentials?: { tokenId: string; secret: string };
-  /**
-   * Legacy `X-API-Key` value. Deprecated — only used when `hmacCredentials`
-   * is absent. New Limitless users cannot obtain one.
-   */
-  apiKey?: string;
   apiBaseUrl?: string;
   /**
-   * Log-only mode: no orders signed or sent. Single source of truth — pass
-   * the caller's resolved dry-run decision (e.g. settings.dryRun). Falls back
-   * to `process.env.DRY_RUN === 'true'` so standalone callers still work, but
-   * passing it explicitly avoids the trap where env and config disagree and
-   * the client trades live while the rest of the system thinks it's dry.
+   * Log-only mode: no orders signed or sent. Falls back to
+   * `process.env.DRY_RUN === 'true'` so standalone callers still work.
    */
   dryRun?: boolean;
+  /** Reuse an existing SDK client instead of building one from env. */
+  sdk?: Client;
 }
 
 /**
  * Resolve auth from explicit config or environment, preferring HMAC.
- *
- * Env precedence: `LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET` (HMAC) over
- * `LIMITLESS_API_KEY` (legacy).
+ * Precedence: config HMAC → env `LMTS_TOKEN_ID`/`LMTS_TOKEN_SECRET` →
+ * config `apiKey` → env `LIMITLESS_API_KEY`.
  */
-export function resolveAuth(config: SDKTradingConfig): {
-  hmacCredentials?: { tokenId: string; secret: string };
-  apiKey?: string;
-} {
-  if (config.hmacCredentials) {
-    return { hmacCredentials: config.hmacCredentials };
-  }
-  const envTokenId = process.env.LMTS_TOKEN_ID;
-  const envTokenSecret = process.env.LMTS_TOKEN_SECRET;
-  if (envTokenId && envTokenSecret) {
-    return { hmacCredentials: { tokenId: envTokenId, secret: envTokenSecret } };
-  }
-  if (config.apiKey) {
-    return { apiKey: config.apiKey };
-  }
-  if (process.env.LIMITLESS_API_KEY) {
-    return { apiKey: process.env.LIMITLESS_API_KEY };
-  }
-  return {};
+export function resolveAuth(config: LimitlessAuth): LimitlessAuth {
+  return resolveLimitlessAuth(config);
 }
 
-/**
- * Strategy-level order parameters. Same shape as the legacy CreateOrderParams
- * but typed against the SDK enums.
- */
+/** Strategy-level BUY parameters (the common case: buy YES or NO). */
 export interface SDKCreateOrderParams {
   marketSlug: string;
-  side: 'YES' | 'NO';
-  /** Limit price in CENTS (e.g. 55 = 0.55). Matches the legacy client. */
+  side: OutcomeSide;
+  /** Limit price in CENTS (e.g. 55 = $0.55). */
   limitPriceCents: number;
-  /** USD notional in whole dollars (e.g. 2 = $2). */
+  /** USD notional to spend (e.g. 2 = $2). */
   usdAmount: number;
-  orderType?: 'GTC' | 'FOK' | 'FAK';
-  /** Only honored for GTC. */
+  /** Defaults to FOK. */
+  orderType?: OrderType;
+  /** GTC only: reject instead of crossing the book. */
   postOnly?: boolean;
 }
 
+export interface SellSharesParams {
+  marketSlug: string;
+  side: OutcomeSide;
+  shares: number;
+  /** Limit price in CENTS; sells at this price or better. */
+  limitPriceCents: number;
+  /** Defaults to FAK (take resting bids immediately). */
+  orderType?: 'GTC' | 'FAK';
+  postOnly?: boolean;
+}
+
+export interface CancelReplaceOrderParams {
+  /** Exactly one of `orderId` / `clientOrderId` identifies the resting order to cancel. */
+  orderId?: string;
+  clientOrderId?: string;
+  marketSlug: string;
+  side: OutcomeSide;
+  action?: 'BUY' | 'SELL';
+  /** Replacement limit price in CENTS. */
+  limitPriceCents: number;
+  /** Replacement size in shares. */
+  shares: number;
+  orderType?: 'GTC' | 'FAK';
+  postOnly?: boolean;
+  /** `STOP_ON_FAILURE` (default) skips the replacement if the cancel fails. */
+  mode?: 'STOP_ON_FAILURE' | 'ALLOW_FAILURE';
+}
+
+/** One item of `POST /orders/status/batch`. */
+export interface OrderStatusResult {
+  index: number;
+  status: 'found' | 'not_found' | 'invalid';
+  orderId?: string;
+  clientOrderId?: string;
+  error?: string;
+  data?: {
+    execution: Execution & { reason?: string; stpMakerCancels?: string[] };
+    makerMatches?: OrderMatch[];
+    order: { id: string; orderType?: string; [key: string]: unknown };
+  };
+}
+
+export interface AwaitFillOptions {
+  /** Give up after this long. Default 60s. */
+  timeoutMs?: number;
+  /** Poll interval once eligible. Default 1.5s. */
+  pollMs?: number;
+  /** From `execution.eligibleAt`; polling starts after it. */
+  eligibleAt?: string;
+}
+
 export class SDKTradingClient {
-  private readonly client: Client;
+  /** The underlying SDK client (markets, portfolio, ...), shared with the order client. */
+  readonly sdk: Client;
   private readonly orderClient: OrderClient;
   private readonly wallet: ethers.Wallet;
   private readonly dryRun: boolean;
@@ -131,25 +146,14 @@ export class SDKTradingClient {
     this.dryRun = config.dryRun ?? process.env.DRY_RUN === 'true';
 
     const auth = resolveAuth(config);
-    if (!auth.hmacCredentials && !auth.apiKey) {
+    if (!hasAuth(auth)) {
       throw new Error(
         'SDKTradingClient: no auth configured. Provide hmacCredentials ' +
           '({ tokenId, secret }) — preferred — or set LMTS_TOKEN_ID + ' +
           'LMTS_TOKEN_SECRET in the environment. Legacy: apiKey / LIMITLESS_API_KEY.',
       );
     }
-
-    const http = new HttpClient({
-      baseURL: config.apiBaseUrl || process.env.LIMITLESS_API_URL,
-      ...(auth.hmacCredentials
-        ? { hmacCredentials: auth.hmacCredentials }
-        : { apiKey: auth.apiKey }),
-    });
-
-    this.client = Client.fromHttpClient(http);
-    this.wallet = new ethers.Wallet(config.privateKey);
-
-    if (auth.apiKey && !auth.hmacCredentials) {
+    if (isLegacyAuth(auth)) {
       logger.warn(
         'SDKTradingClient: using deprecated X-API-Key auth. Limitless no ' +
           'longer issues these — migrate to a scoped HMAC token ' +
@@ -157,16 +161,13 @@ export class SDKTradingClient {
       );
     }
 
-    // Pass the private key string (not the Wallet object) to side-step the
-    // SDK's CJS Wallet type vs our ESM Wallet type mismatch. The SDK
-    // re-constructs the Wallet internally with the same key, so identity is
-    // preserved.
-    this.orderClient = this.client.newOrderClient(config.privateKey);
+    this.sdk = config.sdk ?? createSdkClient({ ...auth, baseURL: config.apiBaseUrl });
+    this.wallet = new ethers.Wallet(config.privateKey);
+    // Pass the key string, not the Wallet, so the SDK builds its own ethers
+    // Wallet and no CJS/ESM type mismatch leaks into our build.
+    this.orderClient = this.sdk.newOrderClient(config.privateKey);
 
-    logger.info(
-      { address: this.wallet.address },
-      'SDKTradingClient initialized'
-    );
+    logger.info({ address: this.wallet.address, dryRun: this.dryRun }, 'SDKTradingClient initialized');
   }
 
   /** EOA address the wallet signs as. */
@@ -174,119 +175,208 @@ export class SDKTradingClient {
     return this.wallet.address;
   }
 
-  /** Internal user id, only set after the first order. */
+  /** Internal profile id, only known after the first order. */
   getOwnerId(): number | undefined {
     return this.orderClient.ownerId;
   }
 
+  isDryRun(): boolean {
+    return this.dryRun;
+  }
+
+  private async resolveTokenId(marketSlug: string, side: OutcomeSide): Promise<string> {
+    const market = await this.sdk.markets.getMarket(marketSlug);
+    const ids = marketTokenIds(market);
+    return side === 'YES' ? ids.yes : ids.no;
+  }
+
   /**
-   * Place an order via the SDK. Behaviorally equivalent to the legacy
-   * `TradingClient.createOrder` for GTC, FAK, and FOK paths.
-   *
-   * GTC tick alignment, FOK takerAmount=1 semantics, venue-driven
-   * verifyingContract, and user-id caching are all handled inside the SDK's
-   * OrderBuilder + OrderClient — we just pass intent.
+   * BUY `side` on a market. FOK spends `usdAmount` at the best available
+   * price up to the limit; GTC/FAK convert `usdAmount / price` into shares.
+   * Returns the SDK `OrderResponse`, whose `execution.settlementStatus` says
+   * what happened (see `execution.ts`).
    */
   async createOrder(params: SDKCreateOrderParams): Promise<OrderResponse> {
-    const {
-      marketSlug,
-      side,
-      limitPriceCents,
-      usdAmount,
-      orderType = 'FOK',
-      postOnly,
-    } = params;
-
-    // Resolve YES/NO → tokenId by fetching the market.
-    // The SDK returns either { positionIds: [yes, no] } or { tokens: { yes, no } }
-    // depending on market vintage. Read both defensively.
-    const market = (await this.client.markets.getMarket(marketSlug)) as unknown as {
-      positionIds?: string[];
-      tokens?: { yes?: string; no?: string };
-    };
-    const yesToken = market.positionIds?.[0] ?? market.tokens?.yes;
-    const noToken = market.positionIds?.[1] ?? market.tokens?.no;
-    if (!yesToken || !noToken) {
-      throw new Error(
-        `SDKTradingClient: market ${marketSlug} has no valid yes/no token ids`,
-      );
-    }
-    const tokenId = side === 'YES' ? yesToken : noToken;
-
+    const { marketSlug, side, limitPriceCents, usdAmount, orderType = 'FOK', postOnly } = params;
     const price = limitPriceCents / 100;
 
     if (this.dryRun) {
-      logger.info(
-        { marketSlug, side, price, usdAmount, orderType },
-        '[DRY_RUN] would createOrder via SDK'
-      );
-      return {
-        order: {
-          id: `dry-run-${Date.now()}`,
-          createdAt: new Date().toISOString(),
-          makerAmount: 0,
-          takerAmount: 0,
-          expiration: '0',
-          signatureType: 0,
-          salt: 0,
-          maker: this.wallet.address,
-          signer: this.wallet.address,
-          taker: '0x0000000000000000000000000000000000000000',
-          tokenId,
-          side: side === 'YES' ? Side.BUY : Side.BUY, // strategy always buys YES or NO
-          feeRateBps: 300,
-          nonce: 0,
-          signature: '0x',
-          orderType,
-          price,
-          marketId: 0, // unknown in DRY_RUN; real value comes from the API in live mode
-        },
-      };
+      logger.info({ marketSlug, side, price, usdAmount, orderType }, '[DRY_RUN] would createOrder via SDK');
+      return this.dryRunResponse('dry-run', Side.BUY, orderType, price);
     }
+    const tokenId = await this.resolveTokenId(marketSlug, side);
 
-    // Map our orderType string → SDK OrderType enum + branch on shape.
-    // FOK uses USD notional (makerAmount as dollars); GTC/FAK use price+size.
     if (orderType === 'FOK') {
       const res = await this.orderClient.createOrder({
         tokenId,
         side: Side.BUY,
-        orderType: OrderType.FOK,
-        makerAmount: usdAmount, // SDK handles micro-USDC scaling internally
+        orderType: SdkOrderType.FOK,
+        makerAmount: usdAmount, // USD; the SDK scales to micro-USDC
         marketSlug,
-      } as any);
-      logger.info(
-        { marketSlug, side, price, usdAmount, orderType, orderId: (res as OrderResponse)?.order?.id },
-        'createOrder placed',
-      );
+      });
+      this.logPlaced('createOrder placed', res, { marketSlug, side, price, usdAmount, orderType });
       return res;
     }
 
-    // GTC / FAK: size in contracts, price as decimal. Round to the 0.001
-    // share step — the SDK validates size divisibility and rejects raw float
-    // divisions like usdAmount/price (e.g. 4.9597) that miss the grid.
-    const size = Math.round((usdAmount / price) * 1000) / 1000;
+    const size = Math.round((usdAmount / price) * SHARE_GRID) / SHARE_GRID;
     const res = await this.orderClient.createOrder({
       tokenId,
       price,
       size,
       side: Side.BUY,
-      orderType: orderType === 'GTC' ? OrderType.GTC : OrderType.FAK,
+      orderType: orderType === 'GTC' ? SdkOrderType.GTC : SdkOrderType.FAK,
       marketSlug,
       ...(orderType === 'GTC' && postOnly ? { postOnly: true } : {}),
-    } as any);
+    });
+    this.logPlaced('createOrder placed', res, { marketSlug, side, price, size, orderType });
+    return res;
+  }
+
+  /**
+   * SELL `shares` of a side to close inventory. Defaults to FAK at the limit
+   * so it takes resting bids immediately. Requires the CTF `setApprovalForAll`
+   * for the market's exchange (`npm start approve <slug>`).
+   */
+  async sellShares(params: SellSharesParams): Promise<OrderResponse> {
+    const { marketSlug, side, shares, limitPriceCents, orderType = 'FAK', postOnly } = params;
+    const price = limitPriceCents / 100;
+    // Floor, never round up: asking to sell more than you hold is rejected.
+    const size = Math.floor(shares * SHARE_GRID) / SHARE_GRID;
+
+    if (this.dryRun) {
+      logger.info({ marketSlug, side, price, size, orderType }, '[DRY_RUN] would SELL to close');
+      return this.dryRunResponse('dry-run', Side.SELL, orderType, price, 'dry-run-sell');
+    }
+    const tokenId = await this.resolveTokenId(marketSlug, side);
+
+    const res = await this.orderClient.createOrder({
+      tokenId,
+      price,
+      size,
+      side: Side.SELL,
+      orderType: orderType === 'GTC' ? SdkOrderType.GTC : SdkOrderType.FAK,
+      marketSlug,
+      ...(orderType === 'GTC' && postOnly ? { postOnly: true } : {}),
+    });
+    this.logPlaced('sellShares (close) placed', res, { marketSlug, side, price, size, orderType });
+    return res;
+  }
+
+  /**
+   * Atomically cancel a resting order and submit its replacement
+   * (`POST /orders/cancel-replace`). Keeps a quoting loop to one request per
+   * re-quote instead of cancel + create.
+   */
+  async cancelReplace(params: CancelReplaceOrderParams): Promise<CancelReplaceResponse> {
+    const {
+      marketSlug,
+      side,
+      action = 'BUY',
+      limitPriceCents,
+      shares,
+      orderType = 'GTC',
+      postOnly,
+      mode = 'STOP_ON_FAILURE',
+    } = params;
+    if (!params.orderId && !params.clientOrderId) {
+      throw new Error('cancelReplace: orderId or clientOrderId is required');
+    }
+    const price = limitPriceCents / 100;
+    const size = Math.round(shares * SHARE_GRID) / SHARE_GRID;
+    const cancel = params.orderId ? { orderId: params.orderId } : { clientOrderId: params.clientOrderId! };
+
+    if (this.dryRun) {
+      logger.info({ ...cancel, marketSlug, side, action, price, size, orderType }, '[DRY_RUN] would cancelReplace');
+      return {
+        cancel: { status: 'SUCCESS', orderId: params.orderId ?? 'dry-run' },
+        replacement: { status: 'NOT_ATTEMPTED' },
+      };
+    }
+    const tokenId = await this.resolveTokenId(marketSlug, side);
+
+    const res = await this.orderClient.cancelReplace({
+      cancel,
+      replacement: {
+        tokenId,
+        price,
+        size,
+        side: action === 'BUY' ? Side.BUY : Side.SELL,
+        orderType: orderType === 'GTC' ? SdkOrderType.GTC : SdkOrderType.FAK,
+        marketSlug,
+        ...(orderType === 'GTC' && postOnly ? { postOnly: true } : {}),
+      },
+      mode: mode === 'ALLOW_FAILURE' ? CancelReplaceMode.ALLOW_FAILURE : CancelReplaceMode.STOP_ON_FAILURE,
+    });
     logger.info(
-      { marketSlug, side, price, size, orderType, orderId: (res as OrderResponse)?.order?.id },
-      'createOrder placed',
+      {
+        marketSlug,
+        cancel: res.cancel.status,
+        replacement: res.replacement.status,
+        newOrderId: res.replacement.data?.order?.id,
+      },
+      'cancelReplace done',
     );
     return res;
   }
 
-  /** Read held YES/NO token balances (in shares) for a market. */
+  /**
+   * Look up order state by id (`POST /orders/status/batch`, up to 50 items).
+   * Each item carries `orderId` or `clientOrderId`, never both. This is the
+   * REST way to observe a taker-delayed or resting order's fill; there is no
+   * `GET /orders/:id`.
+   */
+  async getOrderStatuses(
+    items: Array<{ orderId?: string; clientOrderId?: string }>,
+  ): Promise<OrderStatusResult[]> {
+    if (items.length === 0) return [];
+    if (items.length > 50) throw new Error('getOrderStatuses: at most 50 items per call');
+    if (this.dryRun) {
+      logger.info({ count: items.length }, '[DRY_RUN] would query order statuses');
+      return items.map((it, index) => ({ index, status: 'not_found', ...it }));
+    }
+    const res = await this.sdk.http.post<{ results: OrderStatusResult[] }>('/orders/status/batch', { items });
+    return res.results ?? [];
+  }
+
+  /**
+   * Wait for an order to reach a terminal state, polling `status/batch`.
+   * Honors the taker delay: when `eligibleAt` is in the future, polling
+   * starts after it. Resolves with the last observed summary either way, so
+   * callers check `state` (`filled` / `killed` / `failed`, or `pending` on
+   * timeout) rather than catching.
+   */
+  async awaitFill(orderId: string, orderType: OrderType, opts: AwaitFillOptions = {}): Promise<ExecutionSummary> {
+    const timeoutMs = opts.timeoutMs ?? 60_000;
+    const pollMs = opts.pollMs ?? 1_500;
+    const deadline = Date.now() + timeoutMs;
+
+    if (this.dryRun) {
+      return summarizeExecution(undefined, orderType);
+    }
+
+    if (opts.eligibleAt) {
+      const wait = new Date(opts.eligibleAt).getTime() - Date.now();
+      if (wait > 0) await sleep(Math.min(wait, timeoutMs));
+    }
+
+    let last: ExecutionSummary = summarizeExecution(undefined, orderType);
+    while (Date.now() < deadline) {
+      const [result] = await this.getOrderStatuses([{ orderId }]);
+      if (result?.status === 'found' && result.data) {
+        last = summarizeExecution(result.data.execution, orderType);
+        if (isTerminalState(last.state) || last.state === 'resting') return last;
+      } else if (result?.status === 'invalid') {
+        throw new Error(`awaitFill: invalid order id ${orderId}: ${result.error ?? ''}`);
+      }
+      await sleep(pollMs);
+    }
+    logger.warn({ orderId, state: last.state }, 'awaitFill timed out before a terminal state');
+    return last;
+  }
+
+  /** Read held YES/NO shares for a market from the positions snapshot. */
   async getPositionTokens(marketSlug: string): Promise<{ yes: number; no: number }> {
-    const positions = (await this.client.portfolio.getCLOBPositions()) as unknown as Array<{
-      market?: { slug?: string };
-      tokensBalance?: { yes?: string | number; no?: string | number };
-    }>;
+    const positions = await this.sdk.portfolio.getCLOBPositions();
     for (const p of positions ?? []) {
       if (p.market?.slug === marketSlug) {
         return {
@@ -300,10 +390,8 @@ export class SDKTradingClient {
 
   /**
    * Like getPositionTokens but waits for the balance to SETTLE — polls until
-   * two consecutive reads agree (within the 0.001 share grid) or maxTries is
-   * hit. Use before acting on a fill so a lagged backend read (which once made
-   * an FOK look killed when it had actually filled → double-fill) can't cause
-   * stacking. Returns the last (most settled) read.
+   * two consecutive reads agree (within the share grid) or maxTries is hit.
+   * Use before acting on a fill so a lagged read cannot cause a double-fill.
    */
   async getPositionTokensSettled(
     marketSlug: string,
@@ -313,66 +401,12 @@ export class SDKTradingClient {
     const delayMs = opts.delayMs ?? 2500;
     let prev = await this.getPositionTokens(marketSlug);
     for (let i = 1; i < maxTries; i++) {
-      await new Promise((r) => setTimeout(r, delayMs));
+      await sleep(delayMs);
       const cur = await this.getPositionTokens(marketSlug);
       if (Math.abs(cur.yes - prev.yes) < 0.001 && Math.abs(cur.no - prev.no) < 0.001) return cur;
       prev = cur;
     }
     return prev;
-  }
-
-  /**
-   * SELL `shares` of a side to CLOSE inventory — the programmatic exit the
-   * BUY-only quoting loop lacks. Defaults to FAK at an aggressive limit so it
-   * takes resting bid liquidity and fills immediately (use to flatten a
-   * position the hedger couldn't keep neutral, or on manual close).
-   *
-   * Requires CTF `setApprovalForAll` for the market's exchange (selling moves
-   * your conditional tokens) — see `npm start approve <slug>`.
-   */
-  async sellShares(params: {
-    marketSlug: string;
-    side: 'YES' | 'NO';
-    shares: number;
-    /** Limit price in CENTS; sell fills at this price or higher. */
-    limitPriceCents: number;
-    orderType?: 'GTC' | 'FAK';
-  }): Promise<OrderResponse> {
-    const { marketSlug, side, shares, limitPriceCents, orderType = 'FAK' } = params;
-    const price = limitPriceCents / 100;
-    // Floor (never round up) — rounding the held balance up asks to sell more
-    // than you own → "Insufficient conditional token balance".
-    const size = Math.floor(shares * 1000) / 1000; // 0.001 share grid
-
-    if (this.dryRun) {
-      logger.info({ marketSlug, side, price, size, orderType }, '[DRY_RUN] would SELL to close');
-      return { order: { id: `dry-run-sell-${Date.now()}` } } as unknown as OrderResponse;
-    }
-
-    const market = (await this.client.markets.getMarket(marketSlug)) as unknown as {
-      positionIds?: string[];
-      tokens?: { yes?: string; no?: string };
-    };
-    const yesToken = market.positionIds?.[0] ?? market.tokens?.yes;
-    const noToken = market.positionIds?.[1] ?? market.tokens?.no;
-    if (!yesToken || !noToken) {
-      throw new Error(`SDKTradingClient: market ${marketSlug} has no valid yes/no token ids`);
-    }
-    const tokenId = side === 'YES' ? yesToken : noToken;
-
-    const res = await this.orderClient.createOrder({
-      tokenId,
-      price,
-      size,
-      side: Side.SELL,
-      orderType: orderType === 'GTC' ? OrderType.GTC : OrderType.FAK,
-      marketSlug,
-    } as any);
-    logger.info(
-      { marketSlug, side, price, size, orderType, orderId: (res as OrderResponse)?.order?.id },
-      'sellShares (close) placed',
-    );
-    return res;
   }
 
   /** Cancel a single order by ID. */
@@ -381,10 +415,10 @@ export class SDKTradingClient {
       logger.info({ orderId }, '[DRY_RUN] would cancelOrder');
       return { message: 'dry-run' };
     }
-    return await this.orderClient.cancel(orderId);
+    return this.orderClient.cancel(orderId);
   }
 
-  /** Cancel every live order on a market. */
+  /** Cancel every live order on one market (cancel-all is per slug). */
   async cancelAll(marketSlug: string): Promise<{ message: string }> {
     if (this.dryRun) {
       logger.info({ marketSlug }, '[DRY_RUN] would cancelAll');
@@ -398,10 +432,7 @@ export class SDKTradingClient {
   /** Count live (resting) orders on a market. Returns -1 if the read fails. */
   async countLiveOrders(marketSlug: string): Promise<number> {
     try {
-      const positions = (await this.client.portfolio.getCLOBPositions()) as unknown as Array<{
-        market?: { slug?: string };
-        orders?: { liveOrders?: unknown[] };
-      }>;
+      const positions = await this.sdk.portfolio.getCLOBPositions();
       let n = 0;
       for (const p of positions ?? []) {
         if (p.market?.slug === marketSlug) n += p.orders?.liveOrders?.length ?? 0;
@@ -415,14 +446,10 @@ export class SDKTradingClient {
 
   /**
    * Cancel-all, then VERIFY nothing is still resting and retry if so. A single
-   * cancelAll has been observed to silently leave orders on the book — for an
-   * unattended bot that means orphaned live orders on shutdown. Retries up to
-   * `attempts` times with a short backoff; logs loudly if it can't confirm clean.
+   * cancelAll has been observed to leave orders on the book under propagation
+   * lag; an unattended bot must not leave orphans on shutdown.
    */
-  async cancelAllAndVerify(
-    marketSlug: string,
-    attempts = 6,
-  ): Promise<{ message: string; remaining: number }> {
+  async cancelAllAndVerify(marketSlug: string, attempts = 6): Promise<{ message: string; remaining: number }> {
     if (this.dryRun) {
       logger.info({ marketSlug }, '[DRY_RUN] would cancelAllAndVerify');
       return { message: 'dry-run', remaining: 0 };
@@ -440,9 +467,7 @@ export class SDKTradingClient {
         { marketSlug, remaining, attempt: i },
         remaining < 0 ? 'cancelAll could not verify (read failed) — retrying' : 'cancelAll left orders — retrying',
       );
-      // Escalating backoff — outlast backend place/cancel propagation lag,
-      // which is what was leaving orphans with a fixed short retry.
-      await new Promise((r) => setTimeout(r, 400 * i));
+      await sleep(400 * i); // escalating backoff outlasts place/cancel propagation lag
     }
     const remaining = await this.countLiveOrders(marketSlug);
     if (remaining !== 0) {
@@ -450,4 +475,54 @@ export class SDKTradingClient {
     }
     return { message: remaining === 0 ? 'ok' : 'incomplete', remaining };
   }
+
+  private logPlaced(msg: string, res: OrderResponse, ctx: Record<string, unknown>): void {
+    const summary = summarizeExecution(res, (ctx.orderType as OrderType) ?? 'GTC');
+    logger.info(
+      {
+        ...ctx,
+        orderId: res?.order?.id,
+        settlementStatus: summary.settlementStatus,
+        state: summary.state,
+        ...(summary.eligibleAt ? { eligibleAt: summary.eligibleAt } : {}),
+      },
+      msg,
+    );
+  }
+
+  private dryRunResponse(
+    tokenId: string,
+    side: Side,
+    orderType: OrderType,
+    price: number,
+    idPrefix = 'dry-run',
+  ): OrderResponse {
+    return {
+      order: {
+        id: `${idPrefix}-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        makerAmount: 0,
+        takerAmount: 0,
+        expiration: '0',
+        signatureType: 0,
+        salt: 0,
+        maker: this.wallet.address,
+        signer: this.wallet.address,
+        taker: '0x0000000000000000000000000000000000000000',
+        tokenId,
+        side,
+        feeRateBps: 0,
+        nonce: 0,
+        signature: '0x',
+        orderType,
+        price,
+        marketId: 0,
+      },
+    };
+  }
 }
+
+/** Re-exported so callers can reason about a response without importing execution.ts. */
+export { classifyExecution, summarizeExecution };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

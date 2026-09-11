@@ -1,99 +1,81 @@
-import { config } from 'dotenv';
-config();
-import { getWallet } from '../core/wallet.js';
-import { createPublicClient, http, parseAbi, formatUnits } from 'viem';
+/**
+ * check-balances — what the wallet holds on-chain and on Limitless.
+ *
+ *   npx tsx src/scripts/check-balances.ts
+ *
+ * Prints USDC + ETH on Base, the authenticated profile, open CLOB positions
+ * (shares per side), and any resolved winnings you can claim with
+ * `npm run redeem claim-all`.
+ */
+
+import dotenv from 'dotenv';
+dotenv.config({ quiet: true });
+
+import { createPublicClient, http, parseAbi, formatUnits, formatEther } from 'viem';
 import { base } from 'viem/chains';
-import { LimitlessClient } from '../core/limitless/markets.js';
+import { getWallet } from '../core/wallet.js';
+import { createSdkClient } from '../core/limitless/client.js';
+import { PortfolioClient } from '../core/limitless/portfolio.js';
+import { RedeemClient } from '../core/limitless/redeem.js';
 
 const USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const;
 
-async function main() {
+async function main(): Promise<void> {
   const { account } = getWallet();
   const address = account.address;
+  console.log(`Balance check for ${address}\n`);
 
-  console.log('🔍 Balance Check for:', address);
-  console.log();
-
-  // 1. Wallet balance (on-chain USDC)
   const publicClient = createPublicClient({ chain: base, transport: http() });
-  const walletBalance = await publicClient.readContract({
-    address: USDC,
-    abi: parseAbi(['function balanceOf(address) view returns (uint256)']),
-    functionName: 'balanceOf',
-    args: [address],
-  });
-  console.log('  Wallet USDC (on-chain): $' + formatUnits(walletBalance, 6));
-  console.log('    → This is USDC in your wallet, not yet deposited to Limitless');
-  console.log();
+  const [usdc, eth] = await Promise.all([
+    publicClient.readContract({
+      address: USDC,
+      abi: parseAbi(['function balanceOf(address) view returns (uint256)']),
+      functionName: 'balanceOf',
+      args: [address],
+    }),
+    publicClient.getBalance({ address }),
+  ]);
+  console.log(`  USDC on Base: $${formatUnits(usdc, 6)}   (order collateral)`);
+  console.log(`  ETH on Base:  ${Number(formatEther(eth)).toFixed(5)}   (gas for approvals/redeem only)\n`);
 
-  // 2. Limitless portfolio balance
-  const limitless = new LimitlessClient();
+  const sdk = createSdkClient();
+  const portfolio = new PortfolioClient(sdk);
+
   try {
-    const profileRes = await fetch(`https://api.limitless.exchange/profiles/${address}`, {
-      headers: { 'X-API-Key': process.env.LIMITLESS_API_KEY || '' }
-    });
-    if (profileRes.ok) {
-      const profile = await profileRes.json();
-      console.log('  Limitless Portfolio Balance: $' + (profile.balance || 0));
-      console.log('    → This is USDC deposited and available for trading');
-      console.log('    Portfolio ID:', profile.id);
-    } else {
-      console.log('  Limitless Portfolio: Not created yet (status ' + profileRes.status + ')');
-      console.log('    → You need to deposit USDC to create a portfolio');
+    const profile = await portfolio.getProfile();
+    console.log(`  Profile #${profile.id} · ${profile.account} · wallet mode: ${profile.tradeWalletOption ?? 'unreported'}`);
+    if (profile.tradeWalletOption === 'smartWallet') {
+      console.log('  ! smartWallet mode rejects self-signed orders — run: npm start wallet-mode eoa');
     }
-  } catch(e: any) {
-    console.log('  Limitless Portfolio: Error -', e.message);
+  } catch (e) {
+    console.log(`  Profile: unavailable (${(e as Error).message}) — check LMTS_TOKEN_ID / LMTS_TOKEN_SECRET`);
+    return;
   }
-  console.log();
 
-  // 3. Positions (could have unclaimed winnings)
-  try {
-    // Try the positions endpoint first
-    const positionsRes = await fetch(`https://api.limitless.exchange/positions/${address}`, {
-      headers: { 'X-API-Key': process.env.LIMITLESS_API_KEY || '' }
-    });
-    if (positionsRes.ok) {
-      const positions = await positionsRes.json();
-      const openPositions = positions.filter((p: any) => p.status === 'OPEN');
-      console.log('  Open Positions:', openPositions.length);
-      if (openPositions.length > 0) {
-        for (const pos of openPositions.slice(0, 5)) {
-          const size = formatUnits(BigInt(pos.collateralAmount || 0), 6);
-          console.log('    - ' + (pos.market?.title || pos.marketSlug));
-          console.log('      Side: ' + pos.side + ' | Size: $' + size);
-        }
-      } else {
-        console.log('    → No open positions');
-      }
-    } else {
-      console.log('  Open Positions: None (new account)');
-    }
-  } catch(e: any) {
-    console.log('  Positions: Error -', e.message);
+  const positions = await portfolio.getClobPositions();
+  const open = positions.filter((p) => Number(p.tokensBalance?.yes ?? 0) + Number(p.tokensBalance?.no ?? 0) > 0);
+  console.log(`\n  Open CLOB positions: ${open.length}`);
+  for (const p of open.slice(0, 10)) {
+    const yes = Number(p.tokensBalance?.yes ?? 0) / 1e6;
+    const no = Number(p.tokensBalance?.no ?? 0) / 1e6;
+    const live = p.orders?.liveOrders?.length ?? 0;
+    console.log(`    - ${p.market?.title ?? p.market?.slug}  YES ${yes.toFixed(3)} / NO ${no.toFixed(3)}${live ? ` · ${live} live order(s)` : ''}`);
   }
-  console.log();
+  if (open.length > 10) console.log(`    … and ${open.length - 10} more`);
 
-  // 4. Check for claimable winnings
   try {
-    const eventsRes = await fetch(`https://api.limitless.exchange/portfolio/${address}/history`, {
-      headers: { 'X-API-Key': process.env.LIMITLESS_API_KEY || '' }
-    });
-    if (eventsRes.ok) {
-      const events = await eventsRes.json();
-      const claimable = events.filter((e: any) => e.type === 'RESOLVED' && !e.claimed);
-      console.log('  Claimable Winnings:', claimable.length + ' markets');
-      if (claimable.length > 0) {
-        for (const win of claimable.slice(0, 3)) {
-          console.log('    - ' + win.market?.title + ': $' + formatUnits(BigInt(win.amount || 0), 6));
-        }
-        console.log('    → Run: npm run redeem claim-all');
-      } else {
-        console.log('    → No unclaimed winnings');
-      }
-    }
-  } catch(e: any) {
-    console.log('  Winnings check: Error -', e.message);
+    const redeemer = new RedeemClient(sdk);
+    const slugs = await redeemer.portfolioSlugs();
+    const claimable = await redeemer.findClaimablePositions(slugs);
+    console.log(`\n  Claimable winnings: ${claimable.length}`);
+    for (const c of claimable.slice(0, 5)) console.log(`    - ${c.marketTitle}: ${c.expectedPayout}`);
+    if (claimable.length) console.log('    → npm run redeem claim-all');
+  } catch (e) {
+    console.log(`\n  Claimable check skipped: ${(e as Error).message}`);
   }
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

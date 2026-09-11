@@ -33,8 +33,8 @@ need node
 need npm
 
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
-if [ "$NODE_MAJOR" -lt 18 ]; then
-  say "${RED}✗ Node $NODE_MAJOR is too old${NC} — need 18+ (LTS recommended)."
+if [ "$NODE_MAJOR" -lt 20 ]; then
+  say "${RED}✗ Node $NODE_MAJOR is too old${NC} — need 20+ (LTS recommended)."
   exit 1
 fi
 say "${GREEN}✓${NC} prerequisites: git, node v$(node -p 'process.versions.node'), npm"
@@ -61,14 +61,15 @@ say "Installing dependencies (npm install)…"
 npm install --no-fund --no-audit >/dev/null 2>&1
 say "${GREEN}✓${NC} dependencies installed"
 
-# 4. Scaffold via the guided bootstrap -------------------------------------
-# init scaffolds .env + config and prints exactly which credentials to set and
-# how to get each. It never reads or writes secrets.
+# 4. Scaffold --------------------------------------------------------------
+# init creates .env from .env.example (mode 600) and prints exactly which
+# credentials to set and how to get each. It never reads or writes secrets.
 say "\n${BOLD}Scaffolding config…${NC}"
-npm run --silent cross-market-mm:init || true
+npm run --silent init || true
 
 # 5. Footer ----------------------------------------------------------------
 say "\n${BOLD}Installed.${NC} You're in: $DIR"
 say "Next: fill .env in your editor (see the credential list above), then run:"
-say "  ${BOLD}npm run cross-market-mm:init${NC}    # again — it derives your deposit wallet + the addresses to fund"
-say "Full guide: src/strategies/cross-market-mm/QUICKSTART.md"
+say "  ${BOLD}npm run doctor${NC}              # verifies key, token, wallet mode, balances"
+say "  ${BOLD}npm run certainty-closer${NC}    # simplest strategy, dry-run by default"
+say "Cross-venue market making (Limitless ↔ Polymarket): npm run cross-market-mm:init"

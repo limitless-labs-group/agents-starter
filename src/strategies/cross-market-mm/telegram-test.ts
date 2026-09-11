@@ -9,7 +9,8 @@
  * if an orchestrating agent relays the status file, you don't need this.
  */
 
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 import { TelegramClient } from '../../core/telegram/client.js';
 
 async function main(): Promise<void> {

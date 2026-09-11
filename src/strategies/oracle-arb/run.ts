@@ -21,8 +21,8 @@ process.on('unhandledRejection', (err: any) => {
  *   DRY_RUN=false npm run oracle-arb  # Live trading
  */
 
-import { config } from 'dotenv';
-config();
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 
 import { LimitlessClient } from '../../core/limitless/markets.js';
 import { SDKTradingClient } from '../../core/limitless/sdk-trading.js';

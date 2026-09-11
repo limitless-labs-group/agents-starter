@@ -10,7 +10,8 @@
  * so `npm run cross-market-mm:preflight && npm run cross-market-mm` is a safe gate.
  */
 
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ quiet: true });
 import { createPublicClient, http as viemHttp, parseAbi } from 'viem';
 import { base, polygon } from 'viem/chains';
 import { Client, HttpClient } from '@limitless-exchange/sdk';

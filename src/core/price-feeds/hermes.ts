@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { pino } from 'pino';
+import type { EventSource as NodeEventSource } from 'eventsource';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -49,7 +50,7 @@ interface PriceUpdate {
 }
 
 export class HermesClient extends EventEmitter {
-    private eventSource: EventSource | null = null;
+    private eventSource: NodeEventSource | null = null;
     private prices: Map<string, { price: number; timestamp: number; conf: number }> = new Map();
     private connected = false;
     private reconnectTimer: NodeJS.Timeout | null = null;
@@ -86,15 +87,16 @@ export class HermesClient extends EventEmitter {
         // Dynamically import EventSource for Node.js
         const { EventSource } = await import('eventsource');
 
-        this.eventSource = new EventSource(url);
+        const source = new EventSource(url);
+        this.eventSource = source;
 
-        this.eventSource.onopen = () => {
+        source.onopen = () => {
             this.connected = true;
             logger.info({ assets }, 'Hermes SSE connected');
             this.emit('connected', { assets });
         };
 
-        this.eventSource.onmessage = (event) => {
+        source.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
                 this.handleUpdate(data);
@@ -103,7 +105,7 @@ export class HermesClient extends EventEmitter {
             }
         };
 
-        this.eventSource.onerror = (err) => {
+        source.onerror = (err) => {
             logger.error({ err }, 'Hermes SSE error');
             this.connected = false;
             // Do NOT emit('error') — unhandled EventEmitter 'error' events kill the process.

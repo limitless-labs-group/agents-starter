@@ -1,48 +1,37 @@
 # Limitless Prediction Market Trading Agent
 
-Complete SDK and strategy framework for autonomous prediction market trading on Limitless Exchange (Base chain).
-
-This file is the operating manual. An agent with shell access and this file can go from zero to live trading autonomously.
+Operating manual for building and running autonomous trading agents on Limitless Exchange (Base). An agent with shell access and this file can go from zero to a live strategy. `AGENTS.md` is the short contract; this is the depth.
 
 ---
 
 ## Built on the official Limitless SDK
 
-This repo is **not** a hand-rolled API client — it runs on the official,
-maintained SDKs, so you inherit signing, HMAC auth, venue routing, and retry
-logic for free:
+This repo is **not** a hand-rolled API client. Every Limitless call goes through the official, maintained SDK, so you inherit HMAC request signing, EIP-712 order signing, venue routing, typed wire shapes, and retries:
 
-| SDK | Version | Used for |
+| Package | Version | Used for |
 |-----|---------|----------|
-| [`@limitless-exchange/sdk`](/developers/sdk/typescript/getting-started) | `^1.0.9` | All Limitless market data, order placement (EIP-712), portfolio, API tokens. Wrapped by `src/core/limitless/sdk-trading.ts` (`SDKTradingClient`). |
-| [`@polymarket/clob-client-v2`](https://github.com/Polymarket/clob-client) | `^1.0.6` | Polymarket hedge leg (cross-market-mm only). **v2 is required** — Polymarket migrated collateral to pUSD on a V2 exchange and the v1 client can't trade it. |
+| [`@limitless-exchange/sdk`](https://docs.limitless.exchange/developers/sdk/typescript/getting-started) | `^1.1.0` | All Limitless market data, orders (EIP-712), cancel-replace, portfolio, websocket, API tokens. Wrapped by `src/core/limitless/`. |
+| [`@polymarket/clob-client-v2`](https://github.com/Polymarket/clob-client) | `^1.1.0` | Polymarket hedge leg (cross-market-mm only). v2 is required: Polymarket collateral is pUSD on the V2 exchange. |
 | `@polymarket/builder-relayer-client` | `^0.0.10` | Gasless Polymarket deposit-wallet deploy + approvals (cross-market-mm setup). |
 
-The official SDK handles `lmts-api-key` / `lmts-timestamp` / `lmts-signature`
-HMAC headers and the EIP-712 order signing automatically — you supply a scoped
-token + a private key, nothing else. Prefer the SDK over the legacy hand-rolled
-clients in `src/core/limitless/` (`trading.ts`, `sign.ts`) for anything new; the
-shipped strategies all go through `SDKTradingClient`. Section 7 has the official
-SDK quick reference for TypeScript, Python, and Go.
+The SDK sends the `lmts-api-key` / `lmts-timestamp` / `lmts-signature` HMAC headers and signs the EIP-712 order struct; you supply a scoped token + a private key, nothing else. Section 6 documents the thin wrappers this repo adds on top; section 7 is the official SDK quick reference for TypeScript, Python, Go, and Rust.
 
 ---
 
 ## Quick Start Prompt
 
-Paste this into any coding agent with shell access)
-to go from zero to a dry run. The agent clones the repo, reads this file, and
-handles the rest.
+Paste this into any coding agent with shell access to go from zero to a dry run. The agent clones the repo, reads this file, and handles the rest.
 
 ```
-Clone https://github.com/limitless-labs-group/agents-starter.git — your operating manual is SKILL.md, read it before doing anything else.
+Clone https://github.com/limitless-labs-group/agents-starter.git. Your operating contract is AGENTS.md and your manual is SKILL.md; read both before doing anything else.
 
-Then ask me for:
-→ PRIVATE_KEY — Base chain private key (dedicated trading wallet, never my main)
-→ LMTS_TOKEN_ID + LMTS_TOKEN_SECRET — Limitless scoped HMAC token (limitless.exchange → connect wallet → API token modal → API Tokens → Derive)
+Run `npm install && npm run init`, then ask me to put these in .env myself (never paste them to you):
+→ PRIVATE_KEY — a dedicated trading wallet on Base (never my main wallet)
+→ LMTS_TOKEN_ID + LMTS_TOKEN_SECRET — Limitless scoped HMAC token (limitless.exchange → connect the same wallet → API token modal → API Tokens → Derive)
 
-Once I give you those: dry-run a strategy first (start with `npm run certainty-closer` — SDK-only, no extra setup), then walk me through the three strategies so I can pick one. For cross-market-mm (cross-venue market making), read src/strategies/cross-market-mm/SKILL.md for its full lifecycle.
+Once I say they are in place: run `npm run doctor` and fix what it flags, dry-run `npm run certainty-closer` (SDK-only, no extra setup), then walk me through the strategies so I can pick one or build my own from `src/strategies/template/`. For cross-market-mm, read src/strategies/cross-market-mm/SKILL.md for its full lifecycle.
 
-Keep me posted. Fix problems quietly.
+Keep me posted. Stay in DRY_RUN until I say otherwise.
 ```
 
 ---
@@ -55,8 +44,10 @@ Keep me posted. Fix problems quietly.
 git clone https://github.com/limitless-labs-group/agents-starter.git
 cd agents-starter
 npm install
-cp .env.example .env && chmod 600 .env
+npm run init          # creates .env from .env.example (mode 600), lists the credentials to add
 ```
+
+Node 20+ is required. The one-line installer (`curl -fsSL https://raw.githubusercontent.com/limitless-labs-group/agents-starter/main/install.sh | sh`) does the same.
 
 ### Step 2: Credentials (scoped HMAC token)
 
@@ -68,43 +59,44 @@ LMTS_TOKEN_ID=...           # Limitless scoped HMAC token id
 LMTS_TOKEN_SECRET=...       # Limitless scoped HMAC token secret (base64)
 ```
 
-Limitless authenticates with **scoped HMAC tokens**. Get yours from the UI:
-**limitless.exchange → connect wallet → API token modal → "API Tokens" tab →
-Derive → copy the tokenId + secret.** The browser handles the login session, so
-you never touch a Privy token and no smart wallet is involved. (Headless/CI:
-`npm run derive-token`. A legacy `LIMITLESS_API_KEY` still works as a fallback.)
-See [Authentication](/developers/authentication) for the full flow.
+Limitless authenticates with **scoped HMAC tokens**. Get yours from the UI: **limitless.exchange → connect the same wallet as `PRIVATE_KEY` → API token modal → "API Tokens" tab → Derive → copy the tokenId + secret.** The browser handles the login session, so you never touch a Privy token. (Headless/CI: `npm run derive-token`. A legacy `LIMITLESS_API_KEY` still works as a fallback if you already hold one.) See [Authentication](https://docs.limitless.exchange/developers/authentication).
 
-The wallet needs USDC (collateral) + a little ETH (gas, ~$1–2) on Base.
+While connected in the app, **decline the one-time "1-click trading" (smart wallet) prompt**. Accepting it puts the profile in `smartWallet` mode and every self-signed order is rejected with `Signer does not match - you should use embedded address for smart wallet`. Already accepted? `npm start wallet-mode eoa` switches back (section 22).
 
-### Step 3: Dry run
+The wallet needs USDC (collateral) + a little ETH (gas for approvals and redemptions, ~$1) on Base. There is no testnet or sandbox; all integrations run against production.
 
-Always start in `DRY_RUN` — every order intent is logged, nothing signs or posts.
+### Step 3: Doctor
 
 ```bash
-npm run certainty-closer        # simplest: SDK-only, no extra setup, dry-run by default
+npm run doctor                        # key · token · wallet mode · balances
+npm run doctor -- --market <slug>     # + approvals for that market's exchange
 ```
 
-Confirm markets are scanned and "would createOrder" lines appear. If so, your
-SDK auth + wallet are wired correctly.
+Non-zero exit if orders would be rejected. It never prints a secret.
 
-### Step 4: Approve a market's exchange (before going live)
+### Step 4: Dry run
 
-Limitless uses the Conditional Tokens Framework. Before an order can fill, the
-market's exchange must be approved to spend your USDC (and CTF, for sells):
+Always start in `DRY_RUN` (the default): every order intent is logged, nothing is signed or sent.
+
+```bash
+npm run certainty-closer        # simplest: SDK-only, no extra setup
+```
+
+Confirm markets are scanned and `[DRY_RUN] would createOrder` lines appear.
+
+### Step 5: Approve a market's exchange (before going live)
+
+Before an order can fill, the market's exchange must be approved to spend your USDC (and CTF tokens, for sells):
 
 ```bash
 npm start approve <any-active-market-slug>
 ```
 
-One approval covers every market that shares that exchange. Neg-risk
-(grouped/winner) markets use a separate exchange and need their own approve.
+One approval covers every market that shares that exchange. Neg-risk (grouped) markets use a separate exchange and adapter and need their own approve. Costs gas.
 
-### Step 5: Go live
+### Step 6: Go live
 
-Flip `DRY_RUN=false` in `.env` (or `dry_run: false` for cross-market-mm's YAML),
-keep sizes small for the first runs, and run your chosen strategy. Claim winnings
-from resolved markets any time:
+Flip `DRY_RUN=false` in `.env` (or `dry_run: false` in cross-market-mm's YAML), keep sizes small for the first runs, and run your chosen strategy. Claim winnings from resolved markets any time:
 
 ```bash
 npm run redeem claim-all
@@ -114,26 +106,14 @@ npm run redeem claim-all
 
 ## Strategies
 
-Three strategies ship, spanning distinct archetypes. All authenticate via the
-scoped HMAC token and default to `DRY_RUN`.
+| Strategy | Run | Archetype |
+|---|---|---|
+| **template** | `npm run template` | Bare skeleton (scan → fair value → decide). Copy it to build your own. Trades nothing until you replace `fairValue()`. |
+| certainty-closer | `npm run certainty-closer` | SDK-only: buy near-resolution favourites sized by fractional Kelly. Teaching example; the edge is the one you assert. |
+| oracle-arb | `npm run oracle-arb` | Feed-driven: Pyth (Hermes SSE) oracle vs short-dated crypto markets; FOK when the gap clears a threshold. |
+| cross-market-mm | `npm run cross-market-mm` | Cross-venue market making: quote on Limitless, hedge on Polymarket, stay delta-neutral. Own manual under `src/strategies/cross-market-mm/`. |
 
-- **`cross-market-mm`** — cross-venue market making: quote on
-  Limitless, hedge fills on Polymarket to stay delta-neutral. Earns the
-  cross-venue spread + Limitless maker rebates / LP rewards. Has its own full
-  operating manual: **`src/strategies/cross-market-mm/SKILL.md`** (setup →
-  find-pairs → preflight → run → status → close). `npm run cross-market-mm`.
-- **`oracle-arb`** — compares a Pyth (Hermes SSE) oracle price against Limitless
-  markets resolving on the same underlying; fires FOK/FAK when the implied
-  probability strays far enough from the oracle to clear fees. `npm run oracle-arb`.
-- **`certainty-closer`** — SDK-only (no external feeds): filters markets near
-  resolution and buys the favourite, sized via fractional Kelly
-  (`src/core/kelly.ts`). The simplest on-ramp; honestly framed as a teaching
-  scaffold with no independent edge. `npm run certainty-closer`.
-
-Build your own by extending `BaseStrategy` (`src/strategies/base-strategy.ts`) —
-implement `tick()` (return `TradeDecision[]`) + `initialize()`/`shutdown()`; the
-base class runs the loop and gates on `DRY_RUN`. (`cross-market-mm` has its own
-runtime rather than `BaseStrategy`.)
+All default to `DRY_RUN`. Each has a `SKILL.md` + `QUICKSTART.md` beside it (template excepted; it is documented inline).
 
 ---
 
@@ -141,46 +121,48 @@ runtime rather than `BaseStrategy`.)
 
 | File | Purpose |
 |------|---------|
-| `.env` | Secrets + per-strategy tunables |
-| `src/core/limitless/sdk-trading.ts` | `SDKTradingClient` — wraps the official SDK (orders, HMAC auth, venue routing) |
-| `src/core/limitless/markets.ts` | Market discovery, orderbook, search |
-| `src/core/limitless/redeem.ts` | Claim winnings from resolved markets |
-| `src/core/polymarket/` | Polymarket clob-client-v2 adapter + WS (cross-market-mm hedge leg) |
-| `src/core/price-feeds/hermes.ts` | Pyth Hermes SSE price streaming (oracle-arb) |
-| `src/core/kelly.ts` | Fractional-Kelly position sizing |
-| `src/strategies/cross-market-mm/` | Cross-venue MM strategy + its own SKILL.md + QUICKSTART |
-| `src/strategies/oracle-arb/`, `certainty-closer/` | Example strategies (extend `BaseStrategy`) |
+| `AGENTS.md` | The agent operating contract (safety rules, command map, how to read an order result) |
+| `src/core/limitless/client.ts` | Env → SDK clients, HMAC-first auth resolution |
+| `src/core/limitless/markets.ts` | `LimitlessClient`: active markets, search, detail, orderbook |
+| `src/core/limitless/sdk-trading.ts` | `SDKTradingClient`: BUY/SELL, cancel, cancel-replace, `status/batch`, `awaitFill` |
+| `src/core/limitless/execution.ts` | `settlementStatus` state machine + fill summaries |
+| `src/core/limitless/websocket.ts` | `LimitlessStream`: orderbook snapshots + updates, your order events |
+| `src/core/limitless/portfolio.ts` | `PortfolioClient`: profile, positions, fill verification, trading-wallet mode |
+| `src/core/limitless/redeem.ts` | `RedeemClient`: claim winnings on-chain (CTF + neg-risk adapter) |
+| `src/core/limitless/approve.ts` | USDC + CTF approvals for a market's exchange/adapter |
+| `src/core/doctor.ts` | Preflight checks behind `npm run doctor` |
+| `src/strategies/base-strategy.ts` | The tick → decide → execute loop |
+| `src/strategies/template/` | The skeleton to copy |
+| `src/examples/` | `place-order.ts` (order lifecycle), `stream-orderbook.ts` (websocket) |
+| `mcp-skills/` | Claude skills for the chat-runtime path over the official trading MCP server |
 
 ---
 
 ## Table of Contents
 
-1. [Built on the official Limitless SDK](#built-on-the-official-limitless-sdk)
-2. [Setup](#setup) — start here
-3. [Strategies](#strategies) · [Key Files](#key-files)
-4. [Overview](#1-overview)
-5. [Live Documentation (MCP)](#2-live-documentation-mcp)
-6. [Market Structure](#3-market-structure)
-7. [Architecture](#4-architecture)
-8. [Setup Guide](#5-setup-guide)
-9. [Core SDK Reference](#6-core-sdk-reference) — hand-rolled client in this repo
-10. [Official SDK Quick Reference](#7-official-sdk-quick-reference) — TypeScript, Python, Go
-11. [Programmatic API & Partner Integration](#8-programmatic-api--partner-integration)
-12. [Delegated Orders](#9-delegated-orders) — GTC, FAK, FOK via server-signed orders
-13. [Server Wallet Redemption & Withdrawal](#10-server-wallet-redemption--withdrawal)
-14. [Market Pages & Navigation](#11-market-pages--navigation) — browsing, filtering, pagination
-15. [WebSocket Streaming](#12-websocket-streaming) — public and authenticated channels
-16. [Error Handling & Retry](#13-error-handling--retry) — typed errors, retry patterns
-17. [EIP-712 Signing Deep Dive](#14-eip-712-signing-deep-dive)
-18. [Contract Addresses](#15-contract-addresses)
-19. [Strategies Reference](#16-strategies-reference)
-20. [Building Your Own Strategy](#17-building-your-own-strategy)
-21. [Autonomous Iteration](#18-autonomous-iteration)
-22. [Safety and Risk Management](#19-safety--risk-management)
-23. [Common Patterns and Recipes](#20-common-patterns--recipes)
-24. [Agent Integration Patterns](#21-agent-integration-patterns)
-25. [Troubleshooting](#22-troubleshooting)
-26. [Links and Resources](#23-links--resources)
+1. [Overview](#1-overview)
+2. [Live Documentation and MCP servers](#2-live-documentation-and-mcp-servers)
+3. [Market Structure](#3-market-structure)
+4. [Architecture](#4-architecture)
+5. [Setup Guide](#5-setup-guide)
+6. [Core Module Reference](#6-core-module-reference)
+7. [Official SDK Quick Reference](#7-official-sdk-quick-reference)
+8. [Programmatic API & Partner Integration](#8-programmatic-api--partner-integration)
+9. [Delegated Orders](#9-delegated-orders)
+10. [Server Wallet Redemption & Withdrawal](#10-server-wallet-redemption--withdrawal)
+11. [Market Pages & Navigation](#11-market-pages--navigation)
+12. [WebSocket Streaming](#12-websocket-streaming)
+13. [Order Results, Errors & Retry](#13-order-results-errors--retry)
+14. [EIP-712 Signing Deep Dive](#14-eip-712-signing-deep-dive)
+15. [Contract Addresses](#15-contract-addresses)
+16. [Fees and Taker Delay](#16-fees-and-taker-delay)
+17. [Building Your Own Strategy](#17-building-your-own-strategy)
+18. [Autonomous Iteration](#18-autonomous-iteration)
+19. [Safety, Risk & Market Integrity](#19-safety-risk--market-integrity)
+20. [Common Patterns & Recipes](#20-common-patterns--recipes)
+21. [Agent Integration Patterns](#21-agent-integration-patterns)
+22. [Troubleshooting](#22-troubleshooting)
+23. [Links and Resources](#23-links-and-resources)
 
 ---
 
@@ -188,72 +170,58 @@ runtime rather than `BaseStrategy`.)
 
 ### What Are Prediction Markets?
 
-Prediction markets let people trade on the outcomes of future events. Each market poses a question — "Will BTC be above $100,000 on March 1?" — and offers binary tokens: **YES** and **NO**. These tokens trade between $0.00 and $1.00, with prices reflecting the crowd's estimated probability of the event occurring.
+Prediction markets let participants trade on the outcome of future events. Each market poses a binary question ("Will BTC be above $100,000 on March 1?"), and participants buy YES or NO shares. Prices reflect the crowd's probability estimate: a YES share trading at $0.65 implies a 65% chance the event occurs.
 
-At resolution:
-- If the event **happens**: YES tokens pay $1.00, NO tokens pay $0.00
-- If the event **doesn't happen**: YES tokens pay $0.00, NO tokens pay $1.00
-
-This means YES price + NO price should always equal ~$1.00. When they don't, arbitrage opportunities exist.
+When the market resolves, the winning side's shares redeem for $1.00 each and the losing side's for $0.00.
 
 ### What Is Limitless Exchange?
 
-Limitless Exchange is the #1 prediction market protocol on Base chain. Key features:
+Limitless is a non-custodial prediction market exchange on Base (Ethereum L2, chain id 8453):
 
-- **Central Limit Order Book (CLOB)** — full orderbook trading with limit orders, not just AMM swaps
-- **AMM markets** — simpler automated market maker pools for some markets
-- **NegRisk / Group markets** — multi-outcome markets (e.g., "Which team wins the Super Bowl?") where multiple YES/NO pairs share a single collateral pool
-- **Conditional Tokens Framework (CTF)** — ERC-1155 position tokens compatible with the Gnosis CTF standard
-- **USDC collateral** — all markets settle in USDC on Base chain
-- **Sub-minute markets** — crypto price bracket markets that expire in minutes to hours, creating rapid trading opportunities
+- **CLOB (Central Limit Order Book)** markets for precise limit orders, plus AMM markets
+- **USDC collateral** (6 decimals)
+- **EIP-712 signed orders**: orders are off-chain messages, so placing and cancelling costs no gas; settlement is on-chain
+- **Scoped API tokens** with HMAC-SHA256 request signing
+- Real-time **WebSocket** streams for orderbooks, prices, and your own order events
+- An official **MCP server** for chat-driven trading with human approval
 
-### What This Skill Enables
+### What This Repo Enables
 
-This skill gives an AI agent the complete toolkit to:
-
-1. **Discover markets** — search, filter, and scan all active prediction markets
-2. **Evaluate opportunities** — compare external price feeds against market odds to find mispricing
-3. **Execute trades** — sign and submit EIP-712 limit orders to the CLOB
-4. **Manage positions** — track open orders, portfolio P&L, and exposure
-5. **Redeem winnings** — automatically claim payouts from resolved markets
-6. **Learn and iterate** — log every trade, analyze win/loss patterns, and adjust strategy parameters over time
-7. **Run autonomously** — operate on a cron/heartbeat loop, scanning → trading → analyzing → improving
+- **Autonomous trading**: strategies that scan markets, decide, and execute, unattended
+- **Cross-venue market making**: quote on Limitless and hedge on Polymarket
+- **Oracle-driven trading**: stream Pyth prices and trade the gap
+- **Safe iteration**: `DRY_RUN` by default, `doctor` preflight, contract tests against the SDK
 
 ---
 
-## 2. Live Documentation (MCP)
+## 2. Live Documentation and MCP servers
 
-### CRITICAL: Always Query the Docs First
+Limitless runs two MCP servers. They do different jobs; do not confuse them.
 
-Limitless Exchange provides a live documentation search endpoint via the **Model Context Protocol (MCP)**. This is the single most important tool for staying accurate. The API evolves — endpoints change, parameters get added, response formats shift. **Before implementing any API call, verify it against the live docs.**
+| | Docs MCP | Trading MCP |
+|---|---|---|
+| Endpoint | `https://docs.limitless.exchange/mcp` | `https://api.limitless.exchange/mcp` |
+| Audience | Coding agents that need up-to-date API facts while *writing code* | Chat assistants (Claude, Grok, any MCP client) that research and *propose orders* a human approves |
+| Auth | None | OAuth sign-in to a Limitless account, scope `trading` |
+| Holds keys? | n/a | No. Non-custodial; every new order is a proposal you approve in the browser. Cancels execute immediately. |
+| Docs | this section | https://docs.limitless.exchange/developers/mcp-server |
 
-### MCP Endpoint
+### Docs MCP: query before you code
+
+The API evolves. **Before implementing any API call, verify it against the live docs.** Treat the live docs as the source of truth over this file.
 
 ```
 POST https://docs.limitless.exchange/mcp
-```
-
-### Protocol
-
-JSON-RPC 2.0 over Server-Sent Events (SSE).
-
-### Required Headers
-
-```
 Content-Type: application/json
 Accept: text/event-stream, application/json
 ```
 
-### Available Tools
+JSON-RPC 2.0 over SSE. Two tools:
 
-| Tool Name | Parameter | Description |
-|-----------|-----------|-------------|
-| `search_limitless_exchange` | `query` (string) | Semantic search across the Limitless Exchange documentation. Returns matched snippets with titles and links. Use for broad or conceptual questions ("how to authenticate", "rate limits"). |
-| `query_docs_filesystem_limitless_exchange` | `command` (string) | Read-only shell-style query against a virtualized in-memory filesystem of the docs (`.mdx` pages and OpenAPI specs). Supports `rg`, `grep`, `find`, `tree`, `ls`, `cat`, `head`, `tail`, `jq`, etc. Use for exact keyword matching, structural exploration, or reading the full content of a specific page (e.g. `head -200 /api-reference/create-customer.mdx`). |
-
-**When to pick which:** start with `search_limitless_exchange` for broad questions; switch to `query_docs_filesystem_limitless_exchange` when you need an exact keyword match, want to walk the docs tree (`tree / -L 2`), or need to read a full page by path. The filesystem tool is stateless across calls — pass absolute paths or chain commands with `&&`.
-
-### How to Call It
+| Tool | Parameter | Use |
+|------|-----------|-----|
+| `search_limitless_exchange` | `query` (string) | Semantic search across the docs. Broad or conceptual questions ("how to authenticate", "taker delay"). |
+| `query_docs_filesystem_limitless_exchange` | `command` (string) | Read-only shell-style query (`rg`, `grep`, `find`, `tree`, `ls`, `cat`, `head`, `jq`) over a virtual filesystem of the `.mdx` pages and OpenAPI specs. Exact keyword matches, walking the tree, reading a full page by path. Stateless across calls. |
 
 ```bash
 curl -s -X POST "https://docs.limitless.exchange/mcp" \
@@ -262,79 +230,45 @@ curl -s -X POST "https://docs.limitless.exchange/mcp" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_limitless_exchange","arguments":{"query":"how to place an order"}}}'
 ```
 
-### Response Format
-
-The response arrives as an SSE stream:
-
-```
-event: message
-data: {"result":{"content":[{"text":"...documentation content..."}]}}
-```
-
-Parse the `data` field as JSON, then extract `result.content[0].text` for the documentation text.
-
-### When to Use the MCP
-
-**Before every major action:**
-
-| Situation | Example Query |
-|-----------|---------------|
-| Implementing an API call | `search_limitless_exchange("GET /markets/active parameters")` |
-| Encountering an error | `search_limitless_exchange("order rejected error codes")` |
-| Building a new strategy | `search_limitless_exchange("available market types and venues")` |
-| Unsure about signing | `search_limitless_exchange("EIP-712 order signing format")` |
-| Checking order format | `search_limitless_exchange("POST /orders request body")` |
-| Understanding token IDs | `search_limitless_exchange("position IDs token IDs conditional tokens")` |
-| Exploring new endpoints | `search_limitless_exchange("portfolio API endpoints")` |
-| Debugging approvals | `search_limitless_exchange("USDC approval CTF approval")` |
-| Understanding venues | `search_limitless_exchange("venue exchange adapter negrisk")` |
-| Fee structure | `search_limitless_exchange("fee rate bps tiers")` |
-
-### Integration Pattern for Agents
-
-**Make MCP queries a reflex, not an afterthought.** Before:
-- Writing a new API integration → query MCP
-- Debugging a failing call → query MCP
-- Adding a new strategy that touches a new endpoint → query MCP
-- Modifying order parameters → query MCP
-
-**Treat the live docs as the source of truth** — not the cached knowledge in this SKILL.md. This file is comprehensive but may lag behind API changes. The MCP endpoint always reflects the current state of the documentation.
-
-### Programmatic Usage (TypeScript)
+The response is an SSE stream; parse the `data:` lines as JSON and read `result.content[0].text`.
 
 ```typescript
 async function queryLimitlessDocs(query: string): Promise<string> {
   const res = await fetch('https://docs.limitless.exchange/mcp', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'text/event-stream, application/json',
-    },
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream, application/json' },
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: 1,
       method: 'tools/call',
-      params: {
-        name: 'search_limitless_exchange',
-        arguments: { query },
-      },
+      params: { name: 'search_limitless_exchange', arguments: { query } },
     }),
   });
-
   const text = await res.text();
-  // Parse SSE: find lines starting with "data: "
-  const dataLines = text.split('\n').filter(l => l.startsWith('data: '));
-  for (const line of dataLines) {
+  for (const line of text.split('\n').filter((l) => l.startsWith('data: '))) {
     try {
       const parsed = JSON.parse(line.slice(6));
-      if (parsed.result?.content?.[0]?.text) {
-        return parsed.result.content[0].text;
-      }
+      if (parsed.result?.content?.[0]?.text) return parsed.result.content[0].text;
     } catch {}
   }
   return '';
 }
 ```
+
+Make it a reflex: writing a new API integration, debugging a failing call, changing order parameters → query the docs MCP first.
+
+### Trading MCP: the chat runtime
+
+The trading MCP is the other way to put an agent on Limitless. Add `https://api.limitless.exchange/mcp` as a remote MCP server in Claude Desktop / claude.ai / Claude Code (`claude mcp add --transport http limitless https://api.limitless.exchange/mcp`) and sign in. Fifteen tools: market discovery (`search_markets`, `list_markets`, `list_market_categories`, `get_market`, `get_market_group`, `get_orderbook`, `get_market_price_history`), your account (`get_wallet_balance`, `get_positions`, `get_open_orders`, `get_trade_history`), and trading (`place_orders`, `check_order_status`, `cancel_order`, `cancel_all_orders`).
+
+Load-bearing mechanics:
+
+- `place_orders` **never places**. It returns an `approvalUrl`; the user opens it, reviews the exact terms, and submits. Up to 10 orders per approval; a proposal expires after 10 minutes.
+- `cancel_order` / `cancel_all_orders` **execute immediately** with no browser step.
+- Orders are GTC or FAK, `outcomeIndex` 0 = YES / 1 = NO, price strictly between 0 and 1, and `price × shares ≥ $1`.
+- It trades from the account's **Limitless Wallet**; the wallet check runs on every request.
+
+`mcp-skills/` in this repo packages six Claude skills for that runtime (thesis building, scale-in ladders, LP ladders, portfolio review, group scans, and the shared operating manual). See `mcp-skills/README.md`.
 
 ---
 
@@ -343,90 +277,59 @@ async function queryLimitlessDocs(query: string): Promise<string> {
 ### Binary Markets
 
 Every binary market has two outcome tokens:
-- **YES token** — pays $1.00 if the event occurs
-- **NO token** — pays $1.00 if the event does not occur
+- **YES token**: pays $1.00 if the event occurs
+- **NO token**: pays $1.00 if it does not
 
-Prices are expressed as values between 0 and 1 (or 0¢ and 100¢). A YES price of 0.65 means the market estimates a 65% probability the event will occur.
+Prices are fractions of $1 (or cents). A YES price of 0.65 means the market estimates a 65% probability. At resolution exactly one side pays $1.00.
 
-**Key invariant:** At resolution, exactly one side pays $1.00 and the other pays $0.00. Before resolution, YES + NO prices should approximate $1.00 (deviations create arbitrage opportunities).
+**One book per market.** The orderbook is the YES token's book. Buying NO at 0.30 is the same order as selling YES at 0.70, so NO interest shows up in the YES asks. Read one book and you have the whole market.
 
 ### Trading Venues: CLOB vs AMM
 
-Limitless supports two trading venues:
-
 | Feature | CLOB | AMM |
 |---------|------|-----|
-| Order type | Limit orders (price + size) | Swap against liquidity pool |
-| Price discovery | Orderbook with bids/asks | Automated bonding curve |
-| Execution | Maker/taker matching | Instant at pool price |
-| Best for | Precise entry/exit, strategies | Quick trades, simple markets |
-| `tradeType` field | `'clob'` | `'amm'` |
+| Order type | Limit orders (price + size) | Swap against a pool |
+| Price discovery | Orderbook bids/asks | Bonding curve |
+| Execution | Maker/taker matching, EIP-712 signed | Instant at pool price |
+| `tradeType` | `'clob'` | `'amm'` |
 
-This SDK focuses on **CLOB markets** because they offer limit orders, better price control, and more strategic opportunities.
+This repo trades **CLOB markets**. Grouped multi-outcome events report `tradeType: 'group'` at the group level; each child outcome is its own CLOB market with its own slug.
 
 ### NegRisk / Group Markets
 
-Some markets have more than two outcomes (e.g., "Which candidate wins the election?"). These are **group markets** using the NegRisk framework:
+Multi-outcome events ("Which candidate wins?") are groups of binary markets sharing collateral through the NegRisk framework:
 
-- Multiple YES/NO pairs share a single collateral pool
-- Each outcome has its own position ID (token ID)
-- The `marketType` field is `'group'` and `tradeType` is `'group'`
-- The venue includes both an `exchange` address and an `adapter` address
-- Token approvals must be set for both the exchange AND the adapter
+- Each child market has its own slug, token ids, and orderbook; trade the **child** slug
+- The venue includes both an `exchange` and an `adapter` address; approvals must cover both
+- Positions are minted under the adapter's wrapped collateral, so redemption goes through `NegRiskAdapter.redeemPositions(conditionId, [yesBalance, noBalance])`, not the plain CTF call. `RedeemClient` handles this.
+- Detect: `market.negRiskRequestId` is set and `market.venue.adapter` is non-null
 
 ### Position IDs and Token IDs
 
-Each market outcome has a unique **position ID** (also called token ID). These are uint256 values that identify ERC-1155 tokens in the CTF contract.
-
-```typescript
-// From market data:
-market.positionIds[0]  // YES token ID
-market.positionIds[1]  // NO token ID
-
-// Or from raw API response:
-market.tokens.yes      // YES token ID
-market.tokens.no       // NO token ID
-```
-
-These token IDs are used in:
-- EIP-712 order signing (the `tokenId` field)
-- CTF balance checks (`balanceOf(address, tokenId)`)
-- Redemption calls
+Each outcome has a uint256 **position id** (token id) identifying an ERC-1155 token in the CTF contract. Markets carry them as `positionIds: [yes, no]` and/or `tokens: { yes, no }` depending on vintage; use `marketTokenIds(market)` from `src/core/limitless/types.ts` rather than reading one shape. Token ids are used for EIP-712 signing (`tokenId`), CTF balance checks, and redemption.
 
 ### Collateral
 
-All Limitless markets use **USDC on Base chain** as collateral. USDC has 6 decimals, so:
-- 1 USDC = `1_000_000` raw units
-- $0.50 = `500_000` raw units
+USDC on Base, 6 decimals: 1 USDC = `1_000_000` raw units.
 
 ### Market Lifecycle
 
 ```
-CREATED → FUNDED → ACTIVE (trading open) → CLOSED (trading stopped) → RESOLVED (payouts available)
+CREATED → FUNDED (trading open) → CLOSED (trading stopped) → RESOLVED (payouts available)
 ```
 
-- **FUNDED**: Market is live, trading is open
-- **CLOSED**: Trading has stopped, awaiting resolution
-- **RESOLVED**: Outcome determined, winning tokens can be redeemed for USDC
-
-The `status` field on a market object reflects this: `'FUNDED'` | `'CLOSED'` | `'RESOLVED'`.
-
-### Resolution Mechanics
-
-Markets are resolved by oracles. For crypto price markets, resolution is typically based on the actual price at expiration time. Once resolved:
-- The `winningOutcomeIndex` field indicates which outcome won (0 = YES, 1 = NO)
-- The CTF contract's `payoutDenominator` becomes > 0
-- Holders of winning tokens can call `redeemPositions()` to convert tokens → USDC
+`market.status` reflects this. Once resolved, `winningOutcomeIndex` is 0 (YES) or 1 (NO), the CTF `payoutDenominator` becomes > 0, and winning tokens redeem for USDC. Resolution can lag the deadline by a few minutes; a claim that fails right after resolution usually just needs a retry.
 
 ### Market Prices Array
 
-The `prices` field on a market object is an array: `[YES_price, NO_price]`.
+`market.prices` is `[YES_price, NO_price]`. The listings report cents (0..100); orderbook levels are fractions (0..1). `toFraction()` in `types.ts` normalizes either. An **empty book reports midpoint 0.5** with null best bid/ask; treat it as "no price", not 50%.
 
-- Values range from 0 to ~100 (representing cents / probability percentage)
-- Example: `[42.8, 57.2]` means YES is 42.8¢, NO is 57.2¢
-- For CLOB markets, these reflect the last traded or mid price
+### Per-market settings that change how orders behave
 
-> 📖 **MCP checkpoint:** For the latest on market data fields and price format, query: `search_limitless_exchange("market object fields prices format")`
+- `metadata.fee: true` → fee-bearing market. Your signed `feeRateBps` must equal your profile's `rank.feeRateBps` (the SDK does this); see section 16.
+- `settings.takerDelayMs` (0 = none) → FOK/FAK are held that long before matching; see section 16. Sports markets currently run a delay; read the field per market rather than assuming.
+- `settings.minSize` → minimum order size in shares for that market.
+- `settings.maxSpread`, `settings.dailyReward` → the LP reward band and budget (`isRewardable`).
 
 ---
 
@@ -436,58 +339,60 @@ The `prices` field on a market object is an array: `[YES_price, NO_price]`.
 
 ```
 src/
-├── index.ts                           # CLI entry — the `approve` command
+├── index.ts                        # CLI: doctor · approve · whoami · wallet-mode
 ├── core/
-│   ├── wallet.ts                      # Private key → viem WalletClient + Account
-│   ├── kelly.ts                       # Fractional-Kelly position sizing util
+│   ├── doctor.ts                   # Preflight checks (pure w.r.t. I/O, tested with fakes)
+│   ├── wallet.ts                   # PRIVATE_KEY → viem WalletClient + Account
+│   ├── kelly.ts                    # Fractional-Kelly sizing
 │   ├── limitless/
-│   │   ├── sdk-trading.ts             # SDKTradingClient — wraps @limitless-exchange/sdk (orders, HMAC)
-│   │   ├── markets.ts                 # LimitlessClient — market discovery, search, orderbook
-│   │   ├── approve.ts                 # Token approvals — USDC (ERC-20) and CTF (ERC-1155)
-│   │   ├── redeem.ts                  # RedeemClient — claim winnings from resolved markets
-│   │   ├── derive-token.ts            # Headless HMAC-token derivation
-│   │   ├── trading.ts / sign.ts       # Legacy hand-rolled client (prefer sdk-trading.ts)
-│   │   └── portfolio.ts / websocket.ts
-│   ├── polymarket/                    # clob-client-v2 adapter + WS (cross-market-mm hedge leg)
-│   └── price-feeds/
-│       └── hermes.ts                  # Pyth Hermes SSE oracle prices (oracle-arb)
+│   │   ├── client.ts               # Env → SDK Client / WebSocketClient, HMAC-first auth
+│   │   ├── markets.ts              # LimitlessClient (list/search/detail/orderbook)
+│   │   ├── sdk-trading.ts          # SDKTradingClient (orders, cancel, cancel-replace, status, awaitFill)
+│   │   ├── execution.ts            # settlementStatus → filled/resting/pending/killed/failed
+│   │   ├── websocket.ts            # LimitlessStream (orderbooks + order events)
+│   │   ├── portfolio.ts            # PortfolioClient (profile, positions, wallet mode)
+│   │   ├── redeem.ts               # RedeemClient (CTF + neg-risk claims) + CLI
+│   │   ├── approve.ts              # USDC/CTF approvals
+│   │   ├── derive-token.ts         # Headless HMAC-token derivation
+│   │   └── types.ts                # Shared types + helpers (marketTokenIds, toFraction, takerDelayMs)
+│   ├── polymarket/                 # clob-client-v2 adapter + WS (cross-market-mm hedge leg)
+│   └── price-feeds/hermes.ts       # Pyth Hermes SSE (oracle-arb)
 ├── strategies/
-│   ├── base-strategy.ts               # BaseStrategy abstract class — tick loop, trade execution
-│   ├── cross-market-mm/               # cross-venue MM (own SKILL.md + QUICKSTART)
-│   ├── oracle-arb/                    # Pyth oracle edge-detection (extends BaseStrategy)
-│   └── certainty-closer/              # SDK-only near-resolution example (extends BaseStrategy)
+│   ├── base-strategy.ts            # tick → decide → execute loop, DRY_RUN gate, taker-delay aware
+│   ├── template/                   # copy me
+│   ├── certainty-closer/           # SDK-only example (extends BaseStrategy)
+│   ├── oracle-arb/                 # Pyth oracle edge-detection (extends BaseStrategy)
+│   └── cross-market-mm/            # cross-venue MM (own runtime, SKILL.md, QUICKSTART.md)
+├── examples/                       # place-order.ts, stream-orderbook.ts
+└── scripts/                        # init.ts, check-balances.ts, check-orderbook.ts, auto-claim.ts
+tests/unit/                         # vitest; no network. sdk-surface + sdk-signing guard SDK bumps.
+mcp-skills/                         # Claude skills for the trading MCP (chat runtime)
 ```
 
 ### Module Dependency Graph
 
 ```
-wallet.ts ───────────────┐
-                         ▼
-@limitless-exchange/sdk ─┴─→ sdk-trading.ts (SDKTradingClient)
-markets.ts (LimitlessClient) ─┤
-                              ▼
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-      base-strategy.ts   cross-market-mm/   approve.ts / redeem.ts
-              │            (own runtime +
-   ┌──────────┴────────┐    polymarket/ + kelly.ts)
-   ▼                   ▼
-oracle-arb/      certainty-closer/ ──→ kelly.ts
+.env ──► client.ts ──► @limitless-exchange/sdk
+              │
+   ┌──────────┼───────────────┬──────────────┬──────────────┐
+   ▼          ▼               ▼              ▼              ▼
+markets.ts  sdk-trading.ts  websocket.ts  portfolio.ts   redeem.ts / approve.ts / doctor.ts
+   │          │ (execution.ts)
+   └────┬─────┘
+        ▼
+  base-strategy.ts ──► template/ · certainty-closer/ · oracle-arb/
+  cross-market-mm/ (own runtime; uses markets.ts + sdk-trading.ts + polymarket/)
 ```
 
 ### Core Concepts
 
-**Wallet** (`wallet.ts`): Reads `PRIVATE_KEY` from env, creates a viem `WalletClient` on Base chain. The account is used for both on-chain transactions (approvals, redemptions) and off-chain signing (EIP-712 orders).
+**One SDK client, shared.** `createSdkClient()` resolves auth once; pass the same `Client` to `LimitlessClient`, `SDKTradingClient`, and `PortfolioClient` so they share a connection and credentials.
 
-**LimitlessClient** (`markets.ts`): Stateless HTTP client for the Limitless REST API. Caches venue data (exchange/adapter addresses) internally to avoid repeated lookups.
+**Two signatures, two jobs.** The private key signs the *order* (EIP-712, `signatureType 0`). The HMAC token authenticates the *request*. Both must belong to the same account.
 
-**SDKTradingClient** (`sdk-trading.ts`): the current order path — wraps the official `@limitless-exchange/sdk` for order creation/signing (EIP-712), HMAC auth, and venue routing. All shipped strategies use it. Respects `DRY_RUN`.
+**DRY_RUN is a hard gate.** Every write path in `SDKTradingClient` and `RedeemClient` returns before any network call when dry-run is on. Pass the resolved flag explicitly (`dryRun`) so config and env cannot disagree.
 
-**TradingClient / OrderSigner** (`trading.ts`, `sign.ts`): the **legacy** hand-rolled order + EIP-712 signing path, kept for reference. Prefer `SDKTradingClient` for new code.
-
-**BaseStrategy** (`base-strategy.ts`): Abstract class providing the tick loop pattern. Subclasses implement `initialize()`, `tick()`, `shutdown()`, and `getStats()`. The base class handles the timer, decision execution, and error recovery.
-
-**Recorder** (`strategies/cross-market-mm/recorder.ts`): Append-only JSONL run log — config, every order, per-tick exposure snapshot, every hedge — written to `./data`; summarized by `analyze.ts`.
+**Read the state machine, not `matched`.** `execution.settlementStatus` says what happened to an order; `execution.ts` classifies it.
 
 ---
 
@@ -495,10 +400,10 @@ oracle-arb/      certainty-closer/ ──→ kelly.ts
 
 ### Prerequisites
 
-- **Node.js 18+** (check: `node --version`)
-- **A wallet with USDC on Base chain** (dedicated trading wallet — NOT your main wallet)
-- **A Limitless scoped HMAC token** (free, from the UI — see Step 3)
-- **For cross-market-mm only:** a Polymarket relayer API key + pUSD on Polygon
+- **Node.js 20+** (`node --version`)
+- **A dedicated wallet with USDC on Base** (never your main wallet)
+- **A Limitless scoped HMAC token** (free, from the UI)
+- For cross-market-mm only: a Polymarket relayer key + pUSD on Polygon (guided by `cross-market-mm:init`)
 
 ### Step 1: Clone & Install
 
@@ -506,1014 +411,346 @@ oracle-arb/      certainty-closer/ ──→ kelly.ts
 git clone https://github.com/limitless-labs-group/agents-starter.git
 cd agents-starter
 npm install
+npm run init
 ```
 
 ### Step 2: Wallet Setup
 
-**Create a dedicated trading wallet.** Never use your main wallet for automated trading.
+Create a dedicated trading wallet and export its private key from your wallet app. Fund it on Base:
+- **USDC**: order collateral. Bridge via [bridge.base.org](https://bridge.base.org) or buy on a Base DEX.
+- **ETH**: a little (~$1) for gas. Only approvals and redemptions are on-chain; orders and cancels are free.
 
-Export your private key:
-- **MetaMask:** Settings → Security & Privacy → Export Private Key
-- **Rabby:** Settings → Security → Export Private Key
+Recommended starting balance: $10–$50 USDC.
 
-Fund the wallet with USDC on Base chain:
-- Bridge USDC from Ethereum to Base via [bridge.base.org](https://bridge.base.org)
-- Or buy USDC directly on Base via a DEX
+### Step 3: Get a scoped HMAC token
 
-**Recommended starting balance:** $10–$50 USDC. You can always add more later.
+1. Go to [limitless.exchange](https://limitless.exchange) and connect the **same wallet** as `PRIVATE_KEY`.
+2. Decline the one-time "1-click trading" (smart wallet) prompt if it appears.
+3. Open the API token modal → **"API Tokens"** tab → **Derive**.
+4. Copy the `tokenId` and `secret` → `LMTS_TOKEN_ID` and `LMTS_TOKEN_SECRET`.
 
-### Step 3: Get a Limitless scoped HMAC token
+These are long-lived credentials; one-time setup. The `trading` scope is self-serve for everyone; the partner scopes (`account_creation`, `delegated_signing`) are for platforms whose *other users* trade through them (section 8). Solo traders and bot runners do not apply for partner access; the token above is all you need.
 
-Limitless's current auth method is a **scoped API token** signed with HMAC.
-Get one from the UI (one-time, ~20s):
-
-1. Go to [limitless.exchange](https://limitless.exchange) and connect your wallet.
-2. Open the API token modal → **"API Tokens"** tab → **Derive**.
-3. Copy the `tokenId` and `secret` → set as `LMTS_TOKEN_ID` and `LMTS_TOKEN_SECRET`.
-
-The browser handles the login session for you — no Privy token to copy, no
-smart wallet. These are long-lived HMAC credentials; this is a one-time setup.
-
-Headless / CI (no browser): derive programmatically via the SDK's
-`apiTokens.deriveToken` — `npm run derive-token` (see its script header for the
-one input it needs). Most builders should just use the UI above.
-
-Legacy: an older `LIMITLESS_API_KEY` (X-API-Key header) still works as a
-fallback if you already hold one.
+Headless / CI: `npm run derive-token` calls the same `POST /auth/api-tokens/derive` with a Privy identity token (see the script header).
 
 ### Step 4: Configure Environment
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your values:
+`.env` (created by `init`):
 
 ```bash
 # ─── REQUIRED ─────────────────────────────────────────────
-PRIVATE_KEY=0x...your-64-char-hex-private-key
-LMTS_TOKEN_ID=your-token-id              # scoped HMAC token (current method)
+PRIVATE_KEY=0x...
+LMTS_TOKEN_ID=your-token-id
 LMTS_TOKEN_SECRET=your-base64-secret
-# LIMITLESS_API_KEY=...                   # legacy X-API-Key — deprecated fallback
 
 # ─── SAFETY ───────────────────────────────────────────────
-DRY_RUN=true                    # ALWAYS start with true. Set false only after validation.
-MAX_TOTAL_EXPOSURE_USD=50       # Maximum total capital at risk across all positions
-MAX_SINGLE_TRADE_USD=10         # Maximum single trade size
+DRY_RUN=true                    # ALWAYS start true
 
 # ─── OPTIONAL ─────────────────────────────────────────────
-LOG_LEVEL=info                  # debug | info | warn | error
-LIMITLESS_API_URL=https://api.limitless.exchange  # Override API base URL
-LIMITLESS_WS_URL=wss://ws.limitless.exchange      # Override WebSocket URL
+LOG_LEVEL=info
+# LIMITLESS_API_URL / LIMITLESS_WS_URL     endpoint overrides (defaults are production)
+# LIMITLESS_API_KEY=                        legacy X-API-Key, only if you already hold one
 
-# ─── STRATEGY TUNABLES (all optional, defaults shown in .env.example) ───
-# oracle-arb:        ORACLE_ASSETS, ORACLE_MIN_EDGE, ORACLE_BET_SIZE, …
+# ─── STRATEGY TUNABLES (all optional) ────────────────────
+# template:          TEMPLATE_MIN_EDGE, TEMPLATE_ORDER_USD, TEMPLATE_MAX_POSITIONS, TEMPLATE_MAX_MINUTES
 # certainty-closer:  CC_ASSUMED_EDGE, CC_KELLY_FRACTION, CC_MAX_RISK, …
-# cross-market-mm:   configured in cross-market-mm.config.yaml (not .env) +
-#                    RELAYER_API_KEY / RELAYER_API_KEY_ADDRESS for Polymarket setup
+# oracle-arb:        ORACLE_ASSETS, ORACLE_MIN_EDGE, ORACLE_BET_SIZE, …
+# cross-market-mm:   cross-market-mm.config.yaml + RELAYER_API_KEY / RELAYER_API_KEY_ADDRESS
 ```
 
-### Step 5: First Dry Run
+### Step 5: Doctor
 
 ```bash
-# Simplest: SDK-only, no extra setup, dry-run by default
+npm run doctor
+```
+
+Checks: key format; auth resolves (HMAC preferred, legacy warns); `DRY_RUN`; `GET /profiles/me` works; the token's account **matches the signing wallet**; trading-wallet mode is `eoa`; USDC/ETH balances. Add `-- --market <slug>` to check approvals for that market's exchange (and neg-risk adapter). Non-zero exit on any critical failure; `-- --json` for machine output.
+
+### Step 6: First Dry Run
+
+```bash
 npm run certainty-closer
 ```
 
-You should see the SDK client initialize, markets get scanned, and
-`[DRY_RUN] would createOrder` lines — it logs what it *would* trade without
-signing or posting anything. (For cross-market-mm, `npm run cross-market-mm` is the
-equivalent dry-run; see `src/strategies/cross-market-mm/QUICKSTART.md`.)
+You should see the SDK client initialize, markets get scanned, and `[DRY_RUN] would createOrder` lines.
 
-### Step 6: Market Approval (CRITICAL for AI Agents)
+### Step 7: Market Approval
 
-Limitless uses the Conditional Tokens Framework (CTF). Before trading on any market, you must approve the exchange to spend your USDC and handle CTF tokens. **This is a one-time, per-market requirement.**
-
-#### Why This Matters
-
-Each market has a unique venue (exchange contract address). The blockchain requires explicit approval before smart contracts can move your tokens. Attempting to trade without approval results in:
-```
-Error: Insufficient collateral allowance for this order
-```
-
-#### Option A: Manual Approval (CLI)
+Limitless settles through the Conditional Tokens Framework. Before trading on a market's exchange, approve it to move your tokens (one-time per exchange):
 
 ```bash
-# Approve tokens for a specific market before trading
-npx tsx src/index.ts approve <market-slug>
-
-# Example:
-npx tsx src/index.ts approve bitcoin-above-100k-2025-06-01
+npm start approve <market-slug>
 ```
 
-This sends on-chain approval transactions for:
-1. **USDC → Exchange** (required for BUY orders)
-2. **CTF → Exchange** (required for SELL orders)
-3. **CTF → Adapter** (required for NegRisk/group market SELL orders)
+This sends on-chain approvals for **USDC → exchange** (BUY orders), **CTF → exchange** (SELL orders), and **CTF → adapter** (neg-risk markets). Gas is a few cents on Base. Without it, orders fail with `Insufficient collateral allowance`.
 
-Gas cost: ~$0.01-0.05 on Base chain per market.
+For an unattended bot, handle the allowance error in code: catch it, run `approveMarketVenue(slug)`, retry once (`oracle-arb` does this).
 
-#### Option B: Auto-Approval (Built-in to oracle-arb)
-
-The oracle-arb strategy automatically detects approval errors and approves markets on-the-fly:
-
-```typescript
-// In oracle-arb/index.ts, the executeDecisions method:
-if (errMsg.includes('not approved') || errMsg.includes('allowance')) {
-    this.logger.info({ marketSlug }, 'Market not approved, auto-approving...');
-    await this.approveMarket(decision.marketSlug);
-    // Retry the order after approval
-    await this.trading.createOrder({...});
-}
-```
-
-**For AI agents:** Auto-approval is the recommended approach. It eliminates manual intervention and ensures the strategy self-heals when encountering new markets.
-
-#### AI Agent Pattern: Handling Approval Errors
-
-If building your own strategy, implement this pattern:
-
-```typescript
-try {
-    await trading.createOrder({ marketSlug, side, ... });
-} catch (error: any) {
-    const errMsg = error?.message || String(error);
-    
-    if (errMsg.includes('allowance') || errMsg.includes('not approved')) {
-        // Step 1: Approve the market
-        await approveMarketVenue(marketSlug);
-        
-        // Step 2: Retry the order
-        await trading.createOrder({ marketSlug, side, ... });
-    } else {
-        throw error; // Re-throw non-approval errors
-    }
-}
-```
-
-### Step 7: Go Live
+### Step 8: Go Live
 
 ```bash
-# Edit .env: DRY_RUN=false  (cross-market-mm: dry_run: false in its YAML)
-# Keep sizes small ($0.50-$2 / order_size 5) until validated
-npm run certainty-closer        # or: oracle-arb / cross-market-mm
+# .env: DRY_RUN=false  (cross-market-mm: dry_run: false in its YAML)
+npm run certainty-closer      # keep sizes small ($1–$2 / order) until validated
 ```
 
 ---
 
-## 6. Core SDK Reference
+## 6. Core Module Reference
 
-### LimitlessClient (`src/core/limitless/markets.ts`)
+All modules live in `src/core/limitless/` and build on the official SDK. Each accepts either an existing SDK `Client` or the same options object (`{ hmacCredentials?, apiKey?, baseURL? }`); with no argument they resolve auth from the environment.
 
-Market discovery and data. No authentication required for most endpoints, but the API key enables higher rate limits.
-
-> 📖 **MCP checkpoint:** For the latest endpoint specs, query: `search_limitless_exchange("GET /markets/active parameters and response")`
-
-#### Constructor
+### client.ts
 
 ```typescript
-const client = new LimitlessClient(baseUrl?: string);
-// Default baseUrl: https://api.limitless.exchange
+import { createSdkClient, createWebSocketClient, resolveAuth, hasAuth } from './core/limitless/client.js';
+
+const sdk = createSdkClient();               // Client: markets, portfolio, pages, apiTokens, partnerAccounts, …
+const ws = createWebSocketClient();          // WebSocketClient with HMAC handshake when a token is configured
+const auth = resolveAuth();                  // { hmacCredentials } | { apiKey } | {}
 ```
 
-#### `getActiveMarkets(options?)`
+Auth precedence: explicit `hmacCredentials` → `LMTS_TOKEN_ID` + `LMTS_TOKEN_SECRET` → explicit `apiKey` → `LIMITLESS_API_KEY`. Public market reads need none.
 
-Fetches all active (tradeable) markets.
+### LimitlessClient (`markets.ts`)
 
 ```typescript
-const markets = await client.getActiveMarkets({
-  category?: number,           // Filter by category ID
-  tradeType?: 'amm' | 'clob' | 'group',  // Filter by venue type
-  limit?: number,              // Max results (default varies)
-  offset?: number,             // Pagination offset
+const markets = new LimitlessClient(sdk);
+
+await markets.getActiveMarkets({ tradeType: 'clob', limit: 25, page: 1, sortBy: 'ending_soon' }); // Market[]
+await markets.searchMarkets('BTC above', { limit: 20 });                                          // semantic search
+await markets.searchHourlyMarkets('BTC');           // recurring price markets expiring within 60 min
+await markets.getMarket(slug);                      // Market (SDK typed fetcher), positionIds + tokens normalized
+await markets.getOrderbook(slug);                   // OrderBook: bids/asks (price 0..1, size in raw 6-decimal units), adjustedMidpoint, lastTradePrice | null
+await markets.getVenue(slug);                       // { exchange, adapter } cached per slug
+await markets.getSlugs();                           // all active slugs
+```
+
+`getActiveMarkets` mirrors `GET /markets/active` including `tradeType`, `category`, and `automationType` filters (the SDK's typed `getActiveMarkets` exposes only `limit/page/sortBy`). The API caps `limit` at 25; paginate with `page` (1-indexed).
+
+### SDKTradingClient (`sdk-trading.ts`)
+
+```typescript
+const trading = new SDKTradingClient({ privateKey, sdk, dryRun });
+
+// BUY a side. FOK spends USD notional; GTC/FAK convert to shares on the 0.001 grid.
+const res = await trading.createOrder({ marketSlug, side: 'YES', limitPriceCents: 55, usdAmount: 2, orderType: 'GTC', postOnly: true });
+
+// SELL shares to close (FAK by default). Needs CTF approval for the exchange.
+await trading.sellShares({ marketSlug, side: 'YES', shares: 10, limitPriceCents: 60 });
+
+// Atomic cancel + replace of a resting order (one request per re-quote).
+await trading.cancelReplace({ orderId, marketSlug, side: 'YES', limitPriceCents: 54, shares: 10, postOnly: true });
+
+// Look up order state; the REST way to observe a delayed or resting order. Max 50 per call.
+await trading.getOrderStatuses([{ orderId }]);
+
+// Wait for a terminal state, honoring the taker delay (polls status/batch after eligibleAt).
+const summary = await trading.awaitFill(res.order.id, 'FOK', { eligibleAt: res.execution?.eligibleAt });
+// summary.state: 'filled' | 'resting' | 'pending' | 'killed' | 'failed' | 'unknown'
+
+await trading.cancelOrder(orderId);
+await trading.cancelAll(marketSlug);                 // per market slug; there is no account-wide cancel-all
+await trading.cancelAllAndVerify(marketSlug);        // cancel-all + verify the book is clean, with retries
+await trading.getPositionTokens(marketSlug);         // { yes, no } shares
+await trading.getPositionTokensSettled(marketSlug);  // same, but waits for two agreeing reads
+```
+
+Every write returns a dry-run stub before any network call when `dryRun` is true. `createOrder` and `sellShares` return the SDK `OrderResponse`; read `execution.settlementStatus` (section 13).
+
+### execution.ts
+
+```typescript
+import { classifyExecution, summarizeExecution, isTerminalState } from './core/limitless/execution.js';
+
+classifyExecution('UNMATCHED', 'GTC');   // 'resting'
+classifyExecution('UNMATCHED', 'FOK');   // 'killed'
+classifyExecution('DELAYED', 'FAK');     // 'pending'
+summarizeExecution(res, 'FOK');          // { state, contracts, usd, avgPrice, effectiveFeeBps, eligibleAt, txHash, reason }
+```
+
+`avgPrice = totalsRaw.usdGross / totalsRaw.contractsGross`; `contracts` and `usd` are the net-of-fee figures in human units.
+
+### LimitlessStream (`websocket.ts`)
+
+```typescript
+const stream = new LimitlessStream();                // or new LimitlessStream(ws)
+await stream.connect();
+await stream.subscribeMarkets(['slug-a', 'slug-b']); // replaces the connection's market set; expect one snapshot per slug
+await stream.subscribeOrderEvents();                 // HMAC required; your orders across all markets
+await stream.subscribePositions();                   // HMAC required
+
+stream.onOrderbook(({ marketSlug, orderbook }) => { /* bids/asks/adjustedMidpoint */ });
+stream.onOrderEvent((event) => {
+  if (isOmeEvent(event)) { /* PLACEMENT | UPDATE | CANCELLATION | EXECUTION(status FILLED/PARTIALLY_FILLED/KILLED) */ }
+  else { /* SETTLEMENT: MATCHED (provisional) → MINED | FAILED, with txHash */ }
 });
-// Returns: Market[]
+
+await stream.addMarkets(['slug-c']);                 // re-emits the full set
+await stream.removeMarkets(['slug-a']);              // re-emits the remaining set (there is no per-market unsubscribe)
+await stream.disconnect();
 ```
 
-**Response shape:**
-```typescript
-interface Market {
-  id: number;
-  address: string;                    // Market contract address
-  title: string;                      // "BTC above $97,000 on Feb 13?"
-  prices: number[];                   // [YES_price, NO_price] — values 0-100
-  tradeType: 'amm' | 'clob' | 'group';
-  marketType: 'single' | 'group';
-  slug: string;                       // URL-safe identifier, used in all API calls
-  venue: { exchange: string; adapter: string };  // Contract addresses for signing
-  positionIds: string[];              // [YES_tokenId, NO_tokenId]
-  collateralToken: { address: string; decimals: number; symbol: string };
-  volume: string;
-  volumeFormatted: string;
-  liquidity: string;
-  liquidityFormatted: string;
-  expirationTimestamp: number;        // Milliseconds since epoch
-  status: 'FUNDED' | 'CLOSED' | 'RESOLVED';
-}
-```
+Semantics in section 12.
 
-#### `searchMarkets(query, options?)`
-
-Full-text search across market titles.
+### PortfolioClient (`portfolio.ts`)
 
 ```typescript
-const markets = await client.searchMarkets('BTC', {
-  similarityThreshold?: number,  // 0-1, default varies
-  limit?: number,
-  page?: number,
-});
-// Returns: Market[]
+const portfolio = new PortfolioClient(sdk);
+await portfolio.getProfile();                        // GET /profiles/me: id, account, tradeWalletOption, rank.feeRateBps, …
+await portfolio.getPositions();                      // { clob, amm, group, points, rewards }
+await portfolio.getClobPositions();                  // CLOBPosition[]: market, tokensBalance, orders.liveOrders, rewards.isEarning
+await portfolio.getHistory(cursor, 20);              // MINED activity, newest first, cursor-paginated
+await portfolio.getPositionTokens(slug);             // { yes, no } shares
+await portfolio.verifyFill(slug, 'YES');             // { filled, shares } — ground truth for resting fills
+await portfolio.getTradeWalletMode();                // 'eoa' | 'smartWallet' | undefined
+await portfolio.setTradeWalletMode('eoa');           // PUT /profiles (HMAC); fixes the smartWallet trap
 ```
 
-#### `getMarket(slug)`
-
-Fetch full details for a single market.
+### RedeemClient (`redeem.ts`)
 
 ```typescript
-const market = await client.getMarket('btc-above-97000-feb-13');
-// Returns: MarketDetail (extends Market with description, resolutionSource, etc.)
+const redeemer = new RedeemClient(sdk);
+await redeemer.findClaimable(slug);                  // ClaimablePosition | null (flags neg-risk with adapter + [yes, no] amounts)
+await redeemer.redeemSingle(slug);                   // tx hash | null
+await redeemer.claimAll(slugs);                      // { claimed, totalValue, txHashes }
+await redeemer.portfolioSlugs();                     // every market in your positions
 ```
 
-#### `getOrderbook(slug)`
+Standard markets: `ConditionalTokens.redeemPositions(USDC, 0x0, conditionId, [indexSet])`. Neg-risk: `NegRiskAdapter.redeemPositions(conditionId, [yesBalance, noBalance])` with a one-time `setApprovalForAll` on the adapter. CLI: `npm run redeem check|claim|claim-many|claim-all`. Respects `DRY_RUN`.
 
-Fetch the current orderbook for a CLOB market.
+### approve.ts, doctor.ts, wallet.ts, kelly.ts
 
-```typescript
-const orderbook = await client.getOrderbook('btc-above-97000-feb-13');
-// Returns: { bids: OrderbookLevel[], asks: OrderbookLevel[], midpoint?: number }
-// OrderbookLevel: { price: string, size: string }
-```
+- `approveMarketVenue(slug)`: max USDC allowance + CTF `setApprovalForAll` for the market's exchange, plus the adapter when present. Skips what is already approved.
+- `runDoctor({ marketSlug? })` → `DoctorReport`; `formatDoctorReport()` renders it. Behind `npm run doctor`.
+- `getWallet()`: `PRIVATE_KEY` → viem `WalletClient` (+ public actions) and `LocalAccount` on Base.
+- `kellySize({ trueProb, price, bankrollUsd, fraction, maxRiskUsd })` → `{ riskUsd, shares, rawKelly, reason }`; returns zero risk when there is no edge.
 
-> 📖 **MCP checkpoint:** For orderbook format details, query: `search_limitless_exchange("orderbook endpoint response format")`
+### Price feed: Pyth Hermes (`price-feeds/hermes.ts`)
 
-#### `getSlugs()`
-
-Get all active market slugs (lightweight — no full market data).
-
-```typescript
-const slugs = await client.getSlugs();
-// Returns: string[]
-```
-
-#### `getCategoriesCount()`
-
-Get count of markets per category.
-
-```typescript
-const counts = await client.getCategoriesCount();
-// Returns: Record<string, number>  e.g. { "Crypto": 45, "Sports": 12 }
-```
-
-#### `getFeedEvents(slug)`
-
-Get the activity feed for a market (trades, comments, etc.).
-
-```typescript
-const events = await client.getFeedEvents('btc-above-97000-feb-13');
-// Returns: FeedEvent[]
-```
-
-#### `getVenue(slug)`
-
-Get venue info (exchange + adapter addresses) for a market. Uses internal cache.
-
-```typescript
-const venue = await client.getVenue('btc-above-97000-feb-13');
-// Returns: { exchange: string, adapter: string }
-```
-
----
-
-### TradingClient (`src/core/limitless/trading.ts`)
-
-Order creation and management. Requires `LIMITLESS_API_KEY`.
-
-> 📖 **MCP checkpoint:** For the latest order submission format, query: `search_limitless_exchange("POST /orders request body format")`
-
-#### Constructor
-
-```typescript
-const trading = new TradingClient(
-  client: LimitlessClient,
-  signer: OrderSigner,
-  baseUrl?: string
-);
-```
-
-#### `createOrder(params)`
-
-The main trading method. Fetches market details, computes tick-aligned amounts, signs the order via EIP-712, and submits to the API.
-
-```typescript
-const result = await trading.createOrder({
-  marketSlug: 'btc-above-97000-feb-13',
-  side: 'YES',                    // 'YES' or 'NO'
-  limitPriceCents: 50,             // Price in cents (50 = $0.50)
-  usdAmount: 2.00,                // Total USD to spend
-});
-```
-
-**What happens internally:**
-1. Fetches market detail (cached for 2 min) to get venue and token IDs
-2. Selects the correct token ID: `positionIds[0]` for YES, `positionIds[1]` for NO
-3. Computes `makerAmount` (USDC you pay) and `takerAmount` (contracts you receive)
-4. Tick-aligns amounts: contracts must be multiples of 1000
-5. Signs the order via `OrderSigner.signOrder()`
-6. Fetches user profile ID via `getUserId()`
-7. Submits `POST /orders` with the signed order + metadata
-8. If `DRY_RUN=true`, logs the order and returns `{ status: 'DRY_RUN' }` without submitting
-
-**Amount calculation (tick alignment):**
-```typescript
-const price = limitPriceCents / 100;                          // e.g. 0.50
-const TICK_SIZE = 1000n;
-const rawContracts = BigInt(Math.floor(usdAmount * 1_000_000 / price));
-const takerAmount = (rawContracts / TICK_SIZE) * TICK_SIZE;   // Tick-aligned
-const makerAmount = (takerAmount * priceScaled) / 1_000_000n; // USDC to pay
-```
-
-#### `getUserId(walletAddress)`
-
-Fetches the Limitless user profile ID for a wallet address. Cached after first call.
-
-```typescript
-const userId = await trading.getUserId('0x1234...');
-// Returns: number (user ID)
-```
-
-#### `getUserOrders(slug, status?)`
-
-Get your orders for a specific market.
-
-```typescript
-const orders = await trading.getUserOrders('btc-above-97000-feb-13', 'OPEN');
-// Note: API uses 'LIVE' internally for open orders
-// Returns: Order[]
-```
-
-#### `cancelOrder(orderId)`
-
-Cancel a single open order.
-
-```typescript
-await trading.cancelOrder('order-uuid-here');
-```
-
-#### `cancelBatch(orderIds)`
-
-Cancel multiple orders at once.
-
-```typescript
-await trading.cancelBatch(['order-1', 'order-2', 'order-3']);
-```
-
-#### `cancelAllOrders(marketSlug)`
-
-Cancel all your open orders on a market.
-
-```typescript
-await trading.cancelAllOrders('btc-above-97000-feb-13');
-```
-
-#### `getHistoricalPrice(slug, period?)`
-
-Get historical price data for charting.
-
-```typescript
-const data = await trading.getHistoricalPrice('btc-above-97000-feb-13', '1d');
-// period: '1d' | '1w' | '1m' | 'all'
-```
-
-#### `getLockedBalance(slug)`
-
-Get locked collateral for a market.
-
-```typescript
-const { locked } = await trading.getLockedBalance('btc-above-97000-feb-13');
-```
-
----
-
-### OrderSigner (`src/core/limitless/sign.ts`)
-
-EIP-712 typed data signing for CLOB orders. This is the cryptographic core — it produces signatures that the exchange contract verifies on-chain.
-
-#### Constructor
-
-```typescript
-const signer = new OrderSigner(
-  wallet: WalletClient,      // viem wallet client
-  account: LocalAccount,     // viem local account (from privateKeyToAccount)
-  chainId?: number            // Default: 8453 (Base)
-);
-```
-
-#### `signOrder(marketVenue, orderParams)`
-
-Signs an order using EIP-712 typed data.
-
-```typescript
-const signedOrder = await signer.signOrder(
-  market.venue,                           // { exchange: '0x...', adapter: '0x...' }
-  {
-    tokenId: market.positionIds[0],       // YES or NO token ID
-    makerAmount: 500000n,                 // USDC amount (raw, 6 decimals)
-    takerAmount: 1000000n,               // Contracts to receive (raw)
-    side: 'BUY',                          // 'BUY' or 'SELL'
-    expiration?: 0,                       // 0 = no expiration
-    feeRateBps?: 300,                     // Default: 300 (3%, Bronze tier)
-    nonce?: 0,                            // Order nonce
-  }
-);
-// Returns: SignedOrder
-```
-
-**SignedOrder structure:**
-```typescript
-interface SignedOrder {
-  salt: string;             // Unique order identifier (timestamp-based)
-  maker: string;            // Your wallet address (checksummed)
-  signer: string;           // Same as maker for EOA wallets
-  taker: string;            // '0x0000...0000' for open orders
-  tokenId: string;          // Position token ID
-  makerAmount: string;      // USDC you provide (raw units)
-  takerAmount: string;      // Contracts you receive (raw units)
-  expiration: string;       // '0' for no expiration
-  nonce: number;            // Order nonce
-  feeRateBps: number;       // Fee rate in basis points
-  side: 0 | 1;              // 0 = BUY, 1 = SELL
-  signatureType: number;    // 0 = EOA
-  signature: string;        // Hex-encoded EIP-712 signature
-}
-```
-
-#### `getAddress()`
-
-Returns the signer's wallet address.
-
-```typescript
-const address = signer.getAddress();
-// Returns: string (checksummed address)
-```
-
----
-
-### Token Approvals (`src/core/limitless/approve.ts`)
-
-Before trading on any market, you must approve the venue's contracts to spend your tokens.
-
-#### `approveMarketVenue(marketSlug)`
-
-One-call approval for all required tokens on a market's venue.
-
-```typescript
-import { approveMarketVenue } from './core/limitless/approve.js';
-
-await approveMarketVenue('btc-above-97000-feb-13');
-```
-
-**What it does:**
-1. Fetches the market's venue (exchange + adapter addresses)
-2. Approves USDC (ERC-20 `approve`) for the exchange → required for BUY orders
-3. Approves CTF (ERC-1155 `setApprovalForAll`) for the exchange → required for SELL orders
-4. If adapter exists (NegRisk markets): approves CTF for the adapter too
-
-**Important:** Approvals are on-chain transactions that cost gas (ETH on Base). Each approval only needs to be done once per venue address.
-
-> 📖 **MCP checkpoint:** For approval requirements, query: `search_limitless_exchange("token approvals USDC CTF required")`
-
----
-
-### RedeemClient (`src/core/limitless/redeem.ts`)
-
-Claim USDC payouts from resolved markets where you hold winning tokens.
-
-#### Constructor
-
-```typescript
-const redeemer = new RedeemClient();
-// Uses PRIVATE_KEY from env
-```
-
-#### `findClaimablePositions(marketSlugs)`
-
-Scan a list of markets for claimable winning positions.
-
-```typescript
-const claimable = await redeemer.findClaimablePositions([
-  'btc-above-97000-feb-13',
-  'eth-above-3000-feb-14',
-]);
-// Returns: ClaimablePosition[]
-```
-
-**ClaimablePosition:**
-```typescript
-interface ClaimablePosition {
-  marketSlug: string;
-  marketTitle: string;
-  conditionId: `0x${string}`;
-  winningOutcomeIndex: number;    // 0 = YES won, 1 = NO won
-  side: 'YES' | 'NO';
-  balance: bigint;                // Raw token balance
-  expectedPayout: string;         // Human-readable, e.g. "2.500000 USDC"
-}
-```
-
-#### `redeemPositions(conditionId, indexSets)`
-
-Redeem tokens for a specific resolved condition.
-
-```typescript
-const txHash = await redeemer.redeemPositions(
-  '0xabc123...',   // conditionId from market data
-  [1]              // indexSets: [1] = YES, [2] = NO, [1,2] = both
-);
-```
-
-**Index sets explained:**
-- `[1]` = redeem YES tokens (2^0 = 1)
-- `[2]` = redeem NO tokens (2^1 = 2)
-- `[1, 2]` = redeem both sides
-
-#### `claimAll(marketSlugs)`
-
-Convenience method: find all claimable positions and redeem them all.
-
-```typescript
-const result = await redeemer.claimAll(allTradedMarketSlugs);
-// Returns: { claimed: number, totalValue: string, txHashes: string[] }
-```
-
-#### CLI Usage
-
-```bash
-# Check a specific market
-npx tsx src/core/limitless/redeem.ts check <market-slug>
-
-# Claim from specific markets
-npx tsx src/core/limitless/redeem.ts claim <slug1> <slug2> ...
-
-# Claim all resolved winning positions the wallet holds
-npx tsx src/core/limitless/redeem.ts claim-all
-```
-
----
-
-### PortfolioClient (`src/core/limitless/portfolio.ts`)
-
-Position tracking, trade history, and P&L analysis. Requires `LIMITLESS_API_KEY`.
-
-> 📖 **MCP checkpoint:** For the latest portfolio endpoints, query: `search_limitless_exchange("portfolio API positions trades")`
-
-#### Constructor
-
-```typescript
-const portfolio = new PortfolioClient(baseUrl?: string);
-```
-
-#### `getTrades()`
-
-Get your complete trade history.
-
-```typescript
-const trades = await portfolio.getTrades();
-// Returns: Trade[]
-```
-
-**Trade:**
-```typescript
-interface Trade {
-  id: string;
-  marketId: number;
-  strategy: string;          // 'Buy' or 'Sell'
-  outcome: string;           // 'YES' or 'NO'
-  tradeAmount: string;       // Raw amount
-  tradeAmountUSD: string;    // USD equivalent
-  timestamp: string;
-}
-```
-
-#### `getPositions()`
-
-Get your current open positions with unrealized P&L.
-
-```typescript
-const positions = await portfolio.getPositions();
-// Returns: Position[] (may be grouped by clob/amm)
-```
-
-**Position:**
-```typescript
-interface Position {
-  market: { title: string; slug: string };
-  positions: {
-    yes?: { marketValue: string; unrealizedPnl: string; fillPrice: string };
-    no?: { marketValue: string; unrealizedPnl: string; fillPrice: string };
-  };
-}
-```
-
-#### `getHistory(page?, limit?)`
-
-Paginated trade history.
-
-```typescript
-const history = await portfolio.getHistory(1, 20);
-```
-
-#### `getPnlChart(period?)`
-
-P&L over time for charting.
-
-```typescript
-const pnl = await portfolio.getPnlChart('1w');
-// period: '1d' | '1w' | '1m' | 'all'
-```
-
-#### `getAllowance(type)`
-
-Check token allowance status.
-
-```typescript
-const { allowance, spender } = await portfolio.getAllowance('clob');
-// type: 'clob' | 'negrisk'
-```
-
-#### `getPoints()`
-
-Get your Limitless points/rewards balance.
-
-```typescript
-const points = await portfolio.getPoints();
-```
-
----
-
-### LimitlessWebSocket (`src/core/limitless/websocket.ts`)
-
-Real-time price and orderbook updates via Socket.IO.
-
-#### Constructor & Connection
-
-```typescript
-const ws = new LimitlessWebSocket(
-  url?: string,     // Default: wss://ws.limitless.exchange
-  apiKey?: string   // Default: from LIMITLESS_API_KEY env
-);
-
-ws.connect();
-```
-
-#### Subscribing to Updates
-
-```typescript
-// Subscribe to AMM price updates (by market address)
-ws.subscribeAmmPrices(['0xMarketAddress1', '0xMarketAddress2']);
-
-// Subscribe to CLOB orderbook updates (by slug)
-ws.subscribeClobOrderbook(['btc-above-97000-feb-13']);
-
-// General subscribe (both)
-ws.subscribe(slugs, addresses);
-
-// Unsubscribe
-ws.unsubscribe(slugs, addresses);
-```
-
-#### Listening for Events
-
-```typescript
-const socket = ws.underlyingSocket;
-if (socket) {
-  socket.on('newPriceData', (data) => {
-    // data: { marketAddress, updatedPrices, ... }
-    console.log('Price update:', data);
-  });
-
-  socket.on('orderbookUpdate', (data) => {
-    // data: { marketSlug, bids, asks, timestamp }
-    console.log('Orderbook update:', data);
-  });
-}
-```
-
-#### Disconnect
-
-```typescript
-ws.disconnect();
-```
-
-**Features:**
-- Auto-reconnection with exponential backoff (1s–5s)
-- Automatic resubscription on reconnect
-- WebSocket transport only (no polling fallback)
-
----
-
-### Price feed: Pyth Hermes (`src/core/price-feeds/hermes.ts`)
-
-`oracle-arb` streams sub-second oracle prices from Pyth's Hermes SSE endpoint to
-compare against Limitless market pricing. It's the only external price feed in
-the repo (the old CoinGecko adapter was removed with the signal-sniper strategy).
-
----
-
-### Wallet (`src/core/wallet.ts`)
-
-Wallet initialization from private key.
-
-#### `getWallet()`
-
-```typescript
-import { getWallet } from './core/wallet.js';
-
-const { client, account } = getWallet();
-// client: WalletClient (viem) — for signing transactions and typed data
-// account: LocalAccount (viem) — the account object with address
-// client also has publicActions extended — can read chain state
-```
-
-**Environment:**
-- Reads `PRIVATE_KEY` from env (must be `0x`-prefixed 32-byte hex, 66 chars total)
-- Connects to Base chain (chainId 8453) via default HTTP RPC
-- Throws on missing or malformed key
+`HermesClient.connect(['BTC', 'ETH'])` streams sub-second oracle prices + confidence over SSE and emits `price` events; `getPrice(asset)` returns the latest. Used by `oracle-arb`.
 
 ---
 
 ## 7. Official SDK Quick Reference
 
-The hand-rolled clients in this repo (section 6) work well for the included strategies. For new integrations — especially partner/programmatic flows, delegated signing, or multi-language projects — use the **official Limitless SDKs**. They handle HMAC signing, venue caching, EIP-712 signing, retry logic, and profile lookups automatically.
+Four official SDKs share one design: a root `Client` composing markets, orders, portfolio, API tokens, partner accounts, delegated orders, and a websocket client. All support both self-signed trading and partner flows.
 
-### Installation
+| SDK | Version | Install | Docs |
+|-----|---------|---------|------|
+| TypeScript | 1.1.0 | `npm install @limitless-exchange/sdk` | [docs](https://docs.limitless.exchange/developers/sdk/typescript/getting-started) · [GitHub](https://github.com/limitless-labs-group/limitless-exchange-ts-sdk) |
+| Python | 1.1.0 | `pip install limitless-sdk` | [docs](https://docs.limitless.exchange/developers/sdk/python/getting-started) · [GitHub](https://github.com/limitless-labs-group/limitless-sdk) |
+| Go | v1.1.0 | `go get github.com/limitless-labs-group/limitless-exchange-go-sdk@v1.1.0` | [docs](https://docs.limitless.exchange/developers/sdk/go/getting-started) · [GitHub](https://github.com/limitless-labs-group/limitless-exchange-go-sdk) |
+| Rust | 1.1.0 | see repo | [docs](https://docs.limitless.exchange/developers/sdk/rust/getting-started) · [GitHub](https://github.com/limitless-labs-group/limitless-exchange-rust-sdk) |
 
-```bash
-# TypeScript
-npm install @limitless-exchange/sdk
-
-# Python
-pip install limitless-sdk
-
-# Go
-go get github.com/limitless-labs-group/limitless-exchange-go-sdk@v1.0.6
-```
-
-### Client Initialization
-
-All three SDKs expose a root `Client` class that composes every domain service (markets, orders, portfolio, API tokens, partner accounts, delegated orders).
-
-Auth: **scoped HMAC tokens are the current method for everyone** — traders, bots, and partners alike. The plain X-API-Key block below is legacy; it still works if you hold a key, but new setups should use the HMAC token.
-
-**Legacy (deprecated X-API-Key — only if you already hold a key):**
+### Client Initialization (scoped HMAC token)
 
 ```typescript
 // TypeScript
 import { Client } from '@limitless-exchange/sdk';
-
 const client = new Client({
   baseURL: 'https://api.limitless.exchange',
-  apiKey: process.env.LIMITLESS_API_KEY,
-});
-```
-
-```python
-# Python
-from limitless_sdk import Client
-
-client = Client(
-    base_url="https://api.limitless.exchange",
-    api_key="lmts_...",
-)
-```
-
-```go
-// Go
-import limitless "github.com/limitless-labs-group/limitless-exchange-go-sdk/limitless"
-
-client := limitless.NewClient(
-    limitless.WithAPIKey("lmts_..."),
-)
-```
-
-**All integrations (scoped HMAC token — current method, use this):**
-
-```typescript
-// TypeScript
-const client = new Client({
-  baseURL: 'https://api.limitless.exchange',
-  hmacCredentials: {
-    tokenId: process.env.LMTS_TOKEN_ID!,
-    secret: process.env.LMTS_TOKEN_SECRET!,
-  },
+  hmacCredentials: { tokenId: process.env.LMTS_TOKEN_ID!, secret: process.env.LMTS_TOKEN_SECRET! },
 });
 ```
 
 ```python
 # Python
 from limitless_sdk import Client, HMACCredentials
-
 client = Client(
     base_url="https://api.limitless.exchange",
-    hmac_credentials=HMACCredentials(
-        token_id="your-token-id",
-        secret="your-base64-secret",
-    ),
+    hmac_credentials=HMACCredentials(token_id="your-token-id", secret="your-base64-secret"),
 )
 ```
 
 ```go
 // Go
 client := limitless.NewClient(
-    limitless.WithHMACCredentials(limitless.HMACCredentials{
-        TokenID: "your-token-id",
-        Secret:  "your-base64-secret",
-    }),
+    limitless.WithHMACCredentials(limitless.HMACCredentials{TokenID: "your-token-id", Secret: "your-base64-secret"}),
 )
 ```
 
-With `hmacCredentials` set, the SDK automatically generates and sends `lmts-api-key`, `lmts-timestamp`, and `lmts-signature` on every request. Do not manually build HMAC headers.
+With HMAC credentials set, the SDK generates `lmts-api-key`, `lmts-timestamp`, and `lmts-signature` on every request. Do not build the headers by hand. A legacy `apiKey` / `LIMITLESS_API_KEY` is still accepted by every SDK for accounts that hold one.
 
-### Environment Variables
+### What's new in 1.1.0 (TypeScript)
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `LIMITLESS_API_KEY` | Legacy auth only | API key, auto-loaded by all SDKs |
-| `LMTS_TOKEN_ID` | Partner/programmatic | Scoped token ID for HMAC signing |
-| `LMTS_TOKEN_SECRET` | Partner/programmatic | Base64 secret for HMAC signing |
-| `PRIVATE_KEY` | For self-signed orders | Ethereum private key for EIP-712 signatures |
+- `OrderResponse.execution` is typed: `settlementStatus` (string, forward-compatible), `eligibleAt` for taker-delayed orders, `feeRateBps` / `effectiveFeeBps`, `totalsRaw`, `txHash`.
+- `client.orders`-style order client gains `cancelReplace` / `cancelReplaceBatch` (`POST /orders/cancel-replace[/batch]`), also on `delegatedOrders`.
+- `orderEvent` types model the OME `EXECUTION` frame (FAK/FOK terminal, `status` FILLED/PARTIALLY_FILLED/KILLED, string `eventId` `terminal:<orderId>`) and the settlement `MATCHED` frame (`isEstimate: true`, `token`).
+- **Type-only breaking changes:** `OmeOrderEvent.price` / `remainingSize` are `number` (the wire always was); `OrderBook.lastTradePrice` is `number | null`.
+- Since 1.0.10: `client.portfolio.getProfile()` with no address reads `GET /profiles/me`; `partnerAccounts.listAccounts()`.
+- Typed HTTP errors: `APIError` plus `RateLimitError` (429), `AuthenticationError` (401/403), `ValidationError` (400), `ConflictError` (409), `UnprocessableEntityError` (422), `TooEarlyError` (425), `UpstreamUnavailableError` (502/503).
 
-### Fetching Markets (all SDKs)
+### Fetching Markets
 
 ```typescript
 // TypeScript
-import { MarketFetcher } from '@limitless-exchange/sdk';
-
-const marketFetcher = new MarketFetcher(httpClient);
-const markets = await marketFetcher.getActiveMarkets({ limit: 10, sortBy: 'newest' });
-for (const market of markets) {
-  console.log(market.slug, market.title);
-}
+const { data: markets, totalMarketsCount } = await client.markets.getActiveMarkets({ limit: 10, sortBy: 'newest' });
+const market = await client.markets.getMarket('btc-100k');
+const book = await client.markets.getOrderBook('btc-100k');
 ```
 
 ```python
 # Python
-from limitless_sdk.markets import MarketFetcher
-
-market_fetcher = MarketFetcher(http_client)
-markets = await market_fetcher.get_active_markets()
+markets = await client.markets.get_active_markets()
 for market in markets["data"]:
     print(market["title"], market["slug"])
 ```
 
 ```go
 // Go
-marketFetcher := limitless.NewMarketFetcher(httpClient)
-result, err := marketFetcher.GetActiveMarkets(ctx, &limitless.ActiveMarketsParams{
-    Limit: 10,
-    Page:  1,
-})
-for _, m := range result.Data {
-    fmt.Println(m.Title, m.Slug)
-}
+result, err := client.Markets.GetActiveMarkets(ctx, &limitless.ActiveMarketsParams{Limit: 10, Page: 1})
 ```
 
-### Creating Self-Signed Orders (all SDKs)
-
-**GTC (limit order):**
+### Creating Self-Signed Orders
 
 ```typescript
 // TypeScript
-import { OrderClient, MarketFetcher } from '@limitless-exchange/sdk';
-import { ethers } from 'ethers';
+import { OrderType, Side } from '@limitless-exchange/sdk';
+const orders = client.newOrderClient(process.env.PRIVATE_KEY!);
 
-const wallet = new ethers.Wallet(process.env.PRIVATE_KEY!);
-const orderClient = new OrderClient(httpClient, wallet, new MarketFetcher(httpClient));
-
-const result = await orderClient.createOrder({
-  marketSlug: 'btc-100k',
-  tokenId: market.tokens.yes,
-  side: 'BUY',
-  price: 0.55,
-  size: 10,
-  orderType: 'GTC',
-});
+// GTC limit
+await orders.createOrder({ marketSlug: 'btc-100k', tokenId: market.tokens.yes, side: Side.BUY, orderType: OrderType.GTC, price: 0.55, size: 10, postOnly: true });
+// FOK: spend 10 USDC
+await orders.createOrder({ marketSlug: 'btc-100k', tokenId: market.tokens.yes, side: Side.BUY, orderType: OrderType.FOK, makerAmount: 10 });
 ```
 
 ```python
 # Python
-from limitless_sdk.orders import OrderClient
-from eth_account import Account
-
-account = Account.from_key(private_key)
-order_client = OrderClient(http_client, account, market_fetcher)
-
-result = await order_client.create_order(
-    market_slug="btc-100k",
-    token_id=str(market.tokens.yes),
-    side="BUY",
-    price=0.55,
-    size=10.0,
-    order_type="GTC",
-)
-```
-
-```go
-// Go
-orderClient := limitless.NewOrderClient(httpClient, privateKey, marketFetcher)
-
-result, err := orderClient.CreateOrder(ctx, limitless.CreateOrderParams{
-    MarketSlug: "btc-100k",
-    TokenID:    market.Tokens.Yes,
-    Side:       limitless.SideBuy,
-    OrderType:  limitless.OrderTypeGTC,
-    Args: limitless.GTCOrderArgs{
-        Price: 0.55,
-        Size:  10.0,
-    },
-})
-```
-
-**FOK (market order):**
-
-```typescript
-// TypeScript
-const result = await orderClient.createOrder({
-  marketSlug: 'btc-100k',
-  tokenId: market.tokens.yes,
-  side: 'BUY',
-  makerAmount: 10, // spend 10 USDC
-  orderType: 'FOK',
-});
-```
-
-```python
-# Python
-result = await order_client.create_order(
-    market_slug="btc-100k",
-    token_id=str(market.tokens.yes),
-    side="BUY",
-    maker_amount=10.0,
-    order_type="FOK",
-)
+result = await order_client.create_order(market_slug="btc-100k", token_id=str(market.tokens.yes), side="BUY", price=0.55, size=10.0, order_type="GTC")
 ```
 
 ```go
 // Go
 result, err := orderClient.CreateOrder(ctx, limitless.CreateOrderParams{
-    MarketSlug: "btc-100k",
-    TokenID:    market.Tokens.Yes,
-    Side:       limitless.SideBuy,
-    OrderType:  limitless.OrderTypeFOK,
-    Args: limitless.FOKOrderArgs{
-        MakerAmount: 10.0,
-    },
+    MarketSlug: "btc-100k", TokenID: market.Tokens.Yes, Side: limitless.SideBuy, OrderType: limitless.OrderTypeGTC,
+    Args: limitless.GTCOrderArgs{Price: 0.55, Size: 10.0},
 })
 ```
 
-### Portfolio (all SDKs)
+### Portfolio
 
 ```typescript
 // TypeScript
-import { PortfolioFetcher } from '@limitless-exchange/sdk';
-
-const portfolio = new PortfolioFetcher(httpClient);
-const positions = await portfolio.getPositions();
-// positions.clob, positions.amm, positions.accumulativePoints
-```
-
-```python
-# Python
-from limitless_sdk.portfolio import PortfolioFetcher
-
-portfolio = PortfolioFetcher(http_client)
-positions = await portfolio.get_positions()
-for pos in positions.get("clob", []):
-    print(pos["market"]["title"], pos["size"])
-```
-
-```go
-// Go
-portfolio := limitless.NewPortfolioFetcher(httpClient)
-positions, err := portfolio.GetPositions(ctx)
-for _, pos := range positions.CLOB {
-    fmt.Println(pos.Market.Title)
-}
+const me = await client.portfolio.getProfile();           // GET /profiles/me
+const positions = await client.portfolio.getPositions();  // positions.clob, positions.amm, positions.group
+const history = await client.portfolio.getUserHistory(undefined, 20);
 ```
 
 ### SDK Services Overview
 
 | Service | TypeScript | Python | Go |
 |---------|-----------|--------|-----|
-| Markets & orderbook | `MarketFetcher` | `MarketFetcher` | `MarketFetcher` |
-| Market pages & navigation | `PagesFetcher` | `PagesFetcher` | `PagesFetcher` |
-| Self-signed orders | `OrderClient` | `OrderClient` | `OrderClient` |
-| Portfolio & positions | `PortfolioFetcher` | `PortfolioFetcher` | `PortfolioFetcher` |
-| API tokens | `ApiTokenService` | `api_tokens` | `ApiTokens` |
-| Partner accounts | `PartnerAccountService` | `partner_accounts` | `PartnerAccounts` |
-| Delegated orders | `DelegatedOrderService` | `delegated_orders` | `DelegatedOrders` |
-| WebSocket streaming | `WebSocketClient` | `WebSocketClient` | `WebSocketClient` |
+| Markets & orderbook | `client.markets` (`MarketFetcher`) | `client.markets` | `client.Markets` |
+| Market pages & navigation | `client.pages` (`MarketPageFetcher`) | `client.pages` | `client.Pages` |
+| Self-signed orders | `client.newOrderClient(key)` (`OrderClient`) | `OrderClient` | `OrderClient` |
+| Portfolio & positions | `client.portfolio` (`PortfolioFetcher`) | `client.portfolio` | `client.Portfolio` |
+| API tokens | `client.apiTokens` | `client.api_tokens` | `client.ApiTokens` |
+| Partner accounts | `client.partnerAccounts` | `client.partner_accounts` | `client.PartnerAccounts` |
+| Delegated orders | `client.delegatedOrders` | `client.delegated_orders` | `client.DelegatedOrders` |
+| Server wallets | `client.serverWallets` | `client.server_wallets` | `client.ServerWallets` |
+| WebSocket streaming | `client.newWebSocketClient()` (`WebSocketClient`) | `WebSocketClient` | `WebSocketClient` |
 
-> 📖 **Full SDK docs:** [TypeScript](https://docs.limitless.exchange/developers/sdk/typescript/getting-started) · [Python](https://docs.limitless.exchange/developers/sdk/python/getting-started) · [Go](https://docs.limitless.exchange/developers/sdk/go/getting-started)
+Rust mirrors the same services; see its docs page.
 
 ---
 
@@ -1523,7 +760,7 @@ The Programmatic API enables **partners and platforms** to build integrations th
 
 > **Building a bot for yourself?** You do not need the Programmatic API. Derive a scoped API token with the `trading` scope and start trading immediately. The Programmatic API is for **platforms and partners** that need to create and manage sub-accounts on behalf of their users.
 
-> **Legacy API keys (`X-API-Key`) are deprecated** and no longer available for new users. All new integrations should use scoped API tokens with HMAC authentication. Existing API keys continue to work but should be migrated to scoped tokens. The hand-rolled client in this repo (`src/core/limitless/`) still uses `X-API-Key` — production partner integrations should use the official SDKs with `hmacCredentials` instead.
+> **Legacy API keys (`X-API-Key`) are deprecated** and no longer available for new users. All new integrations should use scoped API tokens with HMAC authentication. Existing API keys continue to work but should be migrated to scoped tokens.
 
 ### Partner Lifecycle
 
@@ -2185,309 +1422,154 @@ const options = await pageFetcher.getPropertyOptions(keyId);
 
 ---
 
+
 ## 12. WebSocket Streaming
 
-Real-time updates via Socket.IO. Supports both public channels (orderbook, prices) and authenticated channels (your orders, fills, positions).
+Socket.IO over `wss://ws.limitless.exchange` (namespace `/markets`, websocket transport only). Public channels need no auth; the per-account channels need an HMAC-signed handshake, which the SDK does from `hmacCredentials`. Full reference: [WebSocket overview](https://docs.limitless.exchange/developers/websocket/overview) with one page per subscription.
 
 ### Connection
 
 ```typescript
-// TypeScript
+// TypeScript (SDK)
 import { WebSocketClient } from '@limitless-exchange/sdk';
-
 const ws = new WebSocketClient({
   url: 'wss://ws.limitless.exchange',
   autoReconnect: true,
-  apiKey: process.env.LIMITLESS_API_KEY, // Required for authenticated channels
+  hmacCredentials: { tokenId: process.env.LMTS_TOKEN_ID!, secret: process.env.LMTS_TOKEN_SECRET! }, // for order events / positions
 });
-
-ws.connect();
+await ws.connect();
 ```
 
-```python
-# Python
-from limitless_sdk.websocket import WebSocketClient, WebSocketConfig
+In this repo, `LimitlessStream` (section 6) wraps this with the semantics below baked in. Do not send your own PING frames; the server runs the Socket.IO heartbeat.
 
-config = WebSocketConfig(
-    url="wss://ws.limitless.exchange",
-    auto_reconnect=True,
-    reconnect_delay=5,
-)
-
-ws_client = WebSocketClient(config)
-```
-
-```go
-// Go
-ws := limitless.NewWebSocketClient(
-    limitless.WithWebSocketAPIKey("your-ws-api-key"),
-    limitless.WithAutoReconnect(true),
-    limitless.WithReconnectDelay(1 * time.Second),
-)
-
-err := ws.Connect(ctx)
-defer ws.Disconnect()
-```
-
-### Public Channels
-
-Available without authentication:
-
-| Channel | Data | Use case |
-|---------|------|----------|
-| Orderbook | Bids/asks per market slug | Strategy tick input, spread monitoring |
-| Prices | YES/NO prices per market address | AMM price tracking |
-| Trades | Trade events | Volume monitoring |
-| Markets | Market-level updates | New market detection |
+### Market data: `subscribe_market_prices` → `orderbookUpdate` / `newPriceData`
 
 ```typescript
-// TypeScript — subscribe to orderbook updates
-ws.subscribe('subscribe_market_prices', {
-  marketSlugs: ['btc-100k-weekly', 'eth-5k-daily'],
-});
-
-ws.on('orderbookUpdate', (data) => {
-  console.log(data.marketSlug, data.orderbook.bids.length, 'bids');
-});
-
-ws.on('newPriceData', (data) => {
-  console.log(data.marketAddress, data.updatedPrices);
-});
+await ws.subscribe('subscribe_market_prices', { marketSlugs: ['btc-100k-weekly'], marketAddresses: ['0x…'] });
+ws.on('orderbookUpdate', ({ marketSlug, orderbook }) => { /* bids, asks, adjustedMidpoint, minSize, maxSpread */ });
+ws.on('newPriceData', ({ marketAddress, updatedPrices }) => { /* AMM */ });
 ```
 
+- **Replace semantics.** Every `subscribe_market_prices` call drops the connection's previous market set and joins the new one. Send CLOB slugs and AMM addresses in the same call. To drop one market, re-emit with the smaller set. To stop everything, disconnect.
+- **Initial snapshot.** Right after the `system` ack the server pushes one `orderbookUpdate` per CLOB slug with the full current book, empty books included (`bids: []`, `asks: []`). No REST call is needed to seed local state. Unknown or resolved slugs get no snapshot.
+- Frames carry a `version` (listener publish sequence; not contiguous per market; `0` for a DB-fallback snapshot). Books are coalesced: a burst of changes can arrive as one frame.
+
+### Order events: `subscribe_order_events` → `orderEvent` (HMAC)
+
+```typescript
+await ws.subscribe('subscribe_order_events');          // no payload; per-account, all markets
+ws.on('orderEvent', (event) => {
+  if (event.source === 'OME') {
+    // type: PLACEMENT | UPDATE | CANCELLATION | EXECUTION
+    // EXECUTION = FAK/FOK terminal frame with status FILLED | PARTIALLY_FILLED | KILLED
+  } else {
+    // source SETTLEMENT: type MATCHED (provisional, isEstimate) → MINED | FAILED, with txHash / tradeEventId
+  }
+});
+ws.on('exception', (e) => { /* auth failures land here, not on orderEvent */ });
+```
+
+- Discriminate on `source`, then `type`. OME frames are **per change** and never coalesced; persisting them gives a complete record including cancellations, which trade history does not show.
+- Ordering across OME and SETTLEMENT is not guaranteed; correlate by `orderId` / `clientOrderId` / `tradeEventId`.
+- One subscription per connection; re-emit after every reconnect (the SDK does). Server-side dedup within a 60 s window.
+- Events route to the **order owner**. Orders placed for partner sub-accounts go to the sub-account's channel; delegation is REST-only.
+- `txHash` is the universal join key across the `POST /orders` response, the `MINED` frame, and `/portfolio/history`.
+
+### Positions, lifecycle, sports
+
+- `subscribe_positions` → `positions` (HMAC): balance updates.
+- `subscribe_market_lifecycle` / `unsubscribe_market_lifecycle` → `marketCreated`, `marketResolved` (public). The only channel with a real unsubscribe besides unrealized-PnL.
+- `subscribe_live_sports` / `subscribe_live_esports` → `live_sports_update` / `live_esports_update` (public).
+
+### Unsubscribing
+
+There is no generic `unsubscribe` event. `subscribe_market_prices`, `subscribe_positions`, and `subscribe_order_events` replace on re-subscribe; only market lifecycle and unrealized-PnL have explicit unsubscribes. A client that emits an unregistered unsubscribe name waits for an ack that never comes.
+
+### Python / Go
+
 ```python
-# Python
 @ws_client.on("connect")
 async def on_connect():
-    await ws_client.subscribe(
-        "subscribe_market_prices",
-        {"marketSlugs": ["btc-100k-weekly"]},
-    )
+    await ws_client.subscribe("subscribe_market_prices", {"marketSlugs": ["btc-100k-weekly"]})
 
 @ws_client.on("orderbookUpdate")
 async def on_orderbook(data):
-    slug = data.get("marketSlug", "unknown")
-    print(f"[{slug}] {len(data.get('bids', []))} bids, {len(data.get('asks', []))} asks")
+    print(data["marketSlug"], len(data["orderbook"]["bids"]))
 ```
 
 ```go
-// Go — typed event handlers
-err := ws.Subscribe(ctx, limitless.ChannelOrderbook, limitless.SubscriptionOptions{
-    MarketSlugs: []string{"btc-100k-weekly"},
-})
-
-ws.OnOrderbookUpdate(func(update limitless.OrderbookUpdate) {
-    fmt.Printf("%s: %d bids\n", update.MarketSlug, len(update.Orderbook.Bids))
-})
-
-ws.OnNewPriceData(func(price limitless.NewPriceData) {
-    fmt.Printf("%s: YES=%s NO=%s\n", price.MarketAddress, price.UpdatedPrices.Yes, price.UpdatedPrices.No)
-})
+ws := limitless.NewWebSocketClient(limitless.WithHMACCredentials(creds), limitless.WithAutoReconnect(true))
+err := ws.Connect(ctx)
+err = ws.Subscribe(ctx, "subscribe_market_prices", limitless.SubscriptionOptions{MarketSlugs: []string{"btc-100k-weekly"}})
+ws.OnOrderbookUpdate(func(u limitless.OrderbookUpdate) { fmt.Println(u.MarketSlug, len(u.Orderbook.Bids)) })
 ```
-
-### Authenticated Channels
-
-Require an API key. Track your own activity in real time:
-
-| Channel | Data | Use case |
-|---------|------|----------|
-| Orders | Your order status updates | Order lifecycle tracking |
-| Fills | Your order fill events | Position entry confirmation |
-| Positions | Your position updates | Live P&L |
-| Transactions | Your transaction updates | On-chain activity |
-
-```typescript
-// TypeScript
-ws.subscribe('subscribe_positions');   // Your live positions
-ws.subscribe('subscribe_transactions'); // Your on-chain txs
-
-ws.on('positions', (data) => {
-  for (const pos of data.clob) {
-    console.log(pos.market.slug, pos.positions.yes?.size);
-  }
-});
-```
-
-```go
-// Go — authenticated channel subscriptions
-err := ws.Subscribe(ctx, limitless.ChannelOrders, limitless.SubscriptionOptions{})
-err = ws.Subscribe(ctx, limitless.ChannelFills, limitless.SubscriptionOptions{})
-err = ws.Subscribe(ctx, limitless.ChannelSubscribePositions, limitless.SubscriptionOptions{})
-
-ws.OnOrder(func(order limitless.OrderUpdate) {
-    fmt.Printf("Order %s: %s\n", order.ID, order.Status)
-})
-
-ws.OnFill(func(fill limitless.FillEvent) {
-    fmt.Printf("Fill: %s %s @ %s\n", fill.Side, fill.Size, fill.Price)
-})
-```
-
-### Auto-Reconnect
-
-All SDKs support automatic reconnection with exponential backoff:
-- TypeScript/Python: configurable delay, auto-resubscribe
-- Go: exponential backoff with jitter (capped at 60s), must re-subscribe after reconnect
 
 ---
 
-## 13. Error Handling & Retry
+## 13. Order Results, Errors & Retry
 
-### Error Types
+### The order result: branch on `settlementStatus`
 
-All three SDKs provide typed error classes for structured error handling:
+`POST /orders` returns `{ order, execution, makerMatches? }`. `execution.settlementStatus` is the field to branch on; `execution.matched` is not enough (`matched: false` is `UNMATCHED` *or* `DELAYED` *or* `CANCELED`).
 
-**TypeScript:**
-```typescript
-import { ApiError } from '@limitless-exchange/sdk';
+| `settlementStatus` | Meaning | GTC | FOK / FAK |
+|---|---|---|---|
+| `MINED` / `CONFIRMED` | settled on-chain (`txHash` set) | filled | filled |
+| `UNMATCHED` | nothing crossed | **resting** on the book | killed, no position |
+| `DELAYED` | held by the taker delay until `eligibleAt` | n/a | pending; not an error |
+| `MATCHED` / `RETRYING` | provisional | pending | pending |
+| `FAILED` | settlement failed | terminal | terminal |
+| `CANCELED` | self-trade prevention rejected it (`reason: STP_TAKER_REJECTED`) | terminal | terminal |
 
-try {
-  await orderClient.createOrder({ /* ... */ });
-} catch (error) {
-  if (error instanceof ApiError) {
-    console.log(error.status, error.message, error.data);
-  }
-}
-```
+For a non-delayed taker order the request blocks through matching and settlement, so `MINED` in the synchronous response means done. `execution.totalsRaw` (raw 6-decimal integer strings) gives gross/fee/net contracts and USD; average fill price = `usdGross / contractsGross`. `src/core/limitless/execution.ts` encodes all of this.
 
-**Python:**
-```python
-from limitless_sdk.api import APIError
+### Rejections
 
-try:
-    result = await order_client.create_order(...)
-except APIError as e:
-    print(f"Status: {e.status_code}, Message: {e.message}")
-```
-
-**Go:**
-```go
-import "errors"
-
-_, err := marketFetcher.GetMarket(ctx, "invalid-slug")
-if err != nil {
-    var apiErr *limitless.APIError
-    if errors.As(err, &apiErr) {
-        fmt.Printf("Status: %d, Message: %s\n", apiErr.Status, apiErr.Message)
-        fmt.Printf("URL: %s %s\n", apiErr.Method, apiErr.URL)
-    }
-}
-```
-
-Go also provides specialized error types:
-- `*limitless.ValidationError` (400) — invalid parameters, has `.Field` and `.Message`
-- `*limitless.AuthenticationError` (401, 403) — missing/invalid API key
-- `*limitless.RateLimitError` (429) — rate limit exceeded
-- `*limitless.OrderValidationError` — client-side validation before API call
-
-### Common HTTP Status Codes
+Rejected orders are an HTTP status plus `{ "message": string }`. **There is no machine-readable error code**, and message strings are not a stable contract. Branch on the status:
 
 | Code | Meaning | Action |
 |------|---------|--------|
-| `400` | Bad request (invalid parameters) | Check order params |
-| `401` | Unauthorized (invalid/missing API key) | Check credentials |
-| `403` | Forbidden (insufficient scopes) | Check token scopes |
-| `404` | Not found (invalid slug) | Verify market exists |
-| `429` | Rate limited | Back off and retry |
-| `500-504` | Server errors | Retry with backoff |
+| `400` | validation (bad signature, wrong `feeRateBps`, size off grid, deadline passed, would cross with postOnly…) | fix the order; do not blacklist the market on normal-flow rejections |
+| `401` | HMAC rejected (bad secret, stale timestamp, clock skew) | check the secret and the machine clock |
+| `403` | scope / authz (e.g. wallet-mode mismatch, missing scope) | `npm run doctor` |
+| `404` | unknown slug | verify the market exists |
+| `409` | duplicate (order hash / `clientOrderId`) | idempotent; read status instead of re-sending |
+| `425` | outside the recv window, or maintenance mode | retry after the window / when trading resumes |
+| `429` | rate limited (edge) | back off; slow the re-quote loop |
+| `5xx` | server | retry with backoff |
 
-### Retry Patterns
-
-**TypeScript — `withRetry` wrapper:**
-```typescript
-import { withRetry } from '@limitless-exchange/sdk';
-
-const result = await withRetry(
-  () => orderClient.createOrder({ /* ... */ }),
-  {
-    statusCodes: [429, 500, 502, 503, 504],
-    maxRetries: 3,
-    delays: [1000, 2000, 4000], // ms
-    onRetry: (error, attempt) => console.log(`Retry ${attempt}:`, error.message),
-  }
-);
-```
-
-**Python — `@retry_on_errors` decorator:**
-```python
-from limitless_sdk.api import retry_on_errors
-
-@retry_on_errors(
-    status_codes={500, 429},
-    max_retries=3,
-    delays=[1, 2, 4],  # seconds
-    on_retry=lambda attempt, error: print(f"Retry {attempt}: {error}"),
-)
-async def place_order_with_retry():
-    return await order_client.create_order(...)
-```
-
-**Go — generic `WithRetry`:**
-```go
-market, err := limitless.WithRetry(ctx, func() (*limitless.Market, error) {
-    return marketFetcher.GetMarket(ctx, "btc-100k")
-}, limitless.RetryConfig{
-    StatusCodes:     []int{429, 500, 502, 503, 504},
-    MaxRetries:      3,
-    ExponentialBase: 2.0,
-    MaxDelay:        60 * time.Second,
-    OnRetry: func(attempt int, err error, delay time.Duration) {
-        fmt.Printf("Retry %d after %s: %v\n", attempt, delay, err)
-    },
-})
-```
-
-### RetryableClient (wraps all SDK calls)
-
-For automatic retries on every SDK call:
-
-```python
-# Python
-from limitless_sdk.api import HttpClient, RetryableClient
-
-http_client = HttpClient()
-retryable_client = RetryableClient(
-    client=http_client,
-    status_codes={500, 502, 503, 429},
-    max_retries=3,
-    delays=[1, 2, 4],
-)
-
-market_fetcher = MarketFetcher(retryable_client)
-order_client = OrderClient(retryable_client, account)
-```
-
-```go
-// Go
-retryable := limitless.NewRetryableClient(httpClient, limitless.RetryConfig{
-    StatusCodes:     []int{429, 500, 502, 503, 504},
-    MaxRetries:      3,
-    ExponentialBase: 2.0,
-})
-
-marketFetcher := limitless.NewMarketFetcher(retryable.Client)
-```
-
-### Order Queue (rate-limit safe submissions)
+### Typed errors
 
 ```typescript
-// TypeScript — serialize order submissions with minimum delay
-class OrderQueue {
-  constructor(minDelayMs = 200) { /* ... */ }
-  async enqueue<T>(fn: () => Promise<T>): Promise<T> { /* ... */ }
+import { APIError, RateLimitError, AuthenticationError, ValidationError, ConflictError, TooEarlyError } from '@limitless-exchange/sdk';
+
+try {
+  await trading.createOrder(/* … */);
+} catch (err) {
+  if (err instanceof RateLimitError) { /* err.data?.retryAfterSeconds */ }
+  else if (err instanceof AuthenticationError) { /* 401/403 */ }
+  else if (err instanceof APIError) { console.log(err.status, err.message); }
+  else throw err;
 }
-
-const orderQueue = new OrderQueue(250); // 250ms between requests
-await orderQueue.enqueue(() => orderClient.createOrder({ /* ... */ }));
 ```
+
+Python: `from limitless_sdk.api import APIError` (`e.status_code`, `e.message`). Go: `errors.As(err, &apiErr)` with `*limitless.APIError`, plus `ValidationError`, `AuthenticationError`, `RateLimitError`, `OrderValidationError`.
+
+### Retry
+
+```typescript
+// TypeScript
+import { withRetry } from '@limitless-exchange/sdk';
+await withRetry(() => client.markets.getMarket(slug), { statusCodes: [429, 500, 502, 503, 504], maxRetries: 3, delays: [1000, 2000, 4000] });
+```
+
+Never blind-retry a `POST /orders` that timed out without first reading its status (`getOrderStatuses` by `orderId`/`clientOrderId`): it may have filled. For quoting loops prefer `cancelReplace` over cancel + create, and keep a minimum interval between re-quotes.
 
 ---
 
 ## 14. EIP-712 Signing Deep Dive
 
-Every CLOB order on Limitless requires an EIP-712 signature. This is how the exchange verifies that you authorized the trade without requiring an on-chain transaction for every order.
-
-> **Checksummed addresses (EIP-55):** All address fields — `maker`, `signer`, `taker`, and `x-account` header — must use EIP-55 mixed-case checksummed format (e.g. `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed`). Lowercase addresses will be rejected. The `getAddress()` function in viem automatically produces checksummed addresses.
+Every CLOB order is an EIP-712 signature; the exchange verifies it off-chain and settles on-chain. **The SDK does this for you.** This section exists so you can recognise a wrong signature when you see one. Reference: [EIP-712 signing](https://docs.limitless.exchange/developers/eip712-signing).
 
 ### The Domain
 
@@ -2495,16 +1577,12 @@ Every CLOB order on Limitless requires an EIP-712 signature. This is how the exc
 const domain = {
   name: 'Limitless CTF Exchange',
   version: '1',
-  chainId: 8453,                          // Base mainnet
-  verifyingContract: market.venue.exchange // Dynamic per market!
+  chainId: 8453,
+  verifyingContract: market.venue.exchange, // per market: default CTF exchange vs neg-risk exchange
 };
 ```
 
-**Critical:** The `verifyingContract` is the exchange address from the market's venue data. It varies between markets. Always fetch it from the market detail — never hardcode it.
-
-> 📖 **MCP checkpoint:** For the latest EIP-712 domain, query: `search_limitless_exchange("EIP-712 domain order signing")`
-
-### The Order Type Struct
+### The Order Struct
 
 ```typescript
 const types = {
@@ -2521,767 +1599,378 @@ const types = {
     { name: 'feeRateBps',    type: 'uint256' },
     { name: 'side',          type: 'uint8'   },
     { name: 'signatureType', type: 'uint8'   },
-  ]
+  ],
 };
 ```
 
-### Field-by-Field Explanation
+`tests/unit/sdk-signing.test.ts` re-derives a signature from this exact struct with viem and asserts the SDK produces the same bytes.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `salt` | uint256 | Unique order ID. This SDK uses `Date.now() + 86400000` (24h from now) |
-| `maker` | address | Your wallet address (checksummed) |
-| `signer` | address | Same as maker for EOA wallets |
-| `taker` | address | `0x0000...0000` for open orders (anyone can fill) |
-| `tokenId` | uint256 | The position token ID (YES or NO) from `market.positionIds` |
-| `makerAmount` | uint256 | USDC you provide (raw units, 6 decimals). For BUY: the collateral |
-| `takerAmount` | uint256 | Contracts you receive (raw units). Must be tick-aligned (multiple of 1000) |
-| `expiration` | uint256 | `0` = no expiration. Otherwise, Unix timestamp in seconds |
-| `nonce` | uint256 | Order nonce, typically `0` |
-| `feeRateBps` | uint256 | Fee tier in basis points. `300` = 3% (Bronze tier) |
-| `side` | uint8 | `0` = BUY, `1` = SELL |
-| `signatureType` | uint8 | `0` = EOA signature |
+### Field-by-Field
 
-### Computing makerAmount and takerAmount from Price + USD Amount
+| Field | Rule |
+|-------|------|
+| `salt` | unique per order |
+| `maker` | your trading wallet, EIP-55 checksummed. Must match the profile's trading wallet for its mode (`eoa`: your address) |
+| `signer` | same as `maker` in `eoa` mode |
+| `taker` | must be the zero address (open order). Directed fills are rejected |
+| `tokenId` | YES or NO position id from the market |
+| `makerAmount` / `takerAmount` | raw 6-decimal units; BUY gives USDC, receives contracts. `takerAmount` is `1` for FOK |
+| `expiration` | **must be `0`**; non-zero is rejected |
+| `nonce` | **must be `0`**; non-zero is rejected |
+| `feeRateBps` | on fee-bearing markets (`metadata.fee`) must equal your profile's `rank.feeRateBps` from `GET /profiles/me` or the order fails `feeRateBps[...] is out of user's band`; sign `0` only on markets without the flag |
+| `side` | `0` = BUY, `1` = SELL |
+| `signatureType` | `0` = EOA |
 
-For a **BUY** order at a given price:
+### Amounts from price + USD
 
 ```typescript
-// Inputs
-const priceInCents = 50;                    // 50¢
-const usdAmount = 2.00;                     // $2.00 to spend
-
-// Step 1: Convert price to decimal
-const price = priceInCents / 100;           // 0.50
-
-// Step 2: Calculate raw contracts
-const rawContracts = BigInt(Math.floor(usdAmount * 1_000_000 / price));
-// = BigInt(Math.floor(2.00 * 1_000_000 / 0.50))
-// = 4_000_000n
-
-// Step 3: Tick-align (must be multiple of 1000)
-const TICK_SIZE = 1000n;
-const takerAmount = (rawContracts / TICK_SIZE) * TICK_SIZE;
-// = 4_000_000n (already aligned)
-
-// Step 4: Calculate USDC cost
-const SCALE = 1_000_000n;
-const priceScaled = BigInt(Math.floor(price * 1_000_000));  // 500_000n
-const makerAmount = (takerAmount * priceScaled) / SCALE;
-// = (4_000_000n * 500_000n) / 1_000_000n
-// = 2_000_000n  ($2.00 USDC)
-```
-
-### Fee Rate BPS Tiers
-
-| Tier | Fee Rate | `feeRateBps` Value |
-|------|----------|-------------------|
-| Bronze | 3% | `300` |
-
-> 📖 **MCP checkpoint:** For the latest fee tiers, query: `search_limitless_exchange("fee rate bps tiers trading fees")`
-
-### The Side Field
-
-```
-0 = BUY  — You provide USDC (makerAmount), receive outcome tokens (takerAmount)
-1 = SELL — You provide outcome tokens (makerAmount), receive USDC (takerAmount)
+const price = 0.50, usd = 2.00;
+const rawContracts = BigInt(Math.floor((usd * 1_000_000) / price)); // 4_000_000n
+const takerAmount = (rawContracts / 1000n) * 1000n;                  // grid-aligned
+const makerAmount = (takerAmount * BigInt(Math.floor(price * 1_000_000))) / 1_000_000n; // 2_000_000n = $2
 ```
 
 ---
 
 ## 15. Contract Addresses
 
-All contracts are on **Base chain** (chainId: `8453`).
+All on **Base** (chain id 8453). Explorer: [basescan.org](https://basescan.org).
 
 | Contract | Address | Purpose |
 |----------|---------|---------|
-| **USDC** | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | Collateral token (ERC-20, 6 decimals) |
-| **CTF** | `0xC9c98965297Bc527861c898329Ee280632B76e18` | Conditional Tokens Framework (ERC-1155) |
-| **Exchange** | *Dynamic — from `market.venue.exchange`* | CLOB order matching (verifyingContract for EIP-712) |
-| **Adapter** | *Dynamic — from `market.venue.adapter`* | NegRisk adapter for group markets |
+| **USDC** | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | Collateral (ERC-20, 6 decimals) |
+| **CTF** | `0xC9c98965297Bc527861c898329Ee280632B76e18` | Conditional Tokens Framework (ERC-1155): balances, standard redemption |
+| **Exchange** | `market.venue.exchange` | Order settlement; the EIP-712 `verifyingContract`. Differs between standard and neg-risk markets |
+| **NegRisk adapter** | `market.venue.adapter` | Grouped markets: approvals for SELL and redemption of neg-risk positions |
 
-**WARNING: Never hardcode exchange/adapter addresses.** They vary per market and may change. Always fetch from `market.venue`.
-
-**Block Explorer:** [basescan.org](https://basescan.org)
+Never hardcode exchange or adapter addresses; read them from the market. The full contract list is at [Smart contracts](https://docs.limitless.exchange/user-guide/smart-contracts).
 
 ---
 
-## 16. Strategies Reference
+## 16. Fees and Taker Delay
 
-Three strategies ship, spanning distinct archetypes (see also the overview near
-the top of this file). All authenticate via the scoped HMAC token and default to
-`DRY_RUN`.
+### Fees
 
-### `cross-market-mm` (cross-venue market making)
+- **Maker fills pay nothing.** Orders that rest on the book and get filled pay no fee.
+- **Takers pay** a fee computed per fill on the size-weighted average price, charged in the asset received: BUY fees in shares (`feeAmountContracts`), SELL fees in USDC (`feeAmountCollateral`).
+- The published BUY rate is 3.00% for outcomes priced $0.01–$0.50, tapering above; SELL peaks at 1.50% around $0.50. The complete curve: [Fees](https://docs.limitless.exchange/user-guide/fees). `execution.effectiveFeeBps` on the order result is the rate actually applied.
+- `market.metadata.fee` marks a fee-bearing market; your signed `feeRateBps` must equal `rank.feeRateBps` there (section 14).
+- Cheap-leg baskets start ~3% behind. Any "arbitrage" that needs several taker legs must net the fee first; `mcp-skills/limitless-group-scan` shows the arithmetic.
 
-Quote on Limitless, hedge fills on Polymarket to stay delta-neutral; earn the
-cross-venue spread + Limitless maker rebates / LP rewards. This is the deepest
-strategy and has its **own complete operating manual** —
-`src/strategies/cross-market-mm/SKILL.md` (setup → find-pairs → preflight → run
-→ status → close). Run: `npm run cross-market-mm`.
+### Taker delay
 
-### `oracle-arb` (Pyth oracle edge-detection)
+Some markets hold marketable (taker) orders briefly before matching (`settings.takerDelayMs`, milliseconds, `0` = none; capped at a few seconds). What it changes:
 
-Streams a Pyth (Hermes SSE) oracle price and compares it to Limitless markets
-resolving on the same underlying. When the implied probability strays far enough
-from the oracle to clear fees + slippage, it fires FOK/FAK orders at the real
-orderbook ask. Best on balanced (30–70¢) markets with real liquidity. Config:
-`ORACLE_*` env vars (see `.env.example`). Run: `npm run oracle-arb`.
+- FOK and FAK on such a market return immediately with `execution.settlementStatus: "DELAYED"`, `matched: false`, and `eligibleAt`. The fill arrives later: over `subscribe_order_events` (SETTLEMENT `MATCHED` → `MINED`/`FAILED`) or via `POST /orders/status/batch` after `eligibleAt`.
+- GTC orders, post-only quotes, and cancels are never delayed.
+- A delayed FOK that ends up killed emits **no** websocket frame; poll `status/batch` after `eligibleAt` to learn it (`SDKTradingClient.awaitFill` does).
+- Maintenance mode can postpone a delayed fill past `eligibleAt`; keep the order open in your bookkeeping until a terminal state.
+- Self-trade prevention (`stpPolicy`, default `cancel_maker`) is applied at release time.
 
-### `certainty-closer` (SDK-only near-resolution example)
-
-The simplest on-ramp — no external feeds. Filters markets near resolution and
-buys the favourite, sized via fractional Kelly (`src/core/kelly.ts`). Honestly
-framed: on its own it has no independent edge (the edge is `CC_ASSUMED_EDGE`,
-which *you* assert); it's the clearest teaching example of the
-market-filter → decide → execute loop. Config: `CC_*` env vars. Run:
-`npm run certainty-closer`.
+Read the field per market. Sports markets currently carry a delay; others may too. `BaseStrategy` with `awaitFills = true` waits out the delay automatically.
 
 ---
 
 ## 17. Building Your Own Strategy
 
-### Step 1: Extend BaseStrategy
+### Step 1: Copy the template
 
-Create a new directory and file:
+```bash
+cp -r src/strategies/template src/strategies/my-strategy
+```
+
+### Step 2: Implement the four methods
 
 ```typescript
 // src/strategies/my-strategy/index.ts
-import { BaseStrategy, StrategyConfig, TradeDecision, StrategyStats } from '../base-strategy.js';
-
-interface MyStrategyConfig extends StrategyConfig {
-  myParam: number;
-}
+import { BaseStrategy, type StrategyConfig, type StrategyDeps, type StrategyStats, type TradeDecision } from '../base-strategy.js';
+import { toFraction } from '../../core/limitless/types.js';
 
 export class MyStrategy extends BaseStrategy {
-  constructor(
-    config: StrategyConfig,
-    deps: { limitless: LimitlessClient; trading: TradingClient }
-  ) {
+  constructor(config: StrategyConfig, deps: StrategyDeps) {
     super(config, deps);
-    this.tickIntervalMs = 30000; // How often to run tick()
+    this.tickIntervalMs = 30_000;
+    this.awaitFills = true;   // block on taker orders until MINED / killed (honors taker delay)
   }
 
-  async initialize(): Promise<void> {
-    // One-time setup: load state, warm caches, check approvals
-    this.logger.info('My strategy initialized');
-  }
+  async initialize(): Promise<void> { /* connect feeds, load state */ }
 
   async tick(): Promise<TradeDecision[]> {
+    const markets = await this.limitless.getActiveMarkets({ tradeType: 'clob', limit: 25 });
     const decisions: TradeDecision[] = [];
-
-    // 1. Fetch market data
-    const markets = await this.limitless.getActiveMarkets({ tradeType: 'clob' });
-
-    // 2. Evaluate each market
-    for (const market of markets) {
-      const fairValue = this.calculateFairValue(market);
-      const marketPrice = market.prices[0] / 100; // Normalize to 0-1
-      const edge = fairValue - marketPrice;
-
-      if (edge > 0.10) { // 10% edge
+    for (const m of markets) {
+      const yes = toFraction(m.prices?.[0]);
+      const fair = this.fairValue(m);           // YOUR SIGNAL
+      if (fair - yes > 0.10) {
         decisions.push({
-          action: 'BUY',
-          marketSlug: market.slug,
-          side: 'YES',
-          amountUsd: 1.00,
-          priceLimit: Math.floor((marketPrice + 0.05) * 100),
-          reason: `Fair=${fairValue.toFixed(2)}, Market=${marketPrice.toFixed(2)}, Edge=${(edge*100).toFixed(1)}%`
+          action: 'BUY', marketSlug: m.slug, side: 'YES',
+          amountUsd: 1, priceLimit: Math.round(yes * 100) + 2, orderType: 'FOK',
+          reason: `fair ${fair.toFixed(2)} vs ${yes.toFixed(2)}`,
         });
       }
     }
-
-    return decisions; // BaseStrategy handles execution
+    return decisions;                             // BaseStrategy executes them
   }
 
-  async shutdown(): Promise<void> {
-    this.logger.info('Shutting down');
-  }
-
-  getStats(): StrategyStats {
-    return {
-      activePositions: 0,
-      totalVolumeUsd: 0,
-      pnlUsd: 0,
-      lastTickDurationMs: 0,
-    };
-  }
-
-  private calculateFairValue(market: any): number {
-    // Your edge logic here
-    return 0.5;
-  }
+  async shutdown(): Promise<void> { /* cancel quotes, close feeds */ }
+  getStats(): StrategyStats { return { activePositions: 0, totalVolumeUsd: 0, pnlUsd: 0, lastTickDurationMs: this.lastTickDurationMs }; }
+  private fairValue(market: { prices?: number[] }): number { return toFraction(market.prices?.[0]); }
 }
 ```
 
-### Step 2: Register the Strategy
+`TradeDecision` fields: `action` (`BUY` | `SELL` | `SKIP`), `marketSlug`, `side`, `amountUsd` (BUY notional), `shares` (SELL), `priceLimit` (cents), `orderType` (default BUY → FOK, SELL → FAK), `postOnly` (GTC), `reason`.
 
-```typescript
-// src/strategies/index.ts — add:
-import { MyStrategy } from './my-strategy/index.js';
-registerStrategy('my-strategy', MyStrategy);
-```
+### Step 3: Runner + npm script
 
-### Step 3: Create a Runner
+Copy `src/strategies/template/run.ts` (it builds one shared SDK client, `LimitlessClient`, and `SDKTradingClient` from env, wires SIGINT/SIGTERM to `stop()`), then add `"my-strategy": "tsx src/strategies/my-strategy/run.ts"` to `package.json`.
 
-```typescript
-// src/strategies/my-strategy/run.ts
-import { MyStrategy } from './index.js';
-import { LimitlessClient } from '../../core/limitless/markets.js';
-import { TradingClient } from '../../core/limitless/trading.js';
-import { OrderSigner } from '../../core/limitless/sign.js';
-import { getWallet } from '../../core/wallet.js';
-import dotenv from 'dotenv';
-dotenv.config();
-
-async function main() {
-  const limitless = new LimitlessClient();
-  const { client, account } = getWallet();
-  const signer = new OrderSigner(client, account);
-  const trading = new TradingClient(limitless, signer);
-
-  const strategy = new MyStrategy(
-    { id: 'my-v1', type: 'my-strategy', enabled: true, myParam: 42 },
-    { limitless, trading }
-  );
-
-  process.on('SIGINT', async () => { await strategy.stop(); process.exit(0); });
-  await strategy.start();
-}
-main().catch(console.error);
-```
-
-### Step 4: Add npm Script
-
-```json
-// package.json
-"scripts": {
-  "my-strategy": "npx tsx src/strategies/my-strategy/run.ts"
-}
-```
-
-### The tick() Loop Pattern
-
-The `BaseStrategy` runs your `tick()` method on a timer:
+### The tick() loop
 
 ```
-initialize() → tick() → execute decisions → wait → tick() → execute → wait → ...
+initialize() → tick() → execute decisions → wait → tick() → …
 ```
 
-- `tick()` returns `TradeDecision[]` — the base class handles execution
-- If `tick()` throws, the error is caught and logged — the loop continues
-- The interval self-adjusts: `nextTick = max(1s, tickIntervalMs - tickDuration)`
-- Call `stop()` to break the loop and run `shutdown()`
+- A thrown `tick()` is logged and the loop continues.
+- Interval self-adjusts: `next = max(1s, tickIntervalMs − tickDuration)`.
+- `stop()` breaks the loop and runs `shutdown()`.
 
-### Fair Value Calculation Approaches
+### Where an edge comes from
 
-Some general approaches to calculating fair value in prediction markets:
+1. **External price** vs the market's strike (`oracle-arb`)
+2. **Cross-venue** comparison (`cross-market-mm`)
+3. **Statistical** models of the underlying
+4. **Orderbook** structure (depth imbalance, stale quotes)
+5. **Time decay** near resolution (`certainty-closer`, honestly framed: no edge on its own)
 
-1. **External price comparison** — compare an oracle/feed price to the market's strike price
-2. **Statistical models** — use historical volatility to estimate probability of reaching strike
-3. **Cross-market comparison** — compare similar markets on different platforms
-4. **Orderbook analysis** — detect imbalances in bid/ask depth as directional signals
-5. **Time decay** — as expiry approaches, markets with clear outcomes should converge to 0 or 1
+### Sizing
 
-### Position Sizing
+Fixed size is fine to start. `kellySize()` (`src/core/kelly.ts`) sizes to your asserted edge with a hard cap; quarter-Kelly by default.
 
-Common approaches:
-- **Fixed size** — same USD amount per trade (simplest, used by included strategies)
-- **Kelly criterion** — `f = (edge * odds - 1) / (odds - 1)` — sizes bets proportional to edge
-- **Fractional Kelly** — use 25-50% of full Kelly to reduce variance
+### Making vs taking
 
-### Recording run data
+Resting post-only GTC quotes pay no fee and can earn LP rewards inside the market's `maxSpread` band (`settings.dailyReward`, `rewards.isEarning` on your positions). Taking pays the fee curve. A quoting loop should use `cancelReplace` and keep a minimum re-quote interval; `cross-market-mm` shows a full implementation (queue-position-aware requoting, hedging, breakers).
 
-For capturing a run's orders/fills/exposure to `./data` for later analysis, see
-the `cross-market-mm` recorder pattern (`src/strategies/cross-market-mm/recorder.ts`
-+ `analyze.ts`): it writes one JSONL line per event and `npm run
-cross-market-mm:analyze` summarizes it. Mirror that pattern (an append-only
-JSONL recorder + an analyze script) for your own strategy.
+### Recording runs
 
-### Adding New Price Feeds
+Append one JSON line per event (config, order, result, exposure snapshot) to `./data/<strategy>-<ts>.jsonl` and write an `analyze.ts`. `cross-market-mm/recorder.ts` + `analyze.ts` is the reference.
 
-Create a client in `src/core/price-feeds/`:
+### Adding a price feed
 
-```typescript
-// src/core/price-feeds/my-feed.ts
-export class MyFeedClient {
-  async getPrice(symbol: string): Promise<number> {
-    const res = await fetch(`https://api.myfeed.com/price/${symbol}`);
-    const data = await res.json();
-    return data.price;
-  }
-}
-```
-
-Then use it in your strategy's `tick()` method (the `oracle-arb` Pyth Hermes feed in `src/core/price-feeds/hermes.ts` is the in-repo example).
+Put it in `src/core/price-feeds/`; `hermes.ts` (Pyth over SSE, EventEmitter, auto-reconnect) is the pattern.
 
 ---
 
 ## 18. Autonomous Iteration
 
-Run a strategy continuously, review what it captured, tune, repeat. Each
-strategy records its activity (the `cross-market-mm` recorder writes
-`./data/cross-market-mm-*.jsonl`; summarize with `npm run cross-market-mm:analyze`).
-
-### The Iteration Cycle
-
 ```
-┌─────────────────────────────────────────────────────────┐
-│  1. DRY-RUN     npm run <strategy>  (DRY_RUN default)   │
-│     → Confirm it boots, scans, and would trade sanely   │
-│                                                         │
-│  2. GO LIVE     small size, watch the first minutes     │
-│     → DRY_RUN=false (or dry_run:false in the YAML)      │
-│                                                         │
-│  3. ANALYZE     npm run cross-market-mm:analyze         │
-│     → Review fills, how flat it stayed, fees, PnL       │
-│                                                         │
-│  4. ADJUST      edit .env / the strategy's config       │
-│     → Tune thresholds, sizing, pair/market selection    │
-│                                                         │
-│  5. REPEAT      run the next cycle                      │
-└─────────────────────────────────────────────────────────┘
+1. DRY-RUN   npm run <strategy>         confirm it boots, scans, and would trade sanely
+2. GO LIVE   DRY_RUN=false, small size  watch the first minutes
+3. ANALYZE   the run's JSONL / status   fills, fees, PnL, how flat you stayed
+4. ADJUST    .env / strategy config     thresholds, sizing, market selection
+5. REPEAT
 ```
 
-### Metrics to Track
+### Metrics to track
 
-| Metric | What It Tells You | Action |
-|--------|-------------------|--------|
-| Win rate (overall) | Strategy effectiveness | < 50% → increase edge threshold |
-| Win rate by asset | Which assets you predict well | Drop low-performers, add more of winners |
-| Win rate by edge size | Whether larger edges are more reliable | Find the sweet spot |
-| Win rate by time-to-expiry | Optimal entry timing | Adjust when you enter relative to expiry |
-| Average P&L per trade | Profitability per bet | Should be positive and growing |
-| Max drawdown | Worst losing streak | If too high, reduce bet size |
+| Metric | Tells you | Action |
+|--------|-----------|--------|
+| Fill rate by order type | whether your prices are competitive | move quotes, or take instead of make |
+| Win rate by market / asset | where the signal works | drop losers |
+| Avg PnL per trade net of fees | real edge | must be positive |
+| Max drawdown | worst streak | reduce size or add a breaker |
+| Taker fee paid | cost of urgency | more post-only |
 
-### When to Scale Up vs Pull Back
+### Scale up / pull back
 
-**Scale up when:**
-- Win rate > 65% over 30+ trades
-- Consistent positive P&L across multiple days
-- Edge patterns are stable and repeatable
-- Wallet balance is growing
+Scale when the win rate holds over 30+ trades and PnL is positive across days. Pull back on 5 consecutive losses, a win rate below 50% over 10+ trades, or illiquid conditions. Halt on anything unexplained.
 
-**Pull back when:**
-- Win rate drops below 50% for 10+ trades
-- Consecutive losses exceed 5
-- Unusual market conditions (extreme volatility, illiquidity)
-- Wallet balance drops below your minimum threshold
+### Running unattended
 
-### Run-data format
-
-Each run appends one JSON object per line to `./data/cross-market-mm-<ts>.jsonl`
-(run config, every order, per-tick exposure snapshot, every hedge). `npm run
-cross-market-mm:analyze` reads the latest file and summarizes orders, fills,
-how flat the book stayed, hedges, and net PnL.
-
-### Cron example
-
-```bash
-# Run cross-market-mm continuously under a process manager (pm2/systemd/etc.),
-# then summarize daily via your agent's scheduler or plain cron:
-0 */6 * * * cd /path/to/agents-starter && npm run cross-market-mm:analyze
-```
-
-### Heartbeat / periodic checks
-
-If your agent runs a heartbeat, add:
-
-```markdown
-## Trading Bot Checks
-- [ ] Run `npm run cross-market-mm:status` — confirm net delta ≈ 0 (delta-flat) on both venues
-- [ ] If equity is down near the max_loss_usd breaker, halt + `npm run cross-market-mm:close`
-- [ ] `npm run cross-market-mm:analyze` — review fills, hedges, PnL for the latest run
-```
+Use a process manager (pm2/systemd; `ops/cross-market-mm.service` and `Procfile` are examples). Add a heartbeat that reads the strategy's status or `npx tsx src/scripts/check-balances.ts`, and cron `npm run redeem claim-all` daily.
 
 ---
 
-## 19. Safety & Risk Management
+## 19. Safety, Risk & Market Integrity
 
-### Rule #1: DRY_RUN First, Always
+### Rule #1: DRY_RUN first, always
 
-**Every new strategy, every parameter change, every code modification** — run with `DRY_RUN=true` first. Watch the logs. Verify the decisions make sense. Only then set `DRY_RUN=false`.
+Every new strategy, parameter change, or code change runs with `DRY_RUN=true` first. Read the decisions. Then, and only then, `DRY_RUN=false` with small size.
 
-### Position Sizing Rules
+### Rule #2: dedicated wallet, small balance
 
-1. **Start with minimum bets** — $0.50–$1.00 per trade until you have 20+ winning trades
-2. **Set `MAX_TOTAL_EXPOSURE_USD`** — the absolute maximum capital at risk across all positions
-3. **Set `MAX_SINGLE_TRADE_USD`** — no single trade should risk more than 10% of your total bankroll
-4. **Never go all-in** — keep reserves for new opportunities and to recover from losses
+Blast-radius containment, budget enforcement, clean accounting. Fund only what you can lose.
 
-### Dedicated Wallet
+### Rule #3: never cancel CLOB orders on-chain
 
-**Always use a dedicated trading wallet with limited funds.** This provides:
-- **Blast radius containment** — if the key is compromised, only the trading funds are at risk
-- **Budget enforcement** — you can't accidentally risk your main holdings
-- **Clean accounting** — easy to track P&L without mixing with other activity
+Cancel through the API (`cancelOrder`, `cancelAll`, `cancelReplace`). Any on-chain `OrderCancelled` from your maker address gets it added to the trader blocklist. Other automatic blocks: rejecting ERC-1155 transfers, invalid on-chain nonces.
 
-### When to Stop
+### Rule #4: know the integrity rules
 
-- Win rate drops below 45% over 20+ resolved trades
-- 5+ consecutive losses
-- Wallet balance drops below 50% of starting balance
-- Market conditions change (new fee structure, API changes, liquidity dries up)
-- You see unexpected behavior in the logs
+Limitless enforces **self-trade prevention** (`stpPolicy`: `cancel_maker` default, `cancel_taker`, `cancel_both`; same profile + same token only) and a **zero-address taker** rule (no directed fills). There are no per-account exposure caps; rate limits are enforced at the edge. Read [Responsible agents](https://docs.limitless.exchange/developers/responsible-agents) before letting an agent trade, and report abuse to help@limitless.network.
 
-### Never Risk More Than You Can Afford to Lose
+### Rule #5: sizing and stops
 
-Prediction markets are inherently risky. Even with an edge, variance is real. Funded with $50? Assume you might lose all $50. Comfortable with that? Good. Not comfortable? Fund less.
+- Start at $1–$2 per order until you have a track record
+- Cap total exposure and single-trade size in your strategy config
+- Stop on 5 consecutive losses, a drawdown past your limit, or an API/liquidity regime change
+- Prediction markets carry variance even with an edge. Never risk what you cannot lose.
 
 ---
 
 ## 20. Common Patterns & Recipes
 
-### Scan All Markets and Find the Best Opportunity
+### Scan CLOB markets and rank by spread
 
 ```typescript
-const limitless = new LimitlessClient();
-const markets = await limitless.getActiveMarkets({ tradeType: 'clob', limit: 25 }); // API caps limit at 25
-
-const opportunities = markets
-  .filter(m => m.prices && m.prices.length >= 2)
-  .map(m => ({
-    slug: m.slug,
-    title: m.title,
-    yesPrice: m.prices[0],
-    noPrice: m.prices[1],
-    total: m.prices[0] + m.prices[1],
-    spread: 100 - (m.prices[0] + m.prices[1]),
-    expiresIn: (m.expirationTimestamp - Date.now()) / 60000,
-  }))
-  .filter(m => m.expiresIn > 0)
-  .sort((a, b) => a.spread - b.spread); // Lowest total first = best arb
+const markets = new LimitlessClient();
+const list = await markets.getActiveMarkets({ tradeType: 'clob', limit: 25, sortBy: 'ending_soon' });
+const rows = await Promise.all(list.map(async (m) => {
+  const book = await markets.getOrderbook(m.slug);
+  const bid = book.bids[0]?.price ?? null, ask = book.asks[0]?.price ?? null;
+  return { slug: m.slug, title: m.title, bid, ask, spread: bid !== null && ask !== null ? ask - bid : null, twoSided: bid !== null && ask !== null };
+}));
+rows.filter((r) => r.twoSided).sort((a, b) => a.spread! - b.spread!);
 ```
 
-### Place a Limit Order at a Specific Price
+### Rest a post-only quote, then re-quote atomically
 
 ```typescript
-import { getWallet } from './core/wallet.js';
-import { LimitlessClient } from './core/limitless/markets.js';
-import { TradingClient } from './core/limitless/trading.js';
-import { OrderSigner } from './core/limitless/sign.js';
-
-const limitless = new LimitlessClient();
-const { client, account } = getWallet();
-const signer = new OrderSigner(client, account);
-const trading = new TradingClient(limitless, signer);
-
-// Buy YES at 45¢, spending $5
-await trading.createOrder({
-  marketSlug: 'btc-above-100000-mar-1',
-  side: 'YES',
-  limitPriceCents: 45,
-  usdAmount: 5.00,
-});
+const res = await trading.createOrder({ marketSlug, side: 'YES', limitPriceCents: 45, usdAmount: 5, orderType: 'GTC', postOnly: true });
+// later, the fair value moved:
+await trading.cancelReplace({ orderId: res.order.id, marketSlug, side: 'YES', limitPriceCents: 44, shares: 11.111, postOnly: true });
 ```
 
-### Check My Open Positions and P&L
+### Take liquidity and confirm the fill
 
 ```typescript
-import { PortfolioClient } from './core/limitless/portfolio.js';
+const res = await trading.createOrder({ marketSlug, side: 'NO', limitPriceCents: 62, usdAmount: 3, orderType: 'FOK' });
+const fill = await trading.awaitFill(res.order.id, 'FOK', { eligibleAt: res.execution?.eligibleAt });
+if (fill.state === 'filled') console.log(`bought ${fill.contracts} NO @ ${fill.avgPrice} (fee ${fill.effectiveFeeBps} bps)`);
+```
 
+### Watch books and your own orders live
+
+```typescript
+const stream = new LimitlessStream();
+await stream.connect();
+await stream.subscribeMarkets(['slug-a', 'slug-b']);
+await stream.subscribeOrderEvents();
+stream.onOrderbook((u) => { /* snapshot first, then updates */ });
+stream.onOrderEvent((e) => { if (isTerminalOrderEvent(e)) { /* reconcile */ } });
+```
+
+### Check positions, P&L, and history
+
+```typescript
 const portfolio = new PortfolioClient();
-
-const positions = await portfolio.getPositions();
-console.log('Current positions:', JSON.stringify(positions, null, 2));
-
-const pnl = await portfolio.getPnlChart('1w');
-console.log('Weekly P&L:', pnl);
+const { clob, rewards } = await portfolio.getPositions();
+for (const p of clob) console.log(p.market.slug, p.tokensBalance, p.positions.yes.unrealizedPnl, p.rewards?.isEarning);
+const { data, nextCursor } = await portfolio.getHistory();
 ```
 
-### Redeem All Resolved Winning Positions
+### Redeem winnings
 
 ```bash
 npm run redeem claim-all
 ```
 
-Or programmatically, for a set of market slugs you've traded:
-
 ```typescript
-import { RedeemClient } from './core/limitless/redeem.js';
-
-const redeemer = new RedeemClient();
-const result = await redeemer.claimAll(['market-slug-a', 'market-slug-b']);
-console.log(`Claimed ${result.claimed} positions, total: $${result.totalValue} USDC`);
+const result = await new RedeemClient().claimAll(await new RedeemClient().portfolioSlugs());
 ```
 
-### Analyze a run
+### Approve, doctor, wallet mode
 
 ```bash
-npm run cross-market-mm:analyze
-```
-
-Reads the latest `./data/cross-market-mm-*.jsonl` and prints orders placed, fills
-inferred from balance deltas, how delta-flat the book stayed, hedges fired, and
-net PnL. (Mirror the recorder + analyze pattern for your own strategy.)
-
-### Approve Tokens for a New Market
-
-```bash
-npx tsx src/index.ts approve my-market-slug
-```
-
-### Search for Markets by Keyword
-
-```typescript
-const limitless = new LimitlessClient();
-const btcMarkets = await limitless.searchMarkets('BTC', { limit: 20 });
-console.log(btcMarkets.map(m => `${m.slug}: YES=${m.prices[0]}¢ NO=${m.prices[1]}¢`));
-```
-
-### Get Orderbook Depth
-
-```typescript
-const limitless = new LimitlessClient();
-const book = await limitless.getOrderbook('btc-above-100000-mar-1');
-console.log('Best bid:', book.bids[0]);
-console.log('Best ask:', book.asks[0]);
-console.log('Midpoint:', book.midpoint);
+npm start approve <slug>
+npm run doctor -- --market <slug>
+npm start wallet-mode eoa
 ```
 
 ---
 
 ## 21. Agent Integration Patterns
 
-This is for any AI agent with shell + file access. Here are specific patterns for autonomous operation:
+### Pattern 1: setup from scratch
 
-### Pattern 1: Setup from Scratch
-
-```typescript
-// Clone and setup
-await exec('git clone https://github.com/limitless-labs-group/agents-starter.git ~/limitless-trader');
-await exec('cd ~/limitless-trader && npm install');
-
-// Create .env
-await writeFile('~/limitless-trader/.env', `
-PRIVATE_KEY=${walletPrivateKey}
-LMTS_TOKEN_ID=${tokenId}
-LMTS_TOKEN_SECRET=${tokenSecret}
-DRY_RUN=true
-`);
-
-// Verify setup with a dry run (logs intents, signs nothing)
-const { stdout } = await exec('cd ~/limitless-trader && timeout 20 npm run certainty-closer');
-console.log(stdout); // SDK client initializes + markets get scanned
+```
+git clone … && cd agents-starter && npm install && npm run init
+→ operator fills .env (never through the agent)
+npm run doctor            # must be READY
+timeout 30 npm run certainty-closer   # dry run boots, scans, logs would-be orders
 ```
 
-### Pattern 2: Continuous Monitoring Loop
+### Pattern 2: heartbeat
 
-```typescript
-// This would run in a heartbeat or cron
-async function tradingHeartbeat() {
-  // Check if strategy is running
-  const { stdout: pm2Status } = await exec('pm2 status oracle-live');
-  
-  if (!pm2Status.includes('online')) {
-    // Restart if crashed
-    await exec('cd ~/limitless-trader && pm2 start --name oracle-live "npx tsx src/strategies/oracle-arb/run.ts"');
-    notify('Strategy restarted');
-  }
-  
-  // Check for claimable winnings
-  const { stdout: claimable } = await exec('cd ~/limitless-trader && npx tsx src/core/limitless/redeem.ts claim-all --dry-run');
-  if (claimable.includes('Found')) {
-    await exec('cd ~/limitless-trader && npx tsx src/core/limitless/redeem.ts claim-all');
-    notify('Winnings claimed');
-  }
-  
-  // Read recent trades
-  const trades = await readFile('~/limitless-trader/data/oracle-arb-trades.jsonl', 'utf8');
-  const recentTrades = trades.split('\n').filter(Boolean).slice(-10);
-  
-  // Analyze performance
-  const successRate = recentTrades.filter(t => JSON.parse(t).success).length / recentTrades.length;
-  if (successRate < 0.5 && recentTrades.length > 5) {
-    notify(`Warning: Recent success rate is ${(successRate * 100).toFixed(0)}%`);
-  }
-}
+Every N minutes: is the process alive (pm2/systemd)? Read the strategy's status file or `check-balances`. If equity is below the floor or a position is unhedged: cancel-all, flatten, page the operator. Daily: `npm run redeem claim-all`.
+
+### Pattern 3: parameter iteration
+
+Read the run's JSONL, bucket by edge / market / time-to-expiry, move the threshold, restart in `DRY_RUN`, confirm, then live.
+
+### Pattern 4: emergency shutdown
+
+```
+stop the process → npm run cross-market-mm:close (or cancelAllAndVerify per market)
+→ npm run redeem claim-all → report final balances
 ```
 
-### Pattern 3: Parameter Optimization
+### Pattern 5: several strategies
 
-```typescript
-// Read trade history
-const trades = await readFile('~/limitless-trader/data/oracle-arb-trades.jsonl', 'utf8')
-  .then(content => content.split('\n').filter(Boolean).map(JSON.parse));
-
-// Analyze by edge threshold
-const byEdge = trades.reduce((acc, t) => {
-  const edgeBracket = Math.floor(t.edge * 100 / 5) * 5; // 5% buckets
-  if (!acc[edgeBracket]) acc[edgeBracket] = { total: 0, success: 0 };
-  acc[edgeBracket].total++;
-  if (t.success) acc[edgeBracket].success++;
-  return acc;
-}, {});
-
-// Find optimal threshold
-const optimal = Object.entries(byEdge)
-  .filter(([_, data]: [string, any]) => data.total >= 3) // Min sample size
-  .sort((a, b) => (b[1].success / b[1].total) - (a[1].success / a[1].total))[0];
-
-console.log(`Optimal edge threshold: ${optimal[0]}% with ${(optimal[1].success/optimal[1].total*100).toFixed(0)}% success rate`);
-
-// Update config if significantly different
-if (parseInt(optimal[0]) > 20) {
-  const env = await readFile('~/limitless-trader/.env', 'utf8');
-  await writeFile('~/limitless-trader/.env', env.replace(/ORACLE_MIN_EDGE=.*/, `ORACLE_MIN_EDGE=${parseInt(optimal[0])/100}`));
-  await exec('pm2 restart oracle-live');
-}
-```
-
-### Pattern 4: Emergency Shutdown
-
-```typescript
-async function emergencyShutdown() {
-  // Stop trading immediately
-  await exec('pm2 stop oracle-live');
-  
-  // Cancel all open orders + flatten to flat on both venues (cross-market-mm)
-  await exec('cd ~/limitless-trader && npm run cross-market-mm:close');
-  
-  // Claim any winnings
-  await exec('cd ~/limitless-trader && npx tsx src/core/limitless/redeem.ts claim-all');
-  
-  // Generate final report
-  const finalBalance = await checkWalletBalance();
-  const pnl = finalBalance - startingBalance;
-  notify(`Trading stopped. Final P&L: $${pnl.toFixed(2)}`);
-}
-```
-
-### Pattern 5: Multi-Strategy Deployment
-
-```typescript
-// Deploy different strategies with different parameters
-const strategies = [
-  { name: 'oracle-arb-conservative', edge: 0.20, price: 0.60, size: 1 },
-  { name: 'oracle-arb-aggressive', edge: 0.10, price: 0.75, size: 2 },
-];
-
-for (const strat of strategies) {
-  const env = baseEnv + `
-ORACLE_MIN_EDGE=${strat.edge}
-ORACLE_MAX_PRICE=${strat.price}
-ORACLE_BET_SIZE=${strat.size}
-  `;
-  
-  await writeFile(`~/limitless-trader/.env.${strat.name}`, env);
-  await exec(`cd ~/limitless-trader && PORT=${3000 + i} pm2 start --name ${strat.name} "npx tsx src/strategies/oracle-arb/run.ts" -- --env .env.${strat.name}`);
-}
-
-// Monitor and compare performance — each run records to ./data; summarize it
-setInterval(async () => {
-  const { stdout } = await exec('cd ~/limitless-trader && npm run cross-market-mm:analyze');
-  console.log(stdout); // orders, fills, delta-flatness, hedges, net PnL
-}, 60000);
-```
+One `.env` per instance (`DATA_DIR`, sizes, thresholds), one process each, separate wallets if the strategies could cross each other (self-trade prevention cancels your own resting quotes).
 
 ---
 
 ## 22. Troubleshooting
 
-### Order Rejected: Insufficient Balance
-
-**Symptom:** `Order submission failed: 400 Insufficient balance`
-
-**Fix:**
-1. Check USDC balance: your wallet needs enough USDC to cover `makerAmount`
-2. Check if balance is locked in other open orders
-3. Fund your wallet with more USDC on Base
-
-### Order Rejected: Not Approved
-
-**Symptom:** `Order submission failed: 400 Not approved` or order silently fails
-
-**Fix:**
-```bash
-npx tsx src/index.ts approve <market-slug>
-```
-
-This approves both USDC and CTF for the market's venue contracts.
-
-### Order Rejected: Bad Signature
-
-**Symptom:** `Order submission failed: 400 Invalid signature`
-
-**Possible causes:**
-1. Wrong `verifyingContract` — make sure you're using `market.venue.exchange`, not a hardcoded address
-2. Incorrect `chainId` — must be `8453` for Base
-3. Amount overflow — ensure `makerAmount` and `takerAmount` fit in uint256
-4. Tick alignment — `takerAmount` must be a multiple of 1000
-
-> 📖 **MCP checkpoint:** Query: `search_limitless_exchange("invalid signature order signing troubleshoot")`
-
-### Market Not Found
-
-**Symptom:** `Failed to fetch market <slug>: 404`
-
-**Fix:**
-1. Check the slug is correct — use `getSlugs()` to list all active slugs
-2. The market may have been resolved or delisted
-3. Slugs are case-sensitive
-
-### Rate Limits
-
-**Symptom:** HTTP 429 responses
-
-**Fix:**
-1. Add delays between API calls (the SDK doesn't throttle automatically)
-2. Cache responses where possible (market details, venue data)
-3. For a high-frequency quoting loop, throttle re-quotes — cross-market-mm uses `min_requote_ms` to stay under the Cloudflare rate limit (429/1015)
-
-### WebSocket Disconnection
-
-**Symptom:** Price updates stop arriving
-
-**Fix:**
-1. The `LimitlessWebSocket` class auto-reconnects with 1–5s backoff
-2. Subscriptions are automatically re-sent on reconnect
-3. If disconnections are frequent, check your network or try a different transport
-4. Monitor the `disconnect` event for logging
-
-### PRIVATE_KEY Format Error
-
-**Symptom:** `Invalid PRIVATE_KEY format`
-
-**Fix:** The key must be a 0x-prefixed 32-byte hex string, exactly 66 characters:
-```
-0x + 64 hex characters = 66 chars total
-```
-
-### DRY_RUN Not Working
-
-**Symptom:** Orders are being submitted even with `DRY_RUN=true`
-
-**Fix:** Make sure you're using the strategy runner (e.g., `npm run certainty-closer`) which respects the env var. `SDKTradingClient` reads `DRY_RUN` from settings/env and short-circuits before signing.
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `Signer does not match - you should use embedded address for smart wallet` | profile is in `smartWallet` trading mode | `npm start wallet-mode eoa` (`doctor` catches it) |
+| `Signer does not match authenticated profile account` / `Maker does not match expected profile wallet` | the token was derived by a different wallet than `PRIVATE_KEY` | derive the token while connected with the signing wallet |
+| `401 Invalid HMAC authentication` | wrong secret, or the machine clock is off (short timestamp window) | re-copy the base64 secret; sync the clock |
+| `Insufficient collateral allowance` | exchange not approved | `npm start approve <slug>` |
+| `Insufficient conditional token balance` | selling more shares than held (rounding up) | floor to the 0.001 grid; `sellShares` does |
+| `feeRateBps[...] is out of user's band` | signed `feeRateBps` ≠ `rank.feeRateBps` on a fee-bearing market | let the SDK set it; check `GET /profiles/me` |
+| `Post-only order would execute immediately` / `Order would cross resting liquidity` | normal flow | reprice; do not blacklist the market |
+| `settlementStatus: DELAYED` | taker delay, not an error | wait for `eligibleAt`, watch order events or `awaitFill` |
+| FOK into an empty book errors | no resting liquidity | check `bids.length && asks.length` first |
+| Orderbook prices look 100× off | listings use cents, books use fractions | `toFraction()` |
+| `Market … has passed deadline` | market closed between scan and order | skip |
+| `429` | edge rate limit | slow the loop; cancel-replace instead of cancel+create |
+| Websocket: one snapshot then silence | a later `subscribe_market_prices` replaced the set, or the slug resolved | send the full set every time; check `market.status` |
+| Websocket `unsubscribe` times out | no generic unsubscribe exists | re-subscribe with the smaller set |
+| Redeem fails right after resolution | payout not yet reported on-chain | retry in a few minutes |
+| Neg-risk claim `No position balance` via the API | grouped markets redeem through the adapter | `RedeemClient` handles it; or `POST /portfolio/redeem` for server wallets |
+| `DRY_RUN` not respected | env and config disagree | pass `dryRun` explicitly; both `SDKTradingClient` and strategies read one resolved flag |
+| `PRIVATE_KEY` format error | not 0x + 64 hex | `doctor` |
 
 ---
 
 ## 23. Links and Resources
 
-### Limitless Exchange
-- **App:** [limitless.exchange](https://limitless.exchange)
-- **API Docs:** [docs.limitless.exchange](https://docs.limitless.exchange)
-- **Docs MCP:** `POST https://docs.limitless.exchange/mcp` — search docs programmatically
-- **Programmatic API:** [docs.limitless.exchange/developers/programmatic-api](https://docs.limitless.exchange/developers/programmatic-api)
-- **Partner Application:** [Application Form](https://docs.google.com/forms/d/e/1FAIpQLSd1P4UB1yDcdcxJzRrM7EiwuJKTFpKtqgFGA_ftYbNOLg7lsQ/viewform)
+### Limitless
+- App: [limitless.exchange](https://limitless.exchange)
+- Developer docs: [docs.limitless.exchange/developers/introduction](https://docs.limitless.exchange/developers/introduction) · [API reference](https://docs.limitless.exchange/api-reference/introduction) · Scalar: `https://api.limitless.exchange/api-v1`
+- [Authentication](https://docs.limitless.exchange/developers/authentication) · [EIP-712](https://docs.limitless.exchange/developers/eip712-signing) · [WebSocket](https://docs.limitless.exchange/developers/websocket/overview) · [Fees](https://docs.limitless.exchange/user-guide/fees) · [Responsible agents](https://docs.limitless.exchange/developers/responsible-agents) · [Maintenance mode](https://docs.limitless.exchange/developers/maintenance-mode) · [Migrate from Polymarket](https://docs.limitless.exchange/developers/migrate-from-polymarket)
+- [Build a trading agent](https://docs.limitless.exchange/developers/build-a-trading-agent) (this repo's companion guide) · [Cross-market market making](https://docs.limitless.exchange/developers/cross-market-market-making)
+- Docs MCP: `https://docs.limitless.exchange/mcp` · Trading MCP: `https://api.limitless.exchange/mcp` ([guide](https://docs.limitless.exchange/developers/mcp-server))
+- [Programmatic API](https://docs.limitless.exchange/developers/programmatic-api) (partners only)
+- [Builders Chat](https://t.me/LimitlessBuildersChat) · [Changelog](https://docs.limitless.exchange/changelog)
 
 ### Official SDKs
-- **TypeScript SDK:** [npmjs.com/package/@limitless-exchange/sdk](https://www.npmjs.com/package/@limitless-exchange/sdk) · [GitHub](https://github.com/limitless-labs-group/limitless-exchange-ts-sdk) · [Docs](https://docs.limitless.exchange/developers/sdk/typescript/getting-started)
-- **Python SDK:** [pypi.org/project/limitless-sdk](https://pypi.org/project/limitless-sdk/) · [GitHub](https://github.com/limitless-labs-group/limitless-sdk) · [Docs](https://docs.limitless.exchange/developers/sdk/python/getting-started)
-- **Go SDK:** [github.com/limitless-labs-group/limitless-exchange-go-sdk](https://github.com/limitless-labs-group/limitless-exchange-go-sdk) · [Docs](https://docs.limitless.exchange/developers/sdk/go/getting-started)
+- TypeScript: [npm](https://www.npmjs.com/package/@limitless-exchange/sdk) · [GitHub](https://github.com/limitless-labs-group/limitless-exchange-ts-sdk)
+- Python: [PyPI](https://pypi.org/project/limitless-sdk/) · [GitHub](https://github.com/limitless-labs-group/limitless-sdk)
+- Go: [GitHub](https://github.com/limitless-labs-group/limitless-exchange-go-sdk)
+- Rust: [GitHub](https://github.com/limitless-labs-group/limitless-exchange-rust-sdk)
+
+### Related tools
+- [limitless-cli](https://github.com/limitless-labs-group/limitless-cli): Rust CLI for markets, orderbooks, orders, approvals
+- [limitless-feeds-cli](https://github.com/limitless-labs-group/limitless-feeds-cli): map price markets to Pyth / Chainlink / Binance feeds
+- [Limitless Academy](https://academy.limitless.exchange): the API and Agents academies; this repo is their reference agent
 
 ### Infrastructure
-- **Base Chain Explorer:** [basescan.org](https://basescan.org)
-- **Base Bridge:** [bridge.base.org](https://bridge.base.org)
-- **USDC on Base:** [0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913](https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
-
-### Dependencies
-- **@limitless-exchange/sdk:** the official Limitless TypeScript SDK (orders, market data, HMAC auth)
-- **@polymarket/clob-client-v2:** Polymarket v2 CLOB client (cross-market-mm hedge leg, pUSD)
-- **viem:** [viem.sh](https://viem.sh) — TypeScript Ethereum library (wallet, signing, contracts)
-- **Pyth Hermes:** [hermes.pyth.network](https://hermes.pyth.network) — SSE oracle prices (oracle-arb)
+- [basescan.org](https://basescan.org) · [bridge.base.org](https://bridge.base.org) · USDC on Base `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
+- Pyth Hermes: [hermes.pyth.network](https://hermes.pyth.network)
 
 ---
 
-*Built for any coding agent with shell + file access. Query the MCP. Iterate fast. Track everything. Scale winners.*
+*Built for any coding agent with shell + file access. Query the docs MCP. Dry-run first. Track everything. Scale winners.*
