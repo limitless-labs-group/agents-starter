@@ -515,7 +515,8 @@ Use this loop when rotating markets:
    enough.
 4. **Patch config as a snapshot:** selected slugs, order size, hedge threshold,
    margin, loss cap, and rationale. Size orders so a full-fill hedge clears the
-   Polymarket minimum notional on both possible fill sides.
+   Polymarket market's `min_order_size` (shares, read from the CLOB book, 5 on
+   most markets); preflight's dust hedge guard checks exactly this.
 5. **Clean-book gate:** stop/close the current run deliberately, then verify zero
    live orders and acceptable inventory across configured and stale/orphan
    markets before restarting.
@@ -551,9 +552,22 @@ fees on takers only (limit orders that rest on the book are free — see
 [docs.limitless.exchange/user-guide/fees](https://docs.limitless.exchange/user-guide/fees)).
 The cross-market-mm quotes `postOnly`, so every Limitless fill is a maker fill at
 zero fee. Your only direct cost is the **Polymarket FAK hedge**, which is a
-taker order on Polymarket and pays whatever Polymarket's current taker fee is
-for that market — verify it against Polymarket's live schedule rather than
-assuming a number.
+taker order on Polymarket. Polymarket sets taker fees at match time (nothing in
+the order), `fee = shares × rate × p × (1 − p)`, so the fee peaks at 50¢ and
+fades toward the extremes. Current rates (verify against
+[docs.polymarket.com/trading/fees](https://docs.polymarket.com/trading/fees),
+they change: sports went 0.03 → 0.05 on Jul 10 2026):
+
+| Category | Rate | Fee per share at p = 0.50 |
+| --- | --- | --- |
+| Crypto | 0.07 | 1.75¢ |
+| Sports | 0.05 | 1.25¢ |
+| Politics / Finance / Tech | 0.04 | 1.00¢ |
+| Geopolitics | 0 | fee-free |
+
+A 100 bps margin on a 50¢ market captures 0.5¢ a share; the sports hedge fee
+alone is 1.25¢. Either quote wider than the hedge fee or pick markets far from
+mid, where the fee curve is thin.
 
 So the per-round-trip ledger is:
 
@@ -564,7 +578,7 @@ Revenue:
   + maker rebate         in eligible markets (see below) — fill-gated
   + LP rewards           for qualifying resting size near midpoint — quote-presence
 Costs:
-  − Polymarket hedge     the FAK taker fee on the hedge leg (per Poly's schedule)
+  − Polymarket hedge     the FAK taker fee on the hedge leg (table above; peaks at mid)
   − adverse selection    you tend to get filled when the price is moving against you;
                          cross-venue divergence between quote and hedge is real slippage
 ```

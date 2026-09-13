@@ -22,7 +22,6 @@ import { loadSettings } from './config.js';
 
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const POLYMARKET_GAMMA_URL = process.env.POLYMARKET_GAMMA_URL || 'https://gamma-api.polymarket.com';
-const MIN_POLY_HEDGE_NOTIONAL_USD = 1.0;
 const ERC20_ALLOWANCE = parseAbi(['function allowance(address,address) view returns (uint256)']);
 const SAFE_VERSION = parseAbi(['function VERSION() view returns (string)']);
 
@@ -199,21 +198,33 @@ async function main(): Promise<void> {
     try {
       await poly.resolveAssetIds(pair);
       add(`Polymarket market: ${pair.polymarketSlug.slice(0, 40)}`, true, true, 'resolved');
+      // Dust hedge guard. A full fill of order_size shares on Limitless is
+      // hedged with order_size shares of the opposite token on Polymarket, and
+      // the CLOB rejects any order under the market's min_order_size (read
+      // from the book; 5 shares on most markets). Below that floor fills
+      // silently pile up un-hedged, so the guard is critical.
+      const [minYes, minNo] = await Promise.all([
+        poly.getMinOrderSize(pair.polyYesAssetId as string),
+        poly.getMinOrderSize(pair.polyNoAssetId as string),
+      ]);
+      const minOrderSize = Math.max(minYes, minNo);
       const book = await readPolymarketBook(pair.polymarketSlug);
-      if (book) {
-        const yesFillHedge = s.orderSize * (1 - book.bestBid); // Limitless YES fill -> buy NO on Poly
-        const noFillHedge = s.orderSize * book.bestAsk; // Limitless NO fill -> buy YES on Poly
-        const minFullFillHedge = Math.min(yesFillHedge, noFillHedge);
+      const notional = book
+        ? ` (≈ $${(s.orderSize * (1 - book.bestBid)).toFixed(2)} NO / $${(s.orderSize * book.bestAsk).toFixed(2)} YES at current prices)`
+        : '';
+      add(
+        `Dust hedge guard: ${pair.polymarketSlug.slice(0, 40)}`,
+        s.orderSize >= minOrderSize,
+        true,
+        `order_size ${s.orderSize} shares vs Polymarket min_order_size ${minOrderSize}${notional}`,
+      );
+      if (s.hedgeThreshold < minOrderSize) {
         add(
-          `Dust hedge guard: ${pair.polymarketSlug.slice(0, 40)}`,
-          minFullFillHedge >= MIN_POLY_HEDGE_NOTIONAL_USD,
+          `Hedge threshold: ${pair.polymarketSlug.slice(0, 40)}`,
           true,
-          `full-fill hedge min $${minFullFillHedge.toFixed(2)} ` +
-            `(YES-fill→NO $${yesFillHedge.toFixed(2)}, NO-fill→YES $${noFillHedge.toFixed(2)}, ` +
-            `order_size ${s.orderSize})`,
+          false,
+          `hedge_threshold ${s.hedgeThreshold} < min_order_size ${minOrderSize}: partial fills wait to accumulate before hedging`,
         );
-      } else {
-        add(`Dust hedge guard: ${pair.polymarketSlug.slice(0, 40)}`, false, false, 'Gamma bestBid/bestAsk unavailable');
       }
     } catch (e) {
       add(`Polymarket market: ${pair.polymarketSlug.slice(0, 40)}`, false, true, (e as Error).message);

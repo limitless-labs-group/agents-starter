@@ -43,7 +43,7 @@ function fakeRecorder() {
 describe('fill → hedge round-trip (hedgeOnce)', () => {
   it('a long-YES Limitless fill fires a NO buy on Polymarket + records it', async () => {
     const hedgeBuy = vi.fn().mockResolvedValue(true);
-    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const poly = { hedgeBuy, getMinOrderSize: async () => 5 } as unknown as PolymarketAdapter;
     const rec = fakeRecorder();
 
     // Simulate a fill: we now hold 5 YES on Limitless, flat on Poly.
@@ -69,7 +69,7 @@ describe('fill → hedge round-trip (hedgeOnce)', () => {
 
   it('a long-NO fill fires a YES buy on Polymarket', async () => {
     const hedgeBuy = vi.fn().mockResolvedValue(true);
-    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const poly = { hedgeBuy, getMinOrderSize: async () => 5 } as unknown as PolymarketAdapter;
     const lmts = { [PAIR.limitlessSlug]: { yes: 0, no: 5 } };
     const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
 
@@ -81,22 +81,41 @@ describe('fill → hedge round-trip (hedgeOnce)', () => {
 
   it('records threshold-crossing hedge skips with the reason and notional', async () => {
     const hedgeBuy = vi.fn().mockResolvedValue(true);
-    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const getMinOrderSize = vi.fn().mockResolvedValue(5);
+    const poly = { hedgeBuy, getMinOrderSize } as unknown as PolymarketAdapter;
     const rec = fakeRecorder();
-    const lmts = { [PAIR.limitlessSlug]: { yes: 0, no: 5 } };
+    // A 3-share partial fill: over the hedge threshold (2) but under the
+    // CLOB's min_order_size (5), so the hedge must be skipped, not sent.
+    const lmts = { [PAIR.limitlessSlug]: { yes: 0, no: 3 } };
     const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
 
     await hedgeOnce([PAIR], feedWithQuote(0.6, 0.19), lmts, polyPos, poly, SETTINGS, rec);
 
     expect(hedgeBuy).not.toHaveBeenCalled();
+    // The floor is read for the asset we would buy (long NO → buy YES).
+    expect(getMinOrderSize).toHaveBeenCalledWith('POLY_YES');
     const skip = rec.events.find((e) => e.kind === 'hedge_skip') as Extract<ReplicatorEvent, { kind: 'hedge_skip' }>;
-    expect(skip).toMatchObject({ reason: 'notional too small', buy: 'YES', shares: 5 });
-    expect(skip.usdc).toBeCloseTo(0.95, 6);
+    expect(skip).toMatchObject({ buy: 'YES', shares: 3 });
+    expect(skip.reason).toMatch(/below Polymarket min order size/);
+    expect(skip.usdc).toBeCloseTo(0.57, 6);
+  });
+
+  it('a sub-$1 hedge that clears min_order_size is still sent (no $1 floor)', async () => {
+    const hedgeBuy = vi.fn().mockResolvedValue(true);
+    const poly = { hedgeBuy, getMinOrderSize: async () => 5 } as unknown as PolymarketAdapter;
+    const lmts = { [PAIR.limitlessSlug]: { yes: 0, no: 5 } };
+    const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
+
+    await hedgeOnce([PAIR], feedWithQuote(0.6, 0.19), lmts, polyPos, poly, SETTINGS);
+
+    expect(hedgeBuy).toHaveBeenCalledTimes(1);
+    expect(hedgeBuy.mock.calls[0][0]).toBe('POLY_YES');
+    expect(hedgeBuy.mock.calls[0][1]).toBeCloseTo(0.95, 6);
   });
 
   it('an already-hedged position (Limitless YES offset by Poly NO) does NOT hedge', async () => {
     const hedgeBuy = vi.fn().mockResolvedValue(true);
-    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const poly = { hedgeBuy, getMinOrderSize: async () => 5 } as unknown as PolymarketAdapter;
     const lmts = { [PAIR.limitlessSlug]: { yes: 5, no: 0 } };
     const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 5 }]]); // net 0
 
@@ -112,7 +131,7 @@ describe('fill → hedge round-trip (hedgeOnce)', () => {
     // hedgeSettleMs, then allow it once the window passes.
     const settings = { hedgeThreshold: 2, marginBps: 100, orderSize: 5, hedgeSettleMs: 12000 } as unknown as ReplicatorSettings;
     const hedgeBuy = vi.fn().mockResolvedValue(true);
-    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const poly = { hedgeBuy, getMinOrderSize: async () => 5 } as unknown as PolymarketAdapter;
     const lastHedgeAt = new Map<string, number>(); // shared across ticks, like runHedger
 
     // The fill: long 5 YES, Poly still flat (lagged read shows no hedge yet).
@@ -148,7 +167,7 @@ describe('inventory guard (hedgeOnce)', () => {
   it('pulls quotes when |net| reaches max_net_shares, still hedging the pile down', async () => {
     const onPull = vi.fn();
     const hedgeBuy = vi.fn().mockResolvedValue(true);
-    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const poly = { hedgeBuy, getMinOrderSize: async () => 5 } as unknown as PolymarketAdapter;
     const rec = fakeRecorder();
     const lmts = { [PAIR.limitlessSlug]: { yes: 12, no: 0 } }; // net +12 >= cap 10
     const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
@@ -165,7 +184,7 @@ describe('inventory guard (hedgeOnce)', () => {
 
   it('does NOT pull while under the cap', async () => {
     const onPull = vi.fn();
-    const poly = { hedgeBuy: vi.fn().mockResolvedValue(true) } as unknown as PolymarketAdapter;
+    const poly = { hedgeBuy: vi.fn().mockResolvedValue(true), getMinOrderSize: async () => 5 } as unknown as PolymarketAdapter;
     const lmts = { [PAIR.limitlessSlug]: { yes: 5, no: 0 } }; // net +5 < cap 10
     const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
     await hedgeOnce([PAIR], feedWithQuote(0.6, 0.62), lmts, polyPos, poly, GUARD_SETTINGS, undefined, new Map(), new Map(), onPull);
@@ -175,7 +194,7 @@ describe('inventory guard (hedgeOnce)', () => {
   it('pulls after max_hedge_failures consecutive failed hedges, and a success resets the streak', async () => {
     const onPull = vi.fn();
     const hedgeBuy = vi.fn().mockResolvedValue(false); // broken Poly route
-    const poly = { hedgeBuy } as unknown as PolymarketAdapter;
+    const poly = { hedgeBuy, getMinOrderSize: async () => 5 } as unknown as PolymarketAdapter;
     const lmts = { [PAIR.limitlessSlug]: { yes: 5, no: 0 } }; // net +5: hedges, under cap
     const polyPos = new Map([[PAIR.polymarketSlug, { yes: 0, no: 0 }]]);
     const failStreak = new Map<string, number>();

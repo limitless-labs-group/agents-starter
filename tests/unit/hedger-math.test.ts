@@ -5,7 +5,7 @@
  *   - net > 0 → too much YES → BUY NO on Poly
  *   - net < 0 → too much NO  → BUY YES on Poly
  *   - notional = |net| × poly_price_of_side_we_buy
- *   - notional < $1.0 → skip (Poly rejects dust)
+ *   - shares < the market's min_order_size → skip (the CLOB rejects it)
  */
 
 import { describe, expect, it } from 'vitest';
@@ -64,16 +64,47 @@ describe('decideHedge — gates', () => {
     expect(d.reason).toBe('no usable price');
   });
 
-  it('notional < $1 → skip (Polymarket rejects dust)', () => {
-    // net = 50, polyBid = 0.99 → NO price = 0.01, notional = 0.50 → skip
+  it('shares below min_order_size → skip (the CLOB rejects it)', () => {
+    // net = 3 shares, floor 5 → skip even though notional is fine
+    const d = decideHedge({
+      netShares: 3,
+      hedgeThreshold: 2,
+      polyBid: 0.6,
+      polyAsk: 0.62,
+      minOrderSize: 5,
+    });
+    expect(d.shouldHedge).toBe(false);
+    expect(d.reason).toMatch(/below Polymarket min order size/);
+    expect(d.amountShares).toBe(3);
+  });
+
+  it('shares at min_order_size → hedge (floor is inclusive)', () => {
+    const d = decideHedge({
+      netShares: 5,
+      hedgeThreshold: 2,
+      polyBid: 0.6,
+      polyAsk: 0.62,
+      minOrderSize: 5,
+    });
+    expect(d.shouldHedge).toBe(true);
+  });
+
+  it('tiny notional is NOT a reason to skip (no $1 floor)', () => {
+    // net = 50, polyBid = 0.99 → NO price = 0.01, notional = $0.50: still sent
     const d = decideHedge({
       netShares: 50,
       hedgeThreshold: 2,
       polyBid: 0.99,
       polyAsk: 0.99,
+      minOrderSize: 5,
     });
-    expect(d.shouldHedge).toBe(false);
-    expect(d.reason).toBe('notional too small');
+    expect(d.shouldHedge).toBe(true);
+    expect(d.notionalUsdc).toBeCloseTo(0.5, 6);
+  });
+
+  it('no minOrderSize given → gate disabled', () => {
+    const d = decideHedge({ netShares: 3, hedgeThreshold: 2, polyBid: 0.6, polyAsk: 0.62 });
+    expect(d.shouldHedge).toBe(true);
   });
 
   it('cross-venue offset nets to zero → skip', () => {
