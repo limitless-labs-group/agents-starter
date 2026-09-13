@@ -108,7 +108,8 @@ npm run cross-market-mm:find-pairs   # liquidity-ranked cross-venue shortlist
 ```
 
 Paste one shortlisted pair into `market_pairs` in `cross-market-mm.config.yaml`,
-keep `order_size: 5` to start. **Verify both markets resolve on identical
+keep `order_size: 5` to start (that is also the Polymarket CLOB's usual
+`min_order_size`; a smaller order can't be hedged and preflight will say so). **Verify both markets resolve on identical
 criteria** — same asset, threshold, UTC moment, source. Title overlap is not
 enough.
 
@@ -182,8 +183,13 @@ config, and volume details are in **[DEPLOY.md](./DEPLOY.md)**.
 
 On Limitless you're the **maker**, and makers pay
 [**no fee**](https://docs.limitless.exchange/user-guide/fees) — your only direct
-cost is the Polymarket hedge's taker fee. Profit comes from the cross-venue
-spread + two daily-USDC reward programs:
+cost is the Polymarket hedge's taker fee, and it is not small: Polymarket charges
+takers at match time on every category except geopolitics,
+`fee = shares × rate × p × (1 − p)`, with rate `0.05` on sports and `0.07` on
+crypto (`0.04` politics/finance). That peaks at mid: **1.25¢ per share on a
+sports hedge at 50¢, 1.75¢ on crypto**, so `margin_bps` has to clear it. See
+[Polymarket fees](https://docs.polymarket.com/trading/fees) for the current
+schedule. Profit comes from the cross-venue spread + two daily-USDC reward programs:
 [maker rebates](https://docs.limitless.exchange/user-guide/maker-rebates) (on
 filled maker orders) and [LP rewards](https://docs.limitless.exchange/user-guide/lp-rewards)
 (for resting near the midpoint). At `order_size: 5` you earn ~nothing from the

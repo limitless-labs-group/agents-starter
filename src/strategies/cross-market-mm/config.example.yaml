@@ -28,7 +28,10 @@ poly_funder: "0xYourPolymarketFunderAddress"
 poly_signature_type: 3
 
 # --- Trading parameters -----------------------------------------------------
-order_size: 5          # shares per order (same N on YES and NO sides) — start small
+# shares per order (same N on YES and NO sides) — start small. Must be >= the
+# Polymarket market's min_order_size (5 on most markets; read live from the CLOB
+# book by preflight and the hedger), or a full fill can't be hedged.
+order_size: 5
 # How much *inside* the Poly price we quote (100 = 1%). Treat ~100 as the
 # FLOOR, not a starting point to tighten: a 31h recorded run quoting ~30bps of
 # gross edge sat below the measured round-trip cost of a hedged fill (hedge

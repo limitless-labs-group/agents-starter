@@ -17,6 +17,60 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'poly-ws' })
 const POLYMARKET_WS_URL =
   process.env.POLYMARKET_WS_URL || 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
+/**
+ * Application-level keepalive. The market stream requires a text frame `PING`
+ * every 10 seconds (the server answers `PONG`); protocol-level ping frames do
+ * not count and an idle socket gets dropped. Because every PONG is a message,
+ * "no message for staleMs" means the socket is dead even on a quiet market,
+ * so we close it and let the reconnect loop take over.
+ */
+export const KEEPALIVE_PING_MS = 10_000;
+export const KEEPALIVE_STALE_MS = 30_000;
+
+/** The subset of WebSocket the keepalive touches — lets tests pass a fake. */
+export interface KeepaliveSocket {
+  readonly readyState: number;
+  send(data: string): void;
+  close(): void;
+}
+
+/**
+ * Start the PING loop and the stale-feed watchdog for an open socket.
+ * Call `touch()` on every inbound message (PONG included) and `stop()` on
+ * close. Exported for tests.
+ */
+export function attachKeepalive(
+  ws: KeepaliveSocket,
+  opts: { pingMs?: number; staleMs?: number; now?: () => number } = {},
+): { touch: () => void; stop: () => void } {
+  const pingMs = opts.pingMs ?? KEEPALIVE_PING_MS;
+  const staleMs = opts.staleMs ?? KEEPALIVE_STALE_MS;
+  const now = opts.now ?? Date.now;
+  const OPEN = 1;
+  let lastSeen = now();
+  const timer = setInterval(() => {
+    if (now() - lastSeen > staleMs) {
+      logger.warn({ silentMs: now() - lastSeen }, 'Poly WS stale (no PONG/data) — reconnecting');
+      stop();
+      try {
+        ws.close();
+      } catch {
+        /* swallow */
+      }
+      return;
+    }
+    if (ws.readyState === OPEN) {
+      try {
+        ws.send('PING');
+      } catch {
+        /* swallow */
+      }
+    }
+  }, pingMs);
+  const stop = () => clearInterval(timer);
+  return { touch: () => (lastSeen = now()), stop };
+}
+
 interface Level {
   price: string;
   size?: string;
@@ -132,6 +186,8 @@ function handleMessage(
 /**
  * Connect to Polymarket WS, subscribe to all asset ids, update `feed`.
  *
+ * Sends the text `PING` the stream requires every 10s and reconnects when the
+ * socket goes silent (see `attachKeepalive`).
  * Reconnects with exponential backoff (capped at 30s). On reconnect we
  * re-send the subscribe — Polymarket's WS does not auto-resubscribe.
  *
@@ -155,7 +211,10 @@ export async function runPolyWs(
 
     await new Promise<void>((resolve) => {
       let resolved = false;
+      let keepalive: ReturnType<typeof attachKeepalive> | null = null;
       const settle = () => {
+        keepalive?.stop();
+        keepalive = null;
         if (!resolved) {
           resolved = true;
           resolve();
@@ -164,11 +223,13 @@ export async function runPolyWs(
 
       ws.addEventListener('open', () => {
         ws.send(JSON.stringify({ type: 'market', assets_ids: assetIds }));
+        keepalive = attachKeepalive(ws);
         logger.info({ count: assetIds.length }, 'Poly WS connected');
         delay = 1000; // reset backoff on successful connect
       });
 
       ws.addEventListener('message', (ev: MessageEvent) => {
+        keepalive?.touch();
         const raw = typeof ev.data === 'string' ? ev.data : '';
         if (!raw || raw.toLowerCase() === 'pong') return;
         handleMessage(raw, feed, assetToSlug, yesAssets);

@@ -3,8 +3,9 @@
  *
  * Responsibilities:
  *   1. Resolve a polymarket_slug to its YES/NO clob asset ids (Gamma API).
- *   2. Read live positions across our configured pairs (Data API).
- *   3. Fire FAK BUY hedge orders on the CLOB to flatten exposure.
+ *   2. Read live positions across our configured pairs (Data API v2).
+ *   3. Read each market's minimum order size from the CLOB book.
+ *   4. Fire FAK BUY hedge orders on the CLOB to flatten exposure.
  *
  * Reads (Gamma + Data) are unauthenticated REST via native `fetch`. The
  * hedge path uses `@polymarket/clob-client-v2`. v2 is required, not optional:
@@ -46,6 +47,62 @@ const POLYMARKET_GAMMA_URL =
 const POLYMARKET_DATA_URL = process.env.POLYMARKET_DATA_URL || 'https://data-api.polymarket.com';
 
 /**
+ * Fallback when the CLOB book can't be read. Every book we've seen publishes
+ * `min_order_size: "5"`; docs.polymarket.com/trading/place-orders documents it
+ * as the minimum number of shares the CLOB accepts. Never trust this constant
+ * over a live read: `getMinOrderSize` only falls back here on a failed fetch.
+ */
+export const DEFAULT_MIN_ORDER_SIZE = 5;
+const MIN_ORDER_SIZE_TTL_MS = 10 * 60 * 1000;
+const POSITIONS_PAGE_LIMIT = 100;
+
+/**
+ * Pull `min_order_size` out of a CLOB `GET /book` payload. Exported for tests.
+ * Returns null when the field is missing or not a positive number.
+ */
+export function parseMinOrderSize(book: unknown): number | null {
+  if (!book || typeof book !== 'object') return null;
+  const raw = (book as { min_order_size?: unknown }).min_order_size;
+  const n = Number(raw ?? NaN);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** One row of Data API v2 `GET /v2/positions` (only the fields we read). */
+export interface PositionRow {
+  token_id?: unknown;
+  current_size?: unknown;
+}
+
+/**
+ * Fold Data API v2 position rows into `{ polymarketSlug: { yes, no } }` for
+ * the configured pairs. Rows for assets we don't quote are ignored. Exported
+ * for tests.
+ */
+export function positionsFromRows(
+  rows: PositionRow[],
+  pairs: MarketPair[],
+): Map<string, { yes: number; no: number }> {
+  const out = new Map<string, { yes: number; no: number }>();
+  const lookup = new Map<string, { slug: string; isYes: boolean }>();
+  for (const p of pairs) {
+    if (p.polyYesAssetId) lookup.set(p.polyYesAssetId, { slug: p.polymarketSlug, isYes: true });
+    if (p.polyNoAssetId) lookup.set(p.polyNoAssetId, { slug: p.polymarketSlug, isYes: false });
+  }
+  for (const item of rows) {
+    const assetId = String(item.token_id ?? '');
+    const size = Number(item.current_size ?? 0);
+    if (!Number.isFinite(size)) continue;
+    const entry = lookup.get(assetId);
+    if (!entry) continue;
+    const cur = out.get(entry.slug) ?? { yes: 0, no: 0 };
+    if (entry.isYes) cur.yes += size;
+    else cur.no += size;
+    out.set(entry.slug, cur);
+  }
+  return out;
+}
+
+/**
  * Map user-facing signature_type (2 | 3) to v2's `SignatureTypeV2`.
  *   user 2 → GNOSIS_SAFE (existing Gnosis Safe users)
  *   user 3 → POLY_1271   (deposit wallets — default for new API users)
@@ -76,6 +133,8 @@ export class PolymarketAdapter {
   private readonly builderCode?: string;
   /** Live CLOB client — only constructed after authProbe() in non-dry mode. */
   private clob: ClobClient | null = null;
+  /** Per-asset `min_order_size` from the CLOB book, refreshed every TTL. */
+  private readonly minOrderSize = new Map<string, { value: number; at: number }>();
 
   constructor(config: PolymarketAdapterConfig) {
     this.funder = config.funder;
@@ -200,45 +259,65 @@ export class PolymarketAdapter {
   }
 
   /**
+   * Minimum order size the CLOB enforces for `assetId`, read from
+   * `GET /book?token_id=` (`min_order_size`, documented as shares). Cached for
+   * ten minutes; falls back to DEFAULT_MIN_ORDER_SIZE with a warning if the
+   * book can't be read. Public endpoint, so it works in DRY_RUN too.
+   */
+  async getMinOrderSize(assetId: string): Promise<number> {
+    const hit = this.minOrderSize.get(assetId);
+    if (hit && Date.now() - hit.at < MIN_ORDER_SIZE_TTL_MS) return hit.value;
+    try {
+      const r = await fetch(`${POLYMARKET_CLOB_URL}/book?token_id=${assetId}`);
+      if (r.ok) {
+        const value = parseMinOrderSize(await r.json());
+        if (value != null) {
+          this.minOrderSize.set(assetId, { value, at: Date.now() });
+          return value;
+        }
+      }
+      logger.warn({ status: r.status, assetId: assetId.slice(0, 8) + '…' }, 'poly book read: no min_order_size');
+    } catch (err) {
+      logger.warn({ err: (err as Error).message, assetId: assetId.slice(0, 8) + '…' }, 'poly book read failed');
+    }
+    return hit?.value ?? DEFAULT_MIN_ORDER_SIZE;
+  }
+
+  /**
    * Returns `{ polymarketSlug: { yes, no } }` of held positions across the
    * given pairs. Pairs without a position are absent from the map.
+   *
+   * Reads Data API v2 (`/v2/positions`, `data`-wrapped rows, cursor
+   * pagination). v1 (`/positions`) is frozen since Sep 2026.
    */
   async getPositions(pairs: MarketPair[]): Promise<Map<string, { yes: number; no: number }>> {
-    const out = new Map<string, { yes: number; no: number }>();
-    let raw: Array<{ asset?: string; size?: number }> = [];
+    const rows: PositionRow[] = [];
+    let cursor: string | undefined;
     try {
-      const r = await fetch(
-        `${POLYMARKET_DATA_URL}/positions?user=${this.funder}&sizeThreshold=0.0001`,
-      );
-      if (!r.ok) {
-        logger.warn({ status: r.status }, 'poly getPositions non-200');
-        return out;
+      for (;;) {
+        const url =
+          `${POLYMARKET_DATA_URL}/v2/positions?user=${this.funder}&limit=${POSITIONS_PAGE_LIMIT}` +
+          (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+        const r = await fetch(url);
+        if (!r.ok) {
+          logger.warn({ status: r.status }, 'poly getPositions non-200');
+          return new Map();
+        }
+        const body = (await r.json()) as {
+          data?: PositionRow[];
+          pagination?: { has_more?: boolean; next_cursor?: string | null };
+        };
+        if (!Array.isArray(body.data)) return new Map();
+        rows.push(...body.data);
+        const next = body.pagination?.next_cursor ?? undefined;
+        if (!body.pagination?.has_more || !next || next === cursor) break;
+        cursor = next;
       }
-      raw = (await r.json()) as Array<{ asset?: string; size?: number }>;
     } catch (err) {
       logger.warn({ err: (err as Error).message }, 'poly getPositions failed');
-      return out;
+      return new Map();
     }
-
-    const lookup = new Map<string, { slug: string; isYes: boolean }>();
-    for (const p of pairs) {
-      if (p.polyYesAssetId) lookup.set(p.polyYesAssetId, { slug: p.polymarketSlug, isYes: true });
-      if (p.polyNoAssetId) lookup.set(p.polyNoAssetId, { slug: p.polymarketSlug, isYes: false });
-    }
-
-    if (!Array.isArray(raw)) return out;
-    for (const item of raw) {
-      const assetId = String(item.asset ?? '');
-      const size = Number(item.size ?? 0);
-      if (!Number.isFinite(size)) continue;
-      const entry = lookup.get(assetId);
-      if (!entry) continue;
-      const cur = out.get(entry.slug) ?? { yes: 0, no: 0 };
-      if (entry.isYes) cur.yes += size;
-      else cur.no += size;
-      out.set(entry.slug, cur);
-    }
-    return out;
+    return positionsFromRows(rows, pairs);
   }
 
   /**

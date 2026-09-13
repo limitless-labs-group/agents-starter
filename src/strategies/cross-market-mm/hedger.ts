@@ -69,8 +69,15 @@ export function decideHedge(args: {
   hedgeThreshold: number;
   polyBid: number | null;
   polyAsk: number | null;
+  /**
+   * The market's `min_order_size` from the CLOB book (shares). Hedges below it
+   * are skipped instead of sent, because the CLOB rejects them ("Size lower
+   * than the minimum"). Omit to disable the gate (tests / callers that already
+   * sized the hedge).
+   */
+  minOrderSize?: number;
 }): HedgeDecision {
-  const { netShares, hedgeThreshold, polyBid, polyAsk } = args;
+  const { netShares, hedgeThreshold, polyBid, polyAsk, minOrderSize } = args;
 
   if (Math.abs(netShares) < hedgeThreshold) {
     return {
@@ -100,15 +107,17 @@ export function decideHedge(args: {
   const amountShares = Math.abs(netShares);
   const notional = amountShares * price;
 
-  if (notional < 1.0) {
-    // Polymarket rejects sub-$1 notional. Don't waste a request.
+  if (minOrderSize != null && amountShares < minOrderSize) {
+    // Below the market's min_order_size the CLOB rejects the order outright.
+    // Skip (surfaced as hedge_skip) and let the exposure accumulate past the
+    // floor rather than burn a request and a hedge-failure strike.
     return {
       shouldHedge: false,
       buyYes,
       amountShares,
       pricePerShare: price,
       notionalUsdc: notional,
-      reason: 'notional too small',
+      reason: `below Polymarket min order size (${amountShares.toFixed(2)} < ${minOrderSize} shares)`,
     };
   }
 
@@ -205,11 +214,19 @@ export async function hedgeOnce(
     }
 
     const quote = feed.getQuote(pair.polymarketSlug);
+    // Only look up the CLOB's min order size when a hedge is actually on the
+    // table (cached ten minutes in the adapter, so this is cheap either way).
+    const hedgeAsset = net < 0 ? pair.polyYesAssetId : pair.polyNoAssetId;
+    const minOrderSize =
+      Math.abs(net) >= settings.hedgeThreshold && hedgeAsset
+        ? await poly.getMinOrderSize(hedgeAsset)
+        : undefined;
     const decision = decideHedge({
       netShares: net,
       hedgeThreshold: settings.hedgeThreshold,
       polyBid: quote?.bid ?? null,
       polyAsk: quote?.ask ?? null,
+      minOrderSize,
     });
 
     if (!decision.shouldHedge) {
