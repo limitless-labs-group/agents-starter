@@ -1662,7 +1662,7 @@ Never hardcode exchange or adapter addresses; read them from the market. The ful
 Some markets hold marketable (taker) orders briefly before matching (`settings.takerDelayMs`, milliseconds, `0` = none; capped at a few seconds). What it changes:
 
 - FOK and FAK on such a market return immediately with `execution.settlementStatus: "DELAYED"`, `matched: false`, and `eligibleAt`. The fill arrives later: over `subscribe_order_events` (SETTLEMENT `MATCHED` → `MINED`/`FAILED`) or via `POST /orders/status/batch` after `eligibleAt`.
-- GTC orders, post-only quotes, and cancels are never delayed.
+- Post-only quotes and cancels are never delayed. A GTC that rests is placed immediately; a GTC that would cross the book is held like a taker and rests at release.
 - A delayed FOK that ends up killed emits **no** websocket frame; poll `status/batch` after `eligibleAt` to learn it (`SDKTradingClient.awaitFill` does).
 - Maintenance mode can postpone a delayed fill past `eligibleAt`; keep the order open in your bookkeeping until a terminal state.
 - Self-trade prevention (`stpPolicy`, default `cancel_maker`) is applied at release time.
