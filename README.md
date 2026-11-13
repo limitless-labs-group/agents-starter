@@ -1,6 +1,6 @@
 # Limitless Agents Starter
 
-Boilerplate for autonomous trading agents on [Limitless Exchange](https://limitless.exchange), the prediction market on Base. TypeScript, built on the official [`@limitless-exchange/sdk`](https://docs.limitless.exchange/developers/sdk/typescript/getting-started), dry-run by default.
+Open-source boilerplate for autonomous **prediction market trading bots and AI agents** on [Limitless Exchange](https://limitless.exchange), the prediction market on Base. TypeScript, built on the official [`@limitless-exchange/sdk`](https://docs.limitless.exchange/developers/sdk/typescript/getting-started), dry-run by default, with a preflight that tells you why an order would be rejected before you send it. Guide: [Build a Trading Agent](https://docs.limitless.exchange/developers/build-a-trading-agent).
 
 Feed [`AGENTS.md`](AGENTS.md) or [`SKILL.md`](SKILL.md) to any coding agent with shell + file access and it handles the rest: setup, trading, iteration.
 
